@@ -1,17 +1,22 @@
 const express = require("express");
 const cors = require("cors");
+const OpenAI = require("openai");
 
 const app = express();
 
 app.use(cors());
 app.use(express.json());
 
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
+
 const PORT = process.env.PORT || 3000;
 
 app.get("/", (req, res) => {
   res.json({
     status: "success",
-    message: "Nkwasibwe IRHCF backend is running!"
+    message: "Nkwasibwe IRHCF AI backend is running!"
   });
 });
 
@@ -21,35 +26,42 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-app.post("/api/chat", (req, res) => {
-  const message = req.body.message || "";
-  const text = message.toLowerCase();
+app.post("/api/chat", async (req, res) => {
+  try {
+    const { message } = req.body;
 
-  let reply;
+    if (!message) {
+      return res.status(400).json({
+        error: "Message is required"
+      });
+    }
 
-  if (
-    text.includes("muraho") ||
-    text.includes("hello") ||
-    text.includes("hi")
-  ) {
-    reply =
-      "Muraho! 👋 Ndi Nkwasibwe IRHCF. Nakora iki kugira ngo ngufashe?";
-  } else if (text.includes("witwa nde")) {
-    reply = "Nitwa Nkwasibwe IRHCF 🤖.";
-  } else if (text.includes("nkwasibwe")) {
-    reply = "Yego! Ndi hano. Mbwira task ushaka ko dukora.";
-  } else if (text.includes("app")) {
-    reply =
-      "Ndumva ushaka gukora application. 🚀 Mbwira icyo ushaka ko dukoraho.";
-  } else {
-    reply =
-      "Nabyakiriye. 🤖 Ubu ndacyari muri MVP, ariko backend yamaze gukora neza.";
+    const response = await openai.responses.create({
+      model: "gpt-5.6-mini",
+      input: [
+        {
+          role: "system",
+          content:
+            "Uri Nkwasibwe IRHCF, AI assistant uvuga neza Kinyarwanda kandi ugafasha umukoresha mu buryo busobanutse."
+        },
+        {
+          role: "user",
+          content: message
+        }
+      ]
+    });
+
+    res.json({
+      reply: response.output_text
+    });
+
+  } catch (error) {
+    console.error("OpenAI error:", error);
+
+    res.status(500).json({
+      error: "AI request failed"
+    });
   }
-
-  res.json({
-    success: true,
-    reply: reply
-  });
 });
 
 app.listen(PORT, "0.0.0.0", () => {
