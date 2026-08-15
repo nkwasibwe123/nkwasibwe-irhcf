@@ -1,4 +1,4 @@
-const userInput = document.getElementById("userInput");
+iconst userInput = document.getElementById("userInput");
 const sendButton = document.getElementById("sendButton");
 const messages = document.getElementById("messages");
 
@@ -58,12 +58,12 @@ async function sendMessage() {
     addMessage(data.reply, "ai");
 
   } catch (error) {
-    console.error(error);
+  console.error("CHAT ERROR:", error);
 
-    addMessage(
-      "Habaye ikibazo mu kuvugana na AI. Ongera ugerageze.",
-      "ai"
-    );
+  addMessage(
+    "AI yanze gusubiza. Error: " + error.message,
+    "ai"
+  );
   }
 
   sendButton.disabled = false;
