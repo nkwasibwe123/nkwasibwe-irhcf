@@ -52,6 +52,7 @@ app.post("/api/chat", async (req, res) => {
     });
 
     res.json({
+      success: true,
       reply: response.output_text
     });
 
@@ -59,6 +60,7 @@ app.post("/api/chat", async (req, res) => {
     console.error("OpenAI error:", error);
 
     res.status(500).json({
+      success: false,
       error: "AI request failed"
     });
   }
