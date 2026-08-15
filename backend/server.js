@@ -7,11 +7,11 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+const PORT = process.env.PORT || 3000;
+
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
-
-const PORT = process.env.PORT || 3000;
 
 app.get("/", (req, res) => {
   res.json({
@@ -28,18 +28,25 @@ app.get("/api/health", (req, res) => {
 
 app.post("/api/chat", async (req, res) => {
   try {
-    const { message } = req.body;
+    const message = req.body.message;
 
     if (!message) {
       return res.status(400).json({
+        success: false,
         error: "Message is required"
       });
     }
 
-    
+    const aiResponse = await openai.responses.create({
+      model: "gpt-5.6",
+      instructions:
+        "Uri Nkwasibwe IRHCF, AI assistant uvuga neza Kinyarwanda. Subiza mu buryo busobanutse, bugufi kandi bufasha umukoresha.",
+      input: message
+    });
+
     res.json({
       success: true,
-      reply: response.output_text
+      reply: aiResponse.output_text
     });
 
   } catch (error) {
@@ -47,23 +54,9 @@ app.post("/api/chat", async (req, res) => {
 
     res.status(500).json({
       success: false,
-      error: "AI request failed"
+      error: error.message || "AI request failed"
     });
   }
-const response = await openai.responses.create({
-      model: "gpt-5.6",
-      input: [
-        {
-          role: "system",
-          content:
-            "Uri Nkwasibwe IRHCF, AI assistant uvuga neza Kinyarwanda kandi ugafasha umukoresha mu buryo busobanutse."
-        },
-        {
-          role: "user",
-          content: message
-        }
-      ]
-    });
 });
 
 app.listen(PORT, "0.0.0.0", () => {
