@@ -36,21 +36,7 @@ app.post("/api/chat", async (req, res) => {
       });
     }
 
-    const response = await openai.responses.create({
-      model: "gpt-5.6",
-      input: [
-        {
-          role: "system",
-          content:
-            "Uri Nkwasibwe IRHCF, AI assistant uvuga neza Kinyarwanda kandi ugafasha umukoresha mu buryo busobanutse."
-        },
-        {
-          role: "user",
-          content: message
-        }
-      ]
-    });
-
+    
     res.json({
       success: true,
       reply: response.output_text
@@ -64,6 +50,20 @@ app.post("/api/chat", async (req, res) => {
       error: "AI request failed"
     });
   }
+const response = await openai.responses.create({
+      model: "gpt-5.6",
+      input: [
+        {
+          role: "system",
+          content:
+            "Uri Nkwasibwe IRHCF, AI assistant uvuga neza Kinyarwanda kandi ugafasha umukoresha mu buryo busobanutse."
+        },
+        {
+          role: "user",
+          content: message
+        }
+      ]
+    });
 });
 
 app.listen(PORT, "0.0.0.0", () => {
