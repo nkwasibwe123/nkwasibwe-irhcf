@@ -51,6 +51,8 @@ async function sendMessage() {
 
     const data = await response.json();
 
+    console.log("BACKEND RESPONSE:", data);
+
     if (!response.ok) {
       throw new Error(data.error || "Backend error");
     }
@@ -58,18 +60,17 @@ async function sendMessage() {
     addMessage(data.reply, "ai");
 
   } catch (error) {
-  console.error("CHAT ERROR:", error);
+    console.error("CHAT ERROR:", error);
 
-  addMessage(
-    "AI yanze gusubiza. Error: " + error.message,
-    "ai"
-  );
+    addMessage(
+      "AI yanze gusubiza: " + error.message,
+      "ai"
+    );
   }
 
   sendButton.disabled = false;
   userInput.focus();
 }
-
 sendButton.addEventListener("click", sendMessage);
 
 userInput.addEventListener("keydown", function(event) {
