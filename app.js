@@ -1,6 +1,19 @@
-iconst userInput = document.getElementById("userInput");
+const userInput = document.getElementById("userInput");
 const sendButton = document.getElementById("sendButton");
 const messages = document.getElementById("messages");
+
+// Create one session ID for this conversation
+let sessionId = localStorage.getItem("nkwasibwe_session_id");
+
+if (!sessionId) {
+  sessionId =
+    "session-" +
+    Date.now() +
+    "-" +
+    Math.random().toString(36).substring(2, 10);
+
+  localStorage.setItem("nkwasibwe_session_id", sessionId);
+}
 
 function addMessage(text, type) {
   const message = document.createElement("div");
@@ -44,14 +57,13 @@ async function sendMessage() {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          message: text
+          message: text,
+          sessionId: sessionId
         })
       }
     );
 
     const data = await response.json();
-
-    console.log("BACKEND RESPONSE:", data);
 
     if (!response.ok) {
       throw new Error(data.error || "Backend error");
@@ -60,10 +72,10 @@ async function sendMessage() {
     addMessage(data.reply, "ai");
 
   } catch (error) {
-    console.error("CHAT ERROR:", error);
+    console.error(error);
 
     addMessage(
-      "AI yanze gusubiza: " + error.message,
+      "Habaye ikibazo mu kuvugana na AI. Ongera ugerageze.",
       "ai"
     );
   }
@@ -71,6 +83,7 @@ async function sendMessage() {
   sendButton.disabled = false;
   userInput.focus();
 }
+
 sendButton.addEventListener("click", sendMessage);
 
 userInput.addEventListener("keydown", function(event) {
