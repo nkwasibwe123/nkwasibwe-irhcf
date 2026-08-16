@@ -13,6 +13,9 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
+// Temporary conversation memory
+const conversations = {};
+
 app.get("/", (req, res) => {
   res.json({
     status: "success",
@@ -28,7 +31,7 @@ app.get("/api/health", (req, res) => {
 
 app.post("/api/chat", async (req, res) => {
   try {
-    const message = req.body.message;
+    const { message, sessionId = "default" } = req.body;
 
     if (!message) {
       return res.status(400).json({
@@ -37,16 +40,46 @@ app.post("/api/chat", async (req, res) => {
       });
     }
 
+    // Create memory for new session
+    if (!conversations[sessionId]) {
+      conversations[sessionId] = [];
+    }
+
+    // Add user's message to memory
+    conversations[sessionId].push({
+      role: "user",
+      content: message
+    });
+
+    // Keep the last 20 messages
+    if (conversations[sessionId].length > 20) {
+      conversations[sessionId] =
+        conversations[sessionId].slice(-20);
+    }
+
     const aiResponse = await openai.responses.create({
       model: "gpt-5.6",
+
       instructions:
-        "Uri Nkwasibwe IRHCF, AI assistant uvuga neza Kinyarwanda. Subiza mu buryo busobanutse, bugufi kandi bufasha umukoresha.",
-      input: message
+        "Uri Nkwasibwe IRHCF, AI assistant uvuga neza Kinyarwanda. " +
+        "Fasha umukoresha mu buryo busobanutse, bufatika kandi bwubaha. " +
+        "Koresha context y'ibiganiro byabanje kugira ngo utange igisubizo gihuye n'ikiganiro.",
+
+      input: conversations[sessionId]
+    });
+
+    const reply = aiResponse.output_text;
+
+    // Save AI response to memory
+    conversations[sessionId].push({
+      role: "assistant",
+      content: reply
     });
 
     res.json({
       success: true,
-      reply: aiResponse.output_text
+      reply: reply,
+      sessionId: sessionId
     });
 
   } catch (error) {
