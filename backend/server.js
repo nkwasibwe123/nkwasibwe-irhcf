@@ -11,58 +11,21 @@ const createSchema = require("./db/schema");
 
 const app = express();
 
-// ============================================================
-// BASIC CONFIGURATION
-// ============================================================
-
 app.use(cors());
 app.use(express.json({ limit: "10mb" }));
 
 const PORT = config.port;
 const JWT_SECRET = config.jwtSecret;
 
-if (!config.openaiApiKey) {
-  console.warn("WARNING: OPENAI_API_KEY is not configured.");
-}
-
-if (!JWT_SECRET) {
-  console.warn("WARNING: JWT_SECRET is not configured.");
-}
-
-const openai = new OpenAI({
-  apiKey: config.openaiApiKey
-});
-
-// ============================================================
-// STARTUP / DATABASE
-// ============================================================
-
-async function initializeDatabase() {
-  try {
-    const client = await pool.connect();
-
-    console.log("PostgreSQL connected successfully!");
-
-    client.release();
-
-    await createSchema();
-
-    console.log("Database initialization complete!");
-  } catch (error) {
-    console.error("Database initialization error:", error);
-  }
-}
+const openai = config.openaiApiKey
+  ? new OpenAI({ apiKey: config.openaiApiKey })
+  : null;
 
 // ============================================================
 // LOGGING
 // ============================================================
 
-async function systemLog(
-  level,
-  component,
-  message,
-  metadata = {}
-) {
+async function systemLog(level, component, message, metadata = {}) {
   try {
     await pool.query(
       `INSERT INTO system_logs
@@ -76,7 +39,7 @@ async function systemLog(
       ]
     );
   } catch (error) {
-    console.error("Logging error:", error);
+    console.error("Logging error:", error.message);
   }
 }
 
@@ -104,10 +67,7 @@ function createToken(user) {
 function authenticateToken(req, res, next) {
   const authHeader = req.headers.authorization;
 
-  if (
-    !authHeader ||
-    !authHeader.startsWith("Bearer ")
-  ) {
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
     return res.status(401).json({
       success: false,
       error: "Authentication required"
@@ -117,10 +77,7 @@ function authenticateToken(req, res, next) {
   const token = authHeader.substring(7);
 
   try {
-    const user = jwt.verify(token, JWT_SECRET);
-
-    req.user = user;
-
+    req.user = jwt.verify(token, JWT_SECRET);
     next();
   } catch (error) {
     return res.status(401).json({
@@ -134,9 +91,9 @@ function authenticateToken(req, res, next) {
 // HOME
 // ============================================================
 
-app.get("/", async (req, res) => {
+app.get("/", (req, res) => {
   res.json({
-    status: "success",
+    success: true,
     name: "Nkwasibwe IRHCF",
     message: "Nkwasibwe IRHCF AI backend is running!",
     version: "1.0.0"
@@ -144,7 +101,7 @@ app.get("/", async (req, res) => {
 });
 
 // ============================================================
-// HEALTH CHECK
+// HEALTH
 // ============================================================
 
 app.get("/api/health", async (req, res) => {
@@ -152,17 +109,15 @@ app.get("/api/health", async (req, res) => {
     await pool.query("SELECT 1");
 
     res.json({
+      success: true,
       status: "ok",
       database: "connected",
-      ai: config.openaiApiKey
-        ? "configured"
-        : "not_configured",
+      ai: openai ? "configured" : "not_configured",
       environment: config.environment
     });
   } catch (error) {
-    console.error("Health check error:", error);
-
     res.status(500).json({
+      success: false,
       status: "error",
       database: "disconnected"
     });
@@ -175,84 +130,59 @@ app.get("/api/health", async (req, res) => {
 
 app.post("/api/register", async (req, res) => {
   try {
-    const {
-      name,
-      email,
-      password
-    } = req.body;
+    const { name, email, password } = req.body;
 
     if (!name || !email || !password) {
       return res.status(400).json({
         success: false,
-        error:
-          "Name, email and password are required"
+        error: "Name, email and password are required"
       });
     }
 
     if (password.length < 6) {
       return res.status(400).json({
         success: false,
-        error:
-          "Password must be at least 6 characters"
+        error: "Password must be at least 6 characters"
       });
     }
 
     const cleanName = name.trim();
-    const normalizedEmail =
-      email.trim().toLowerCase();
+    const cleanEmail = email.trim().toLowerCase();
 
-    if (!cleanName) {
-      return res.status(400).json({
-        success: false,
-        error: "Name is required"
-      });
-    }
-
-    const existingUser = await pool.query(
-      `SELECT id
-       FROM users
-       WHERE email = $1`,
-      [normalizedEmail]
+    const existing = await pool.query(
+      `SELECT id FROM users WHERE email = $1`,
+      [cleanEmail]
     );
 
-    if (existingUser.rows.length > 0) {
+    if (existing.rows.length > 0) {
       return res.status(409).json({
         success: false,
         error: "Email is already registered"
       });
     }
 
-    const passwordHash =
-      await bcrypt.hash(password, 12);
+    const passwordHash = await bcrypt.hash(password, 12);
 
     const result = await pool.query(
       `INSERT INTO users
        (name, email, password_hash)
        VALUES ($1, $2, $3)
-       RETURNING
-       id,
-       name,
-       email,
-       created_at,
-       updated_at`,
+       RETURNING id, name, email, created_at, updated_at`,
       [
         cleanName,
-        normalizedEmail,
+        cleanEmail,
         passwordHash
       ]
     );
 
     const user = result.rows[0];
-
     const token = createToken(user);
 
     await systemLog(
       "info",
       "authentication",
       "New user registered",
-      {
-        userId: user.id
-      }
+      { userId: user.id }
     );
 
     res.status(201).json({
@@ -261,18 +191,8 @@ app.post("/api/register", async (req, res) => {
       token,
       user
     });
-
   } catch (error) {
     console.error("Register error:", error);
-
-    await systemLog(
-      "error",
-      "authentication",
-      "Registration failed",
-      {
-        error: error.message
-      }
-    );
 
     res.status(500).json({
       success: false,
@@ -287,56 +207,48 @@ app.post("/api/register", async (req, res) => {
 
 app.post("/api/login", async (req, res) => {
   try {
-    const {
-      email,
-      password
-    } = req.body;
+    const { email, password } = req.body;
 
     if (!email || !password) {
       return res.status(400).json({
         success: false,
-        error:
-          "Email and password are required"
+        error: "Email and password are required"
       });
     }
 
-    const normalizedEmail =
-      email.trim().toLowerCase();
+    const cleanEmail = email.trim().toLowerCase();
 
     const result = await pool.query(
       `SELECT
-       id,
-       name,
-       email,
-       password_hash,
-       created_at,
-       updated_at
+         id,
+         name,
+         email,
+         password_hash,
+         created_at,
+         updated_at
        FROM users
        WHERE email = $1`,
-      [normalizedEmail]
+      [cleanEmail]
     );
 
     if (result.rows.length === 0) {
       return res.status(401).json({
         success: false,
-        error:
-          "Invalid email or password"
+        error: "Invalid email or password"
       });
     }
 
     const user = result.rows[0];
 
-    const passwordMatches =
-      await bcrypt.compare(
-        password,
-        user.password_hash
-      );
+    const valid = await bcrypt.compare(
+      password,
+      user.password_hash
+    );
 
-    if (!passwordMatches) {
+    if (!valid) {
       return res.status(401).json({
         success: false,
-        error:
-          "Invalid email or password"
+        error: "Invalid email or password"
       });
     }
 
@@ -344,22 +256,12 @@ app.post("/api/login", async (req, res) => {
 
     const token = createToken(user);
 
-    await systemLog(
-      "info",
-      "authentication",
-      "User logged in",
-      {
-        userId: user.id
-      }
-    );
-
     res.json({
       success: true,
       message: "Login successful",
       token,
       user
     });
-
   } catch (error) {
     console.error("Login error:", error);
 
@@ -374,45 +276,38 @@ app.post("/api/login", async (req, res) => {
 // CURRENT USER
 // ============================================================
 
-app.get(
-  "/api/me",
-  authenticateToken,
-  async (req, res) => {
-    try {
-      const result = await pool.query(
-        `SELECT
+app.get("/api/me", authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT
          id,
          name,
          email,
          created_at,
          updated_at
-         FROM users
-         WHERE id = $1`,
-        [req.user.id]
-      );
+       FROM users
+       WHERE id = $1`,
+      [req.user.id]
+    );
 
-      if (result.rows.length === 0) {
-        return res.status(404).json({
-          success: false,
-          error: "User not found"
-        });
-      }
-
-      res.json({
-        success: true,
-        user: result.rows[0]
-      });
-
-    } catch (error) {
-      console.error("Me error:", error);
-
-      res.status(500).json({
+    if (result.rows.length === 0) {
+      return res.status(404).json({
         success: false,
-        error: "Could not get user"
+        error: "User not found"
       });
     }
+
+    res.json({
+      success: true,
+      user: result.rows[0]
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: "Could not get user"
+    });
   }
-);
+});
 
 // ============================================================
 // CREATE CONVERSATION
@@ -423,24 +318,17 @@ app.post(
   authenticateToken,
   async (req, res) => {
     try {
-      const {
-        title = "New conversation"
-      } = req.body;
+      const title =
+        req.body.title?.trim() ||
+        "New conversation";
 
-      const sessionId =
-        crypto.randomUUID();
+      const sessionId = crypto.randomUUID();
 
       const result = await pool.query(
         `INSERT INTO conversations
          (user_id, session_id, title)
          VALUES ($1, $2, $3)
-         RETURNING
-         id,
-         user_id,
-         session_id,
-         title,
-         created_at,
-         updated_at`,
+         RETURNING *`,
         [
           req.user.id,
           sessionId,
@@ -452,17 +340,12 @@ app.post(
         success: true,
         conversation: result.rows[0]
       });
-
     } catch (error) {
-      console.error(
-        "Create conversation error:",
-        error
-      );
+      console.error("Create conversation error:", error);
 
       res.status(500).json({
         success: false,
-        error:
-          "Could not create conversation"
+        error: "Could not create conversation"
       });
     }
   }
@@ -479,11 +362,11 @@ app.get(
     try {
       const result = await pool.query(
         `SELECT
-         id,
-         session_id,
-         title,
-         created_at,
-         updated_at
+           id,
+           session_id,
+           title,
+           created_at,
+           updated_at
          FROM conversations
          WHERE user_id = $1
          ORDER BY updated_at DESC`,
@@ -494,24 +377,17 @@ app.get(
         success: true,
         conversations: result.rows
       });
-
     } catch (error) {
-      console.error(
-        "Conversation history error:",
-        error
-      );
-
       res.status(500).json({
         success: false,
-        error:
-          "Could not load conversation history"
+        error: "Could not load conversation history"
       });
     }
   }
 );
 
 // ============================================================
-// GET ONE CONVERSATION
+// GET CONVERSATION
 // ============================================================
 
 app.get(
@@ -519,30 +395,20 @@ app.get(
   authenticateToken,
   async (req, res) => {
     try {
-      const {
-        sessionId
-      } = req.params;
+      const { sessionId } = req.params;
 
-      const conversationResult =
-        await pool.query(
-          `SELECT
-           id,
-           session_id,
-           title,
-           created_at,
-           updated_at
-           FROM conversations
-           WHERE user_id = $1
-           AND session_id = $2`,
-          [
-            req.user.id,
-            sessionId
-          ]
-        );
+      const conversationResult = await pool.query(
+        `SELECT *
+         FROM conversations
+         WHERE user_id = $1
+         AND session_id = $2`,
+        [
+          req.user.id,
+          sessionId
+        ]
+      );
 
-      if (
-        conversationResult.rows.length === 0
-      ) {
+      if (conversationResult.rows.length === 0) {
         return res.status(404).json({
           success: false,
           error: "Conversation not found"
@@ -552,35 +418,27 @@ app.get(
       const conversation =
         conversationResult.rows[0];
 
-      const messagesResult =
-        await pool.query(
-          `SELECT
+      const messagesResult = await pool.query(
+        `SELECT
            id,
            role,
            content,
            created_at
-           FROM messages
-           WHERE conversation_id = $1
-           ORDER BY created_at ASC`,
-          [conversation.id]
-        );
+         FROM messages
+         WHERE conversation_id = $1
+         ORDER BY created_at ASC`,
+        [conversation.id]
+      );
 
       res.json({
         success: true,
         conversation,
         messages: messagesResult.rows
       });
-
     } catch (error) {
-      console.error(
-        "Conversation error:",
-        error
-      );
-
       res.status(500).json({
         success: false,
-        error:
-          "Could not load conversation"
+        error: "Could not load conversation"
       });
     }
   }
@@ -595,10 +453,6 @@ app.delete(
   authenticateToken,
   async (req, res) => {
     try {
-      const {
-        sessionId
-      } = req.params;
-
       const result = await pool.query(
         `DELETE FROM conversations
          WHERE user_id = $1
@@ -606,7 +460,7 @@ app.delete(
          RETURNING id`,
         [
           req.user.id,
-          sessionId
+          req.params.sessionId
         ]
       );
 
@@ -621,24 +475,17 @@ app.delete(
         success: true,
         message: "Conversation deleted"
       });
-
     } catch (error) {
-      console.error(
-        "Delete conversation error:",
-        error
-      );
-
       res.status(500).json({
         success: false,
-        error:
-          "Could not delete conversation"
+        error: "Could not delete conversation"
       });
     }
   }
 );
 
 // ============================================================
-// SAVE MEMORY
+// PERSISTENT MEMORY
 // ============================================================
 
 app.post(
@@ -656,8 +503,7 @@ app.post(
       if (!key || !value) {
         return res.status(400).json({
           success: false,
-          error:
-            "Memory key and value are required"
+          error: "Memory key and value are required"
         });
       }
 
@@ -691,13 +537,7 @@ app.post(
         success: true,
         memory: result.rows[0]
       });
-
     } catch (error) {
-      console.error(
-        "Memory save error:",
-        error
-      );
-
       res.status(500).json({
         success: false,
         error: "Could not save memory"
@@ -705,10 +545,6 @@ app.post(
     }
   }
 );
-
-// ============================================================
-// GET MEMORY
-// ============================================================
 
 app.get(
   "/api/memory",
@@ -727,13 +563,7 @@ app.get(
         success: true,
         memories: result.rows
       });
-
     } catch (error) {
-      console.error(
-        "Memory load error:",
-        error
-      );
-
       res.status(500).json({
         success: false,
         error: "Could not load memory"
@@ -741,10 +571,6 @@ app.get(
     }
   }
 );
-
-// ============================================================
-// DELETE MEMORY
-// ============================================================
 
 app.delete(
   "/api/memory/:key",
@@ -773,13 +599,7 @@ app.delete(
         success: true,
         message: "Memory deleted"
       });
-
     } catch (error) {
-      console.error(
-        "Memory delete error:",
-        error
-      );
-
       res.status(500).json({
         success: false,
         error: "Could not delete memory"
@@ -789,7 +609,7 @@ app.delete(
 );
 
 // ============================================================
-// SAVE LONG-TERM MEMORY
+// LONG-TERM MEMORY
 // ============================================================
 
 app.post(
@@ -835,25 +655,14 @@ app.post(
         success: true,
         memory: result.rows[0]
       });
-
     } catch (error) {
-      console.error(
-        "Long-term memory error:",
-        error
-      );
-
       res.status(500).json({
         success: false,
-        error:
-          "Could not save long-term memory"
+        error: "Could not save long-term memory"
       });
     }
   }
 );
-
-// ============================================================
-// GET LONG-TERM MEMORY
-// ============================================================
 
 app.get(
   "/api/long-term-memory",
@@ -872,17 +681,10 @@ app.get(
         success: true,
         memories: result.rows
       });
-
     } catch (error) {
-      console.error(
-        "Long-term memory load error:",
-        error
-      );
-
       res.status(500).json({
         success: false,
-        error:
-          "Could not load long-term memory"
+        error: "Could not load long-term memory"
       });
     }
   }
@@ -899,15 +701,19 @@ app.post(
     const startedAt = Date.now();
 
     try {
+      if (!openai) {
+        return res.status(503).json({
+          success: false,
+          error: "OPENAI_API_KEY is not configured"
+        });
+      }
+
       const {
         message,
         sessionId
       } = req.body;
 
-      if (
-        !message ||
-        !message.trim()
-      ) {
+      if (!message || !message.trim()) {
         return res.status(400).json({
           success: false,
           error: "Message is required"
@@ -916,64 +722,195 @@ app.post(
 
       const userId = req.user.id;
 
-      // ------------------------------------------------------
-      // Find or create conversation
-      // ------------------------------------------------------
-
       let conversation;
 
       if (sessionId) {
-        const existing =
-          await pool.query(
-            `SELECT *
-             FROM conversations
-             WHERE user_id = $1
-             AND session_id = $2`,
-            [
-              userId,
-              sessionId
-            ]
-          );
+        const existing = await pool.query(
+          `SELECT *
+           FROM conversations
+           WHERE user_id = $1
+           AND session_id = $2`,
+          [
+            userId,
+            sessionId
+          ]
+        );
 
         if (existing.rows.length > 0) {
-          conversation =
-            existing.rows[0];
+          conversation = existing.rows[0];
         }
       }
 
       if (!conversation) {
         const newSessionId =
-          sessionId ||
-          crypto.randomUUID();
+          sessionId || crypto.randomUUID();
 
-        const created =
-          await pool.query(
-            `INSERT INTO conversations
-             (
-               user_id,
-               session_id,
-               title
-             )
-             VALUES ($1, $2, $3)
-             RETURNING *`,
-            [
-              userId,
-              newSessionId,
-              message
-                .trim()
-                .slice(0, 80)
-            ]
-          );
+        const created = await pool.query(
+          `INSERT INTO conversations
+           (
+             user_id,
+             session_id,
+             title
+           )
+           VALUES ($1, $2, $3)
+           RETURNING *`,
+          [
+            userId,
+            newSessionId,
+            message.trim().slice(0, 80)
+          ]
+        );
 
-        conversation =
-          created.rows[0];
+        conversation = created.rows[0];
       }
-
-      // ------------------------------------------------------
-      // Save user message
-      // ------------------------------------------------------
 
       await pool.query(
         `INSERT INTO messages
          (
-           conversation_i
+           conversation_id,
+           role,
+           content
+         )
+         VALUES ($1, $2, $3)`,
+        [
+          conversation.id,
+          "user",
+          message.trim()
+        ]
+      );
+
+      const messagesResult = await pool.query(
+        `SELECT role, content
+         FROM messages
+         WHERE conversation_id = $1
+         ORDER BY created_at ASC
+         LIMIT 30`,
+        [conversation.id]
+      );
+
+      const memoryResult = await pool.query(
+        `SELECT
+           memory_key,
+           memory_value,
+           memory_type,
+           importance
+         FROM user_memory
+         WHERE user_id = $1
+         ORDER BY importance DESC, updated_at DESC
+         LIMIT 30`,
+        [userId]
+      );
+
+      const longTermResult = await pool.query(
+        `SELECT
+           content,
+           memory_type,
+           importance
+         FROM long_term_memory
+         WHERE user_id = $1
+         ORDER BY importance DESC, updated_at DESC
+         LIMIT 20`,
+        [userId]
+      );
+
+      const memoryText =
+        memoryResult.rows.length > 0
+          ? memoryResult.rows
+              .map(
+                item =>
+                  `${item.memory_key}: ${item.memory_value}`
+              )
+              .join("\n")
+          : "No persistent user memory available.";
+
+      const longTermText =
+        longTermResult.rows.length > 0
+          ? longTermResult.rows
+              .map(
+                item =>
+                  `[${item.memory_type}] ${item.content}`
+              )
+              .join("\n")
+          : "No long-term memory available.";
+
+      const instructions = `
+Uri Nkwasibwe IRHCF, AI Agent Platform.
+
+Uvuga neza Kinyarwanda kandi ushobora gukoresha izindi ndimi
+iyo umukoresha azikoresheje.
+
+Intego:
+- Gusobanukirwa task y'umukoresha.
+- Gukoresha context y'ikiganiro.
+- Gukoresha persistent memory iyo ari ngombwa.
+- Gukoresha long-term memory iyo ari ngombwa.
+- Kudahimba amakuru utazi.
+- Gutanga ibisubizo bifatika kandi bisobanutse.
+- Gutekereza ku buryo bwo gukemura task mbere yo gusubiza.
+- Kubaha privacy n'umutekano.
+- Iyo hari ikintu udashobora gukora, kubivuga neza.
+
+PERSISTENT USER MEMORY:
+${memoryText}
+
+LONG-TERM MEMORY:
+${longTermText}
+`;
+
+      const input = messagesResult.rows.map(row => ({
+        role: row.role,
+        content: row.content
+      }));
+
+      const aiResponse =
+        await openai.responses.create({
+          model: "gpt-5.6",
+          instructions,
+          input
+        });
+
+      const reply =
+        aiResponse.output_text ||
+        "Ntabwo nabashije kubona igisubizo.";
+
+      await pool.query(
+        `INSERT INTO messages
+         (
+           conversation_id,
+           role,
+           content
+         )
+         VALUES ($1, $2, $3)`,
+        [
+          conversation.id,
+          "assistant",
+          reply
+        ]
+      );
+
+      await pool.query(
+        `UPDATE conversations
+         SET updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1`,
+        [conversation.id]
+      );
+
+      await systemLog(
+        "info",
+        "chat",
+        "Chat completed",
+        {
+          userId,
+          conversationId: conversation.id,
+          durationMs: Date.now() - startedAt
+        }
+      );
+
+      res.json({
+        success: true,
+        reply,
+        sessionId: conversation.session_id,
+        conversationId: conversation.id
+      });
+    } catch (error) {
+      console.error("Chat error:"
