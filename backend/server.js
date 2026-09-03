@@ -2385,55 +2385,38 @@ ${knowledgeText}
         Date.now() - startedAt;
 
       const agentRunResult =
-        await pool.query(
-          `INSERT INTO agent_runs
-           (
-             user_id,
-             conversation_id,
-             goal,
-             status,
-             result,
-             metadata,
-             completed_at
-           )
-           VALUES
-           (
-             $1,
-             $2,
-             $3,
-             'completed',
-             $4,
-             $5::jsonb,
-             CURRENT_TIMESTAMP
-           )
-           RETURNING *`,
-          [
-            req.user.id,
-            conversation.id,
-            message,
-            assistantMessage,
-            JSON.stringify({
-              source: "chat",
-              durationMs
-            })
-          ]
-        );
-
-      // ======================================================
-      // LOG
-      // ======================================================
-
-      await systemLog(
-        "info",
-        "chat",
-        "AI response generated",
-        {
-          userId: req.user.id,
-          conversationId:
-            conversation.id,
-          durationMs
-        }
-      );
+  await pool.query(
+    `INSERT INTO agent_runs
+     (
+       user_id,
+       goal,
+       status,
+       result,
+       metadata,
+       completed_at
+     )
+     VALUES
+     (
+       $1,
+       $2,
+       'completed',
+       $3,
+       $4::jsonb,
+       CURRENT_TIMESTAMP
+     )
+     RETURNING *`,
+    [
+      req.user.id,
+      message,
+      assistantMessage,
+      JSON.stringify({
+        source: "chat",
+        conversationId:
+          conversation.id,
+        durationMs
+      })
+    ]
+  );
 
       // ======================================================
       // RESPONSE
