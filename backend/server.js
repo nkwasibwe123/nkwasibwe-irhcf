@@ -2018,7 +2018,7 @@ app.get(
   }
 );
 
-// ============================================================
+     // ============================================================
 // CHAT
 // ============================================================
 
@@ -2026,8 +2026,7 @@ app.post(
   "/api/chat",
   authenticateToken,
   async (req, res) => {
-    const startedAt =
-      Date.now();
+    const startedAt = Date.now();
 
     try {
       if (!openai) {
@@ -2038,16 +2037,13 @@ app.post(
         });
       }
 
-      const message =
-        normalizeText(
-          req.body
-     ?.message
-        );
+      const message = normalizeText(
+        req.body?.message
+      );
 
-      const sessionId =
-        normalizeText(
-          req.body?.sessionId
-        );
+      const sessionId = normalizeText(
+        req.body?.sessionId
+      );
 
       if (!message) {
         return res.status(400).json({
@@ -2057,7 +2053,7 @@ app.post(
         });
       }
 
-      let conversation = null;
+      let conversation;
 
       // ======================================================
       // FIND OR CREATE CONVERSATION
@@ -2077,8 +2073,7 @@ app.post(
           );
 
         if (
-          conversationResult.rows.length ===
-          0
+          conversationResult.rows.length === 0
         ) {
           return res.status(404).json({
             success: false,
@@ -2095,10 +2090,7 @@ app.post(
 
         const title =
           message.length > 80
-            ? `${message.slice(
-                0,
-                77
-              )}...`
+            ? `${message.slice(0, 77)}...`
             : message;
 
         const conversationResult =
@@ -2144,7 +2136,7 @@ app.post(
       );
 
       // ======================================================
-      // LOAD CONVERSATION HISTORY
+      // LOAD RECENT CONVERSATION HISTORY
       // ======================================================
 
       const historyResult =
@@ -2152,10 +2144,22 @@ app.post(
           `SELECT
              role,
              content
-           FROM messages
-           WHERE conversation_id = $1
-           ORDER BY created_at ASC
-           LIMIT 30`,
+           FROM (
+             SELECT
+               id,
+               role,
+               content,
+               created_at
+             FROM messages
+             WHERE conversation_id = $1
+             ORDER BY
+               created_at DESC,
+               id DESC
+             LIMIT 30
+           ) AS recent_messages
+           ORDER BY
+             created_at ASC,
+             id ASC`,
           [conversation.id]
         );
 
@@ -2250,8 +2254,7 @@ app.post(
               .map(
                 item =>
                   `Title: ${
-                    item.title ||
-                    "Untitled"
+                    item.title || "Untitled"
                   }\nContent: ${
                     item.content
                   }`
@@ -2260,7 +2263,7 @@ app.post(
           : "No additional knowledge available.";
 
       // ======================================================
-      // SYSTEM INSTRUCTIONS
+      // SYSTEM PROMPT
       // ======================================================
 
       const systemPrompt = `
@@ -2269,7 +2272,7 @@ You are Nkwasibwe IRHCF, an AI Agent Platform.
 Your purpose is not to behave as only a simple chatbot.
 
 Your goal is to help users understand problems, plan tasks,
-execute tasks when tools and capabilities are available,
+execute tasks when tools and capabilities are actually available,
 check results, identify errors, and provide useful final answers.
 
 Core workflow:
@@ -2281,13 +2284,15 @@ Important rules:
 1. Be helpful, accurate and honest.
 2. Do not claim that you performed an action when you did not.
 3. If you cannot access a required capability, explain what is missing.
-4. Use the user's stored memory only when relevant.
+4. Use stored memory only when relevant.
 5. Respect user privacy and security.
-6. Do not expose secrets, passwords, API keys or authentication tokens.
-7. When a task is complex, break it into clear steps.
+6. Never expose secrets, passwords, API keys or authentication tokens.
+7. Break complex tasks into clear steps.
 8. Clearly distinguish between planning and completed execution.
 9. Prefer practical solutions.
-10. Never pretend that external actions were completed without actual confirmation.
+10. Never pretend external actions were completed without confirmation.
+11. Do not invent tool results.
+12. Explain limitations clearly.
 
 USER PERSISTENT MEMORY:
 
@@ -2366,9 +2371,8 @@ ${knowledgeText}
 
       await pool.query(
         `UPDATE conversations
-         SET
-           updated_at =
-             CURRENT_TIMESTAMP
+         SET updated_at =
+           CURRENT_TIMESTAMP
          WHERE id = $1`,
         [conversation.id]
       );
@@ -2377,11 +2381,15 @@ ${knowledgeText}
       // CREATE AGENT RUN RECORD
       // ======================================================
 
+      const durationMs =
+        Date.now() - startedAt;
+
       const agentRunResult =
         await pool.query(
           `INSERT INTO agent_runs
            (
              user_id,
+             conversation_id,
              goal,
              status,
              result,
@@ -2392,23 +2400,21 @@ ${knowledgeText}
            (
              $1,
              $2,
-             'completed',
              $3,
-             $4::jsonb,
+             'completed',
+             $4,
+             $5::jsonb,
              CURRENT_TIMESTAMP
            )
            RETURNING *`,
           [
             req.user.id,
+            conversation.id,
             message,
             assistantMessage,
             JSON.stringify({
               source: "chat",
-              conversationId:
-                conversation.id,
-              durationMs:
-                Date.now() -
-                startedAt
+              durationMs
             })
           ]
         );
@@ -2422,13 +2428,10 @@ ${knowledgeText}
         "chat",
         "AI response generated",
         {
-          userId:
-            req.user.id,
+          userId: req.user.id,
           conversationId:
             conversation.id,
-          durationMs:
-            Date.now() -
-            startedAt
+          durationMs
         }
       );
 
@@ -2439,8 +2442,7 @@ ${knowledgeText}
       res.json({
         success: true,
         conversation: {
-          id:
-            conversation.id,
+          id: conversation.id,
           session_id:
             conversation.session_id,
           title:
@@ -2452,10 +2454,9 @@ ${knowledgeText}
           assistantMessage,
         agentRun:
           agentRunResult.rows[0],
-        durationMs:
-          Date.now() -
-          startedAt
+        durationMs
       });
+
     } catch (error) {
       console.error(
         "Chat error:",
@@ -2479,141 +2480,5 @@ ${knowledgeText}
       });
     }
   }
-);
-
-// ============================================================
-// ERROR HANDLER
-// ============================================================
-
-app.use(
-  (error, req, res, next) => {
-    console.error(
-      "Unhandled application error:",
-      error
-    );
-
-    res.status(500).json({
-      success: false,
-      error:
-        "Internal server error"
-    });
-  }
-);
-
-// ============================================================
-// 404 HANDLER
-// ============================================================
-
-app.use(
-  (req, res) => {
-    res.status(404).json({
-      success: false,
-      error:
-        "Route not found"
-    });
-  }
-);
-
-// ============================================================
-// START SERVER
-// ============================================================
-
-async function startServer() {
-  try {
-    await initializeDatabase();
-
-    app.listen(
-      PORT,
-      "0.0.0.0",
-      () => {
-        console.log(
-          "================================"
-        );
-
-        console.log(
-          "Nkwasibwe IRHCF server is running"
-        );
-
-        console.log(
-          `Port: ${PORT}`
-        );
-
-        console.log(
-          `Environment: ${
-            config.environment
-          }`
-        );
-
-        console.log(
-          `AI: ${
-            openai
-              ? "Configured"
-              : "Not configured"
-          }`
-        );
-
-        console.log(
-          `Authentication: ${
-            JWT_SECRET
-              ? "Configured"
-              : "Not configured"
-          }`
-        );
-
-        console.log(
-          "================================"
-        );
-      }
-    );
-  } catch (error) {
-    console.error(
-      "Failed to start server:",
-      error
-    );
-
-    process.exit(1);
-  }
-}
-
-// ============================================================
-// GRACEFUL SHUTDOWN
-// ============================================================
-
-async function shutdown(signal) {
-  console.log(
-    `${signal} received. Shutting down...`
-  );
-
-  try {
-    await pool.end();
-
-    console.log(
-      "Database connection pool closed."
-    );
-
-    process.exit(0);
-  } catch (error) {
-    console.error(
-      "Shutdown error:",
-      error
-    );
-
-    process.exit(1);
-  }
-}
-
-process.on(
-  "SIGTERM",
-  () => shutdown("SIGTERM")
-);
-
-process.on(
-  "SIGINT",
-  () => shutdown("SIGINT")
-);
-
-// ============================================================
-// START APPLICATION
-// ============================================================
-
-startServer();
+);                
+              
