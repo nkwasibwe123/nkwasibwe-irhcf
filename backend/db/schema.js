@@ -1,6 +1,8 @@
 const pool = require("./pool");
 
 async function createSchema() {
+  console.log("Checking database schema...");
+
   // ============================================================
   // CREATE TABLES
   // ============================================================
@@ -17,8 +19,7 @@ async function createSchema() {
 
     CREATE TABLE IF NOT EXISTS conversations (
       id SERIAL PRIMARY KEY,
-      user_id INTEGER NOT NULL
-        REFERENCES users(id) ON DELETE CASCADE,
+      user_id INTEGER,
       session_id TEXT UNIQUE NOT NULL,
       title TEXT DEFAULT 'New conversation',
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -27,10 +28,8 @@ async function createSchema() {
 
     CREATE TABLE IF NOT EXISTS messages (
       id SERIAL PRIMARY KEY,
-      conversation_id INTEGER NOT NULL
-        REFERENCES conversations(id) ON DELETE CASCADE,
-      role TEXT NOT NULL
-        CHECK (role IN ('user', 'assistant', 'system', 'tool')),
+      conversation_id INTEGER,
+      role TEXT NOT NULL,
       content TEXT NOT NULL,
       metadata JSONB DEFAULT '{}'::jsonb,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -38,22 +37,19 @@ async function createSchema() {
 
     CREATE TABLE IF NOT EXISTS user_memory (
       id SERIAL PRIMARY KEY,
-      user_id INTEGER NOT NULL
-        REFERENCES users(id) ON DELETE CASCADE,
+      user_id INTEGER,
       memory_key TEXT NOT NULL,
       memory_value TEXT NOT NULL,
       memory_type TEXT DEFAULT 'general',
       importance INTEGER DEFAULT 1,
       metadata JSONB DEFAULT '{}'::jsonb,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(user_id, memory_key)
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE TABLE IF NOT EXISTS long_term_memory (
       id SERIAL PRIMARY KEY,
-      user_id INTEGER NOT NULL
-        REFERENCES users(id) ON DELETE CASCADE,
+      user_id INTEGER,
       content TEXT NOT NULL,
       memory_type TEXT DEFAULT 'general',
       importance INTEGER DEFAULT 1,
@@ -65,8 +61,7 @@ async function createSchema() {
 
     CREATE TABLE IF NOT EXISTS knowledge (
       id SERIAL PRIMARY KEY,
-      user_id INTEGER
-        REFERENCES users(id) ON DELETE CASCADE,
+      user_id INTEGER,
       title TEXT,
       content TEXT NOT NULL,
       source TEXT,
@@ -78,20 +73,9 @@ async function createSchema() {
 
     CREATE TABLE IF NOT EXISTS tasks (
       id SERIAL PRIMARY KEY,
-      user_id INTEGER NOT NULL
-        REFERENCES users(id) ON DELETE CASCADE,
+      user_id INTEGER,
       task TEXT NOT NULL,
-      status TEXT DEFAULT 'pending'
-        CHECK (
-          status IN (
-            'pending',
-            'planning',
-            'running',
-            'completed',
-            'failed',
-            'cancelled'
-          )
-        ),
+      status TEXT DEFAULT 'pending',
       priority INTEGER DEFAULT 1,
       result TEXT,
       error TEXT,
@@ -103,39 +87,23 @@ async function createSchema() {
 
     CREATE TABLE IF NOT EXISTS task_runs (
       id SERIAL PRIMARY KEY,
-      task_id INTEGER NOT NULL
-        REFERENCES tasks(id) ON DELETE CASCADE,
+      task_id INTEGER,
       run_number INTEGER NOT NULL,
       status TEXT DEFAULT 'started',
       input JSONB DEFAULT '{}'::jsonb,
       output JSONB DEFAULT '{}'::jsonb,
       error TEXT,
       started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      completed_at TIMESTAMP,
-      UNIQUE(task_id, run_number)
+      completed_at TIMESTAMP
     );
 
     CREATE TABLE IF NOT EXISTS agent_runs (
       id SERIAL PRIMARY KEY,
-      user_id INTEGER
-        REFERENCES users(id) ON DELETE SET NULL,
-      conversation_id INTEGER
-        REFERENCES conversations(id) ON DELETE SET NULL,
-      task_id INTEGER
-        REFERENCES tasks(id) ON DELETE SET NULL,
+      user_id INTEGER,
+      conversation_id INTEGER,
+      task_id INTEGER,
       goal TEXT NOT NULL,
-      status TEXT DEFAULT 'planning'
-        CHECK (
-          status IN (
-            'planning',
-            'executing',
-            'testing',
-            'repairing',
-            'verifying',
-            'completed',
-            'failed'
-          )
-        ),
+      status TEXT DEFAULT 'planning',
       plan JSONB DEFAULT '[]'::jsonb,
       result TEXT,
       error TEXT,
@@ -146,28 +114,17 @@ async function createSchema() {
 
     CREATE TABLE IF NOT EXISTS agent_steps (
       id SERIAL PRIMARY KEY,
-      agent_run_id INTEGER NOT NULL
-        REFERENCES agent_runs(id) ON DELETE CASCADE,
+      agent_run_id INTEGER,
       step_number INTEGER NOT NULL,
       phase TEXT NOT NULL,
       description TEXT,
-      status TEXT DEFAULT 'pending'
-        CHECK (
-          status IN (
-            'pending',
-            'running',
-            'completed',
-            'failed',
-            'skipped'
-          )
-        ),
+      status TEXT DEFAULT 'pending',
       input JSONB DEFAULT '{}'::jsonb,
       output JSONB DEFAULT '{}'::jsonb,
       error TEXT,
       started_at TIMESTAMP,
       completed_at TIMESTAMP,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(agent_run_id, step_number)
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE TABLE IF NOT EXISTS capabilities (
@@ -200,12 +157,9 @@ async function createSchema() {
 
     CREATE TABLE IF NOT EXISTS tool_runs (
       id SERIAL PRIMARY KEY,
-      tool_id INTEGER
-        REFERENCES tools(id) ON DELETE SET NULL,
-      agent_run_id INTEGER
-        REFERENCES agent_runs(id) ON DELETE SET NULL,
-      user_id INTEGER
-        REFERENCES users(id) ON DELETE SET NULL,
+      tool_id INTEGER,
+      agent_run_id INTEGER,
+      user_id INTEGER,
       status TEXT DEFAULT 'started',
       input JSONB DEFAULT '{}'::jsonb,
       output JSONB DEFAULT '{}'::jsonb,
@@ -216,19 +170,10 @@ async function createSchema() {
 
     CREATE TABLE IF NOT EXISTS capability_requests (
       id SERIAL PRIMARY KEY,
-      user_id INTEGER
-        REFERENCES users(id) ON DELETE SET NULL,
+      user_id INTEGER,
       requested_capability TEXT NOT NULL,
       description TEXT,
-      status TEXT DEFAULT 'discovered'
-        CHECK (
-          status IN (
-            'discovered',
-            'planned',
-            'implemented',
-            'rejected'
-          )
-        ),
+      status TEXT DEFAULT 'discovered',
       priority INTEGER DEFAULT 1,
       metadata JSONB DEFAULT '{}'::jsonb,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -258,6 +203,296 @@ async function createSchema() {
       metadata JSONB DEFAULT '{}'::jsonb,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
+  `);
+
+  // ============================================================
+  // SAFE MIGRATIONS
+  // Add columns that may be missing from older tables
+  // ============================================================
+
+  await pool.query(`
+    ALTER TABLE conversations
+      ADD COLUMN IF NOT EXISTS user_id INTEGER;
+
+    ALTER TABLE conversations
+      ADD COLUMN IF NOT EXISTS session_id TEXT;
+
+    ALTER TABLE conversations
+      ADD COLUMN IF NOT EXISTS title TEXT DEFAULT 'New conversation';
+
+    ALTER TABLE conversations
+      ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+
+    ALTER TABLE conversations
+      ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+
+
+    ALTER TABLE messages
+      ADD COLUMN IF NOT EXISTS conversation_id INTEGER;
+
+    ALTER TABLE messages
+      ADD COLUMN IF NOT EXISTS role TEXT;
+
+    ALTER TABLE messages
+      ADD COLUMN IF NOT EXISTS content TEXT;
+
+    ALTER TABLE messages
+      ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
+
+    ALTER TABLE messages
+      ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+
+
+    ALTER TABLE user_memory
+      ADD COLUMN IF NOT EXISTS user_id INTEGER;
+
+    ALTER TABLE user_memory
+      ADD COLUMN IF NOT EXISTS memory_key TEXT;
+
+    ALTER TABLE user_memory
+      ADD COLUMN IF NOT EXISTS memory_value TEXT;
+
+    ALTER TABLE user_memory
+      ADD COLUMN IF NOT EXISTS memory_type TEXT DEFAULT 'general';
+
+    ALTER TABLE user_memory
+      ADD COLUMN IF NOT EXISTS importance INTEGER DEFAULT 1;
+
+    ALTER TABLE user_memory
+      ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
+
+    ALTER TABLE user_memory
+      ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+
+    ALTER TABLE user_memory
+      ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+
+
+    ALTER TABLE long_term_memory
+      ADD COLUMN IF NOT EXISTS user_id INTEGER;
+
+    ALTER TABLE long_term_memory
+      ADD COLUMN IF NOT EXISTS content TEXT;
+
+    ALTER TABLE long_term_memory
+      ADD COLUMN IF NOT EXISTS memory_type TEXT DEFAULT 'general';
+
+    ALTER TABLE long_term_memory
+      ADD COLUMN IF NOT EXISTS importance INTEGER DEFAULT 1;
+
+    ALTER TABLE long_term_memory
+      ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'user';
+
+    ALTER TABLE long_term_memory
+      ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
+
+    ALTER TABLE long_term_memory
+      ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+
+    ALTER TABLE long_term_memory
+      ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+
+
+    ALTER TABLE knowledge
+      ADD COLUMN IF NOT EXISTS user_id INTEGER;
+
+    ALTER TABLE knowledge
+      ADD COLUMN IF NOT EXISTS title TEXT;
+
+    ALTER TABLE knowledge
+      ADD COLUMN IF NOT EXISTS content TEXT;
+
+    ALTER TABLE knowledge
+      ADD COLUMN IF NOT EXISTS source TEXT;
+
+    ALTER TABLE knowledge
+      ADD COLUMN IF NOT EXISTS source_type TEXT DEFAULT 'text';
+
+    ALTER TABLE knowledge
+      ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
+
+    ALTER TABLE knowledge
+      ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+
+    ALTER TABLE knowledge
+      ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+
+
+    ALTER TABLE tasks
+      ADD COLUMN IF NOT EXISTS user_id INTEGER;
+
+    ALTER TABLE tasks
+      ADD COLUMN IF NOT EXISTS task TEXT;
+
+    ALTER TABLE tasks
+      ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'pending';
+
+    ALTER TABLE tasks
+      ADD COLUMN IF NOT EXISTS priority INTEGER DEFAULT 1;
+
+    ALTER TABLE tasks
+      ADD COLUMN IF NOT EXISTS result TEXT;
+
+    ALTER TABLE tasks
+      ADD COLUMN IF NOT EXISTS error TEXT;
+
+    ALTER TABLE tasks
+      ADD COLUMN IF NOT EXISTS attempts INTEGER DEFAULT 0;
+
+    ALTER TABLE tasks
+      ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
+
+    ALTER TABLE tasks
+      ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+
+    ALTER TABLE tasks
+      ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+
+
+    ALTER TABLE task_runs
+      ADD COLUMN IF NOT EXISTS task_id INTEGER;
+
+    ALTER TABLE task_runs
+      ADD COLUMN IF NOT EXISTS run_number INTEGER;
+
+    ALTER TABLE task_runs
+      ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'started';
+
+    ALTER TABLE task_runs
+      ADD COLUMN IF NOT EXISTS input JSONB DEFAULT '{}'::jsonb;
+
+    ALTER TABLE task_runs
+      ADD COLUMN IF NOT EXISTS output JSONB DEFAULT '{}'::jsonb;
+
+    ALTER TABLE task_runs
+      ADD COLUMN IF NOT EXISTS error TEXT;
+
+    ALTER TABLE task_runs
+      ADD COLUMN IF NOT EXISTS started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+
+    ALTER TABLE task_runs
+      ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP;
+
+
+    ALTER TABLE agent_runs
+      ADD COLUMN IF NOT EXISTS user_id INTEGER;
+
+    ALTER TABLE agent_runs
+      ADD COLUMN IF NOT EXISTS conversation_id INTEGER;
+
+    ALTER TABLE agent_runs
+      ADD COLUMN IF NOT EXISTS task_id INTEGER;
+
+    ALTER TABLE agent_runs
+      ADD COLUMN IF NOT EXISTS goal TEXT;
+
+    ALTER TABLE agent_runs
+      ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'planning';
+
+    ALTER TABLE agent_runs
+      ADD COLUMN IF NOT EXISTS plan JSONB DEFAULT '[]'::jsonb;
+
+    ALTER TABLE agent_runs
+      ADD COLUMN IF NOT EXISTS result TEXT;
+
+    ALTER TABLE agent_runs
+      ADD COLUMN IF NOT EXISTS error TEXT;
+
+    ALTER TABLE agent_runs
+      ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
+
+    ALTER TABLE agent_runs
+      ADD COLUMN IF NOT EXISTS started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+
+    ALTER TABLE agent_runs
+      ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP;
+
+
+    ALTER TABLE agent_steps
+      ADD COLUMN IF NOT EXISTS agent_run_id INTEGER;
+
+    ALTER TABLE agent_steps
+      ADD COLUMN IF NOT EXISTS step_number INTEGER;
+
+    ALTER TABLE agent_steps
+      ADD COLUMN IF NOT EXISTS phase TEXT;
+
+    ALTER TABLE agent_steps
+      ADD COLUMN IF NOT EXISTS description TEXT;
+
+    ALTER TABLE agent_steps
+      ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'pending';
+
+    ALTER TABLE agent_steps
+      ADD COLUMN IF NOT EXISTS input JSONB DEFAULT '{}'::jsonb;
+
+    ALTER TABLE agent_steps
+      ADD COLUMN IF NOT EXISTS output JSONB DEFAULT '{}'::jsonb;
+
+    ALTER TABLE agent_steps
+      ADD COLUMN IF NOT EXISTS error TEXT;
+
+    ALTER TABLE agent_steps
+      ADD COLUMN IF NOT EXISTS started_at TIMESTAMP;
+
+    ALTER TABLE agent_steps
+      ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP;
+
+    ALTER TABLE agent_steps
+      ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+
+
+    ALTER TABLE tool_runs
+      ADD COLUMN IF NOT EXISTS tool_id INTEGER;
+
+    ALTER TABLE tool_runs
+      ADD COLUMN IF NOT EXISTS agent_run_id INTEGER;
+
+    ALTER TABLE tool_runs
+      ADD COLUMN IF NOT EXISTS user_id INTEGER;
+
+    ALTER TABLE tool_runs
+      ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'started';
+
+    ALTER TABLE tool_runs
+      ADD COLUMN IF NOT EXISTS input JSONB DEFAULT '{}'::jsonb;
+
+    ALTER TABLE tool_runs
+      ADD COLUMN IF NOT EXISTS output JSONB DEFAULT '{}'::jsonb;
+
+    ALTER TABLE tool_runs
+      ADD COLUMN IF NOT EXISTS error TEXT;
+
+    ALTER TABLE tool_runs
+      ADD COLUMN IF NOT EXISTS started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+
+    ALTER TABLE tool_runs
+      ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP;
+
+
+    ALTER TABLE capability_requests
+      ADD COLUMN IF NOT EXISTS user_id INTEGER;
+
+    ALTER TABLE capability_requests
+      ADD COLUMN IF NOT EXISTS requested_capability TEXT;
+
+    ALTER TABLE capability_requests
+      ADD COLUMN IF NOT EXISTS description TEXT;
+
+    ALTER TABLE capability_requests
+      ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'discovered';
+
+    ALTER TABLE capability_requests
+      ADD COLUMN IF NOT EXISTS priority INTEGER DEFAULT 1;
+
+    ALTER TABLE capability_requests
+      ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
+
+    ALTER TABLE capability_requests
+      ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+
+    ALTER TABLE capability_requests
+      ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
   `);
 
   // ============================================================
@@ -329,7 +564,12 @@ async function createSchema() {
 
   await pool.query(`
     INSERT INTO capabilities
-      (name, description, category, module_path)
+      (
+        name,
+        description,
+        category,
+        module_path
+      )
     VALUES
       (
         'conversation',
@@ -438,16 +678,19 @@ async function createSchema() {
 
   await pool.query(`
     INSERT INTO schema_migrations
-      (version, description)
+      (
+        version,
+        description
+      )
     VALUES
       (
-        '1.0.0',
-        'Initial Nkwasibwe IRHCF AI Agent Platform schema'
+        '1.1.0',
+        'Schema compatibility and missing-column migration'
       )
     ON CONFLICT (version) DO NOTHING;
   `);
 
-  console.log("Database schema ready!");
+  console.log("Database schema is ready!");
 }
 
 module.exports = createSchema;
