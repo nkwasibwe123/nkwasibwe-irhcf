@@ -1,6 +1,11 @@
 <!DOCTYPE html>
 <html lang="rw">
 <head>
+
+  <!-- =====================================================
+       BASIC SETTINGS
+       ===================================================== -->
+
   <meta charset="UTF-8">
 
   <meta
@@ -10,489 +15,152 @@
 
   <meta
     name="description"
-    content="Nkwasibwe IRHCF AI Agent Platform"
+    content="Nkwasibwe IRHCF - AI Agent Platform"
   >
 
-  <title>
-    Nkwasibwe IRHCF — AI Agent Platform
-  </title>
+  <title>Nkwasibwe IRHCF - AI Agent Platform</title>
+
+  <!-- =====================================================
+       STYLES
+       ===================================================== -->
 
   <link
     rel="stylesheet"
     href="style.css"
   >
+
 </head>
+
 
 <body>
 
-  <!-- ===================================================== -->
-  <!-- LOADING SCREEN -->
-  <!-- ===================================================== -->
+  <!-- =====================================================
+       APPLICATION
+       ===================================================== -->
 
-  <div
-    id="loadingScreen"
-    class="loading-screen"
-  >
-    <div class="loading-content">
+  <div class="app">
 
-      <div class="loading-logo">
-        N
-      </div>
 
-      <h1>
-        Nkwasibwe IRHCF
-      </h1>
-
-      <p>
-        AI Agent Platform irimo gutangira...
-      </p>
-
-      <div
-        class="loading-spinner"
-        aria-label="Loading"
-      ></div>
-
-    </div>
-  </div>
-
-
-  <!-- ===================================================== -->
-  <!-- AUTHENTICATION SCREEN -->
-  <!-- ===================================================== -->
-
-  <div
-    id="authScreen"
-    class="auth-screen hidden"
-  >
-
-    <div class="auth-container">
-
-      <!-- BRAND -->
-
-      <div class="auth-brand">
-
-        <div class="logo large-logo">
-          N
-        </div>
-
-        <h1>
-          Nkwasibwe IRHCF
-        </h1>
-
-        <p>
-          AI Agent Platform
-        </p>
-
-      </div>
-
-
-      <!-- AUTH CARD -->
-
-      <div class="auth-card">
-
-
-        <!-- LOGIN -->
-
-        <section
-          id="loginPanel"
-          class="auth-panel"
-        >
-
-          <h2>
-            Injira
-          </h2>
-
-          <p class="auth-description">
-            Injira muri konti yawe kugira ngo
-            ukomeze gukoresha AI Agent.
-          </p>
-
-
-          <form id="loginForm">
-
-            <label for="loginEmail">
-              Email
-            </label>
-
-            <input
-              id="loginEmail"
-              type="email"
-              autocomplete="email"
-              placeholder="email@example.com"
-              required
-            >
-
-
-            <label for="loginPassword">
-              Password
-            </label>
-
-            <input
-              id="loginPassword"
-              type="password"
-              autocomplete="current-password"
-              placeholder="Password"
-              required
-            >
-
-
-            <button
-              id="loginButton"
-              type="submit"
-              class="primary-button"
-            >
-              Injira
-            </button>
-
-          </form>
-
-
-          <p class="auth-switch">
-
-            Nta konti ufite?
-
-            <button
-              id="showRegisterButton"
-              type="button"
-              class="text-button"
-            >
-              Fungura konti
-            </button>
-
-          </p>
-
-        </section>
-
-
-        <!-- REGISTER -->
-
-        <section
-          id="registerPanel"
-          class="auth-panel hidden"
-        >
-
-          <h2>
-            Fungura konti
-          </h2>
-
-          <p class="auth-description">
-            Tangira gukoresha
-            Nkwasibwe IRHCF AI Agent Platform.
-          </p>
-
-
-          <form id="registerForm">
-
-
-            <label for="registerName">
-              Amazina
-            </label>
-
-            <input
-              id="registerName"
-              type="text"
-              autocomplete="name"
-              placeholder="Andika amazina yawe"
-              maxlength="100"
-              required
-            >
-
-
-            <label for="registerEmail">
-              Email
-            </label>
-
-            <input
-              id="registerEmail"
-              type="email"
-              autocomplete="email"
-              placeholder="email@example.com"
-              required
-            >
-
-
-            <label for="registerPassword">
-              Password
-            </label>
-
-            <input
-              id="registerPassword"
-              type="password"
-              autocomplete="new-password"
-              placeholder="Nibura inyuguti 8"
-              minlength="8"
-              required
-            >
-
-
-            <button
-              id="registerButton"
-              type="submit"
-              class="primary-button"
-            >
-              Fungura konti
-            </button>
-
-          </form>
-
-
-          <p class="auth-switch">
-
-            Usanzwe ufite konti?
-
-            <button
-              id="showLoginButton"
-              type="button"
-              class="text-button"
-            >
-              Injira
-            </button>
-
-          </p>
-
-        </section>
-
-
-        <!-- AUTH ERROR / SUCCESS -->
-
-        <div
-          id="authMessage"
-          class="auth-message"
-          aria-live="polite"
-        ></div>
-
-      </div>
-
-    </div>
-
-  </div>
-
-
-  <!-- ===================================================== -->
-  <!-- MAIN APPLICATION -->
-  <!-- ===================================================== -->
-
-  <div
-    id="appShell"
-    class="app-shell hidden"
-  >
-
-
-    <!-- =================================================== -->
-    <!-- SIDEBAR -->
-    <!-- =================================================== -->
+    <!-- =================================================
+         SIDEBAR
+         ================================================= -->
 
     <aside
-      id="sidebar"
       class="sidebar"
+      id="sidebar"
     >
 
 
-      <!-- BRAND -->
+      <!-- SIDEBAR HEADER -->
 
-      <div class="sidebar-brand">
+      <div class="sidebar-header">
 
-        <div class="logo">
-          N
-        </div>
+        <button
+          id="newChatButton"
+          class="new-chat-button"
+          type="button"
+        >
+          + New Conversation
+        </button>
 
-        <div class="brand-text">
+      </div>
 
-          <h1>
-            Nkwasibwe
-          </h1>
 
-          <p>
-            IRHCF
-          </p>
+      <!-- CONVERSATION LIST -->
+
+      <div
+        id="conversationList"
+        class="conversation-list"
+      >
+
+        <!-- Conversations will be added by app.js -->
+
+      </div>
+
+
+      <!-- SIDEBAR FOOTER -->
+
+      <div class="sidebar-footer">
+
+        <div class="agent-info">
+
+          <div
+            id="agentStatusDot"
+            class="agent-status-dot"
+          ></div>
+
+
+          <div class="agent-info-text">
+
+            <div class="agent-info-title">
+              Nkwasibwe IRHCF
+            </div>
+
+            <div
+              id="agentStatusText"
+              class="agent-info-status"
+            >
+              AI Agent Ready
+            </div>
+
+          </div>
 
         </div>
 
       </div>
 
-
-      <!-- NEW CONVERSATION -->
-
-      <button
-        id="newConversationButton"
-        class="new-conversation-button"
-        type="button"
-      >
-        <span>＋</span>
-        Conversation nshya
-      </button>
-
-
-      <!-- NAVIGATION -->
-
-      <nav
-        class="navigation"
-        aria-label="Main navigation"
-      >
-
-        <button
-          class="nav-item active"
-          data-view="chat"
-          type="button"
-        >
-          <span class="nav-icon">💬</span>
-          Chat
-        </button>
-
-
-        <button
-          class="nav-item"
-          data-view="tasks"
-          type="button"
-        >
-          <span class="nav-icon">✓</span>
-          Tasks
-        </button>
-
-
-        <button
-          class="nav-item"
-          data-view="memory"
-          type="button"
-        >
-          <span class="nav-icon">🧠</span>
-          Memory
-        </button>
-
-
-        <button
-          class="nav-item"
-          data-view="knowledge"
-          type="button"
-        >
-          <span class="nav-icon">📚</span>
-          Knowledge
-        </button>
-
-
-        <button
-          class="nav-item"
-          data-view="capabilities"
-          type="button"
-        >
-          <span class="nav-icon">⚙</span>
-          Capabilities
-        </button>
-
-
-        <button
-          class="nav-item"
-          data-view="agentRuns"
-          type="button"
-        >
-          <span class="nav-icon">🚀</span>
-          Agent Runs
-        </button>
-
-      </nav>
-
-
-      <!-- CONVERSATION HISTORY -->
-
-      <section
-        class="conversation-section"
-      >
-
-        <div class="section-title">
-          Conversations
-        </div>
-
-        <div
-          id="conversationList"
-          class="conversation-list"
-        ></div>
-
-      </section>
-
-
-      <!-- USER AREA -->
-
-      <div class="sidebar-user">
-
-        <div
-          id="userAvatar"
-          class="user-avatar"
-        >
-          U
-        </div>
-
-        <div class="user-info">
-
-          <strong
-            id="userName"
-          >
-            User
-          </strong>
-
-          <span
-            id="userEmail"
-          >
-            Not signed in
-          </span>
-
-        </div>
-
-
-        <button
-          id="logoutButton"
-          class="logout-button"
-          type="button"
-          title="Sohoka"
-        >
-          ⏻
-        </button>
-
-      </div>
 
     </aside>
 
 
-    <!-- =================================================== -->
-    <!-- MAIN CONTENT -->
-    <!-- =================================================== -->
+    <!-- =================================================
+         MAIN AREA
+         ================================================= -->
 
-    <main
-      class="main-content"
-    >
+    <div class="main-area">
 
 
-      <!-- ================================================= -->
-      <!-- TOP BAR -->
-      <!-- ================================================= -->
+      <!-- ===============================================
+           HEADER
+           =============================================== -->
 
-      <header
-        class="topbar"
-      >
+      <header class="header">
 
-        <div class="topbar-left">
+
+        <!-- BRAND -->
+
+        <div class="brand">
+
+
+          <!-- MOBILE MENU BUTTON -->
 
           <button
-            id="sidebarToggle"
-            class="sidebar-toggle"
+            id="mobileMenuButton"
+            class="icon-button mobile-menu-button"
             type="button"
-            aria-label="Toggle menu"
+            aria-label="Open menu"
           >
             ☰
           </button>
 
 
-          <div>
+          <!-- LOGO -->
 
-            <h2
-              id="pageTitle"
-            >
+          <div class="logo">
+            N
+          </div>
+
+
+          <!-- BRAND TEXT -->
+
+          <div class="brand-text">
+
+            <h1>
               Nkwasibwe IRHCF
-            </h2>
+            </h1>
 
-            <p
-              id="pageSubtitle"
-            >
-              AI Agent Platform
+            <p>
+              Autonomous AI Agent Platform
             </p>
 
           </div>
@@ -500,569 +168,372 @@
         </div>
 
 
-        <div
-          class="system-status"
-        >
+        <!-- HEADER ACTIONS -->
 
-          <span
-            id="statusIndicator"
-            class="status-dot"
-          ></span>
+        <div class="header-actions">
 
-          <span
-            id="status"
+
+          <!-- NEW CHAT -->
+
+          <button
+            id="headerNewChatButton"
+            class="icon-button"
+            type="button"
+            aria-label="New conversation"
+            title="New conversation"
           >
-            Kugenzura server...
-          </span>
+            +
+          </button>
+
+
+          <!-- CLEAR CHAT -->
+
+          <button
+            id="clearChatButton"
+            class="icon-button"
+            type="button"
+            aria-label="Clear chat"
+            title="Clear chat"
+          >
+            🗑
+          </button>
+
 
         </div>
+
 
       </header>
 
 
-      <!-- ================================================= -->
-      <!-- CHAT VIEW -->
-      <!-- ================================================= -->
+      <!-- ===============================================
+           CHAT AREA
+           =============================================== -->
 
-      <section
-        id="chatView"
-        class="view active-view"
+      <main
+        id="chat"
+        class="chat"
       >
 
-        <div
-          id="chatContainer"
-          class="chat-container"
+
+        <!-- =============================================
+             WELCOME SCREEN
+             ============================================= -->
+
+        <section
+          id="welcome"
+          class="welcome"
+        >
+
+          <h2>
+            Murakaza neza 👋
+          </h2>
+
+
+          <p>
+
+            Ndi
+            <strong>
+              Nkwasibwe IRHCF
+            </strong>
+
+            AI Agent Platform.
+
+            Mbwira icyo ushaka gukora.
+
+            Nzagerageza
+            kubyumva,
+            kubitegura,
+            kubikora,
+            kugenzura ibisubizo
+            no kukugezaho result.
+
+          </p>
+
+        </section>
+
+
+        <!-- =============================================
+             AI AGENT WORKFLOW
+             Understand → Plan → Execute → Test
+             → Repair → Verify → Deliver
+             ============================================= -->
+
+        <section
+          id="agentWorkflow"
+          class="agent-workflow"
+          aria-label="AI Agent workflow"
         >
 
 
-          <!-- WELCOME -->
-
           <div
-            id="welcome"
-            class="welcome"
+            class="workflow-step"
+            data-phase="understand"
           >
-
-            <div class="welcome-logo">
-              N
-            </div>
-
-            <h2>
-              Murakaza neza 👋
-            </h2>
-
-            <p>
-              Ndi
-              <strong>
-                Nkwasibwe IRHCF
-              </strong>,
-              AI Agent Platform.
-            </p>
-
-            <p>
-              Mbwira icyo ushaka gukora.
-              Nzagerageza kubyumva,
-              kubitegura, no kugufasha
-              kubisohoza.
-            </p>
-
-
-            <!-- SUGGESTED TASKS -->
-
-            <div
-              class="suggested-tasks"
-            >
-
-              <button
-                class="suggestion-button"
-                type="button"
-                data-prompt="Mfasha gutegura gahunda y'umushinga."
-              >
-                Tegura umushinga
-              </button>
-
-
-              <button
-                class="suggestion-button"
-                type="button"
-                data-prompt="Mfasha gusesengura ikibazo mfite."
-              >
-                Sesengura ikibazo
-              </button>
-
-
-              <button
-                class="suggestion-button"
-                type="button"
-                data-prompt="Mfasha gukora plan y'intambwe ku yindi."
-              >
-                Kora plan
-              </button>
-
-
-              <button
-                class="suggestion-button"
-                type="button"
-                data-prompt="Mfasha gutegura task no kuyikurikirana."
-              >
-                Tegura task
-              </button>
-
-            </div>
-
+            Understand
           </div>
 
 
-          <!-- MESSAGES -->
+          <div
+            class="workflow-step"
+            data-phase="plan"
+          >
+            Plan
+          </div>
+
 
           <div
-            id="messages"
-            class="messages"
-            aria-live="polite"
-          ></div>
+            class="workflow-step"
+            data-phase="execute"
+          >
+            Execute
+          </div>
 
-        </div>
+
+          <div
+            class="workflow-step"
+            data-phase="test"
+          >
+            Test
+          </div>
+
+
+          <div
+            class="workflow-step"
+            data-phase="repair"
+          >
+            Repair
+          </div>
+
+
+          <div
+            class="workflow-step"
+            data-phase="verify"
+          >
+            Verify
+          </div>
+
+
+          <div
+            class="workflow-step"
+            data-phase="deliver"
+          >
+            Deliver
+          </div>
+
+
+        </section>
+
+
+        <!-- =============================================
+             SUGGESTIONS
+             ============================================= -->
+
+        <section
+          id="suggestions"
+          class="suggestions"
+        >
+
+
+          <!-- SUGGESTION 1 -->
+
+          <button
+            class="suggestion"
+            type="button"
+            data-prompt="Help me plan and execute a task step by step."
+          >
+
+            <div class="suggestion-title">
+              📋 Plan a task
+            </div>
+
+            <div class="suggestion-text">
+              Tegura task kandi uyigabanye
+              mu ntambwe zoroshye.
+            </div>
+
+          </button>
+
+
+          <!-- SUGGESTION 2 -->
+
+          <button
+            class="suggestion"
+            type="button"
+            data-prompt="Help me solve a problem and verify the result."
+          >
+
+            <div class="suggestion-title">
+              🧠 Solve a problem
+            </div>
+
+            <div class="suggestion-text">
+              Sesengura ikibazo,
+              shakisha solution
+              kandi ugenzure result.
+            </div>
+
+          </button>
+
+
+          <!-- SUGGESTION 3 -->
+
+          <button
+            class="suggestion"
+            type="button"
+            data-prompt="Help me organize and manage my tasks."
+          >
+
+            <div class="suggestion-title">
+              ✅ Manage tasks
+            </div>
+
+            <div class="suggestion-text">
+              Kora,
+              tegura
+              kandi ukurikirane
+              tasks zawe.
+            </div>
+
+          </button>
+
+
+          <!-- SUGGESTION 4 -->
+
+          <button
+            class="suggestion"
+            type="button"
+            data-prompt="Help me learn something step by step."
+          >
+
+            <div class="suggestion-title">
+              📚 Learn something
+            </div>
+
+            <div class="suggestion-text">
+              Sobanukirwa ikintu gishya
+              intambwe ku yindi.
+            </div>
+
+          </button>
+
+
+        </section>
+
+
+        <!-- =============================================
+             MESSAGES
+             ============================================= -->
+
+        <section
+          id="messages"
+          class="messages"
+          aria-live="polite"
+        >
+
+          <!-- Messages will be created by app.js -->
+
+        </section>
+
+
+      </main>
+
+
+      <!-- ===============================================
+           INPUT CONTAINER
+           =============================================== -->
+
+      <div class="input-container">
 
 
         <!-- INPUT AREA -->
 
+        <div class="input-area">
+
+
+          <!-- USER INPUT -->
+
+          <textarea
+            id="userInput"
+            rows="1"
+            placeholder="Andika icyo ushaka gukora..."
+            autocomplete="off"
+            aria-label="Message"
+          ></textarea>
+
+
+          <!-- SEND BUTTON -->
+
+          <button
+            id="sendButton"
+            type="button"
+            aria-label="Send message"
+            title="Send message"
+          >
+            Send
+          </button>
+
+
+        </div>
+
+
+        <!-- =============================================
+             STATUS BAR
+             ============================================= -->
+
         <div
-          class="input-wrapper"
+          id="statusBar"
+          class="status-bar"
         >
 
-          <div
-            class="input-area"
-          >
 
-            <textarea
-              id="userInput"
-              rows="1"
-              placeholder="Andika icyo ushaka gukora..."
-              aria-label="Andika ubutumwa"
-            ></textarea>
+          <div class="status-left">
+
+            <div
+              id="statusIndicator"
+              class="status-indicator"
+            ></div>
 
 
-            <button
-              id="sendButton"
-              class="send-button"
-              type="button"
-              aria-label="Ohereza ubutumwa"
+            <span
+              id="statusText"
             >
-              ➤
-            </button>
-
-          </div>
-
-
-          <div
-            class="input-help"
-          >
-
-            <span>
-              Enter kohereza
+              Ready
             </span>
 
-            <span>
-              Shift + Enter umurongo mushya
+          </div>
+
+
+          <div>
+
+            <span
+              id="connectionStatus"
+            >
+              Connected
             </span>
 
           </div>
 
-        </div>
-
-      </section>
-
-
-      <!-- ================================================= -->
-      <!-- TASKS VIEW -->
-      <!-- ================================================= -->
-
-      <section
-        id="tasksView"
-        class="view"
-      >
-
-        <div class="view-header">
-
-          <div>
-
-            <h2>
-              Tasks
-            </h2>
-
-            <p>
-              Tegura kandi ukurikirane tasks zawe.
-            </p>
-
-          </div>
-
-
-          <button
-            id="createTaskButton"
-            class="primary-button"
-            type="button"
-          >
-            + Task nshya
-          </button>
 
         </div>
 
 
-        <div
-          id="taskCreatePanel"
-          class="create-panel hidden"
-        >
+      </div>
 
-          <textarea
-            id="taskInput"
-            placeholder="Andika task ushaka gukora..."
-          ></textarea>
 
+    </div>
 
-          <label
-            for="taskPriority"
-          >
-            Priority
-          </label>
-
-          <select
-            id="taskPriority"
-          >
-
-            <option value="1">
-              Low
-            </option>
-
-            <option value="5" selected>
-              Normal
-            </option>
-
-            <option value="10">
-              High
-            </option>
-
-          </select>
-
-
-          <div class="panel-actions">
-
-            <button
-              id="saveTaskButton"
-              class="primary-button"
-              type="button"
-            >
-              Bika Task
-            </button>
-
-
-            <button
-              id="cancelTaskButton"
-              class="secondary-button"
-              type="button"
-            >
-              Cancel
-            </button>
-
-          </div>
-
-        </div>
-
-
-        <div
-          id="taskList"
-          class="card-list"
-        ></div>
-
-      </section>
-
-
-      <!-- ================================================= -->
-      <!-- MEMORY VIEW -->
-      <!-- ================================================= -->
-
-      <section
-        id="memoryView"
-        class="view"
-      >
-
-        <div class="view-header">
-
-          <div>
-
-            <h2>
-              Memory
-            </h2>
-
-            <p>
-              Amakuru Nkwasibwe IRHCF ibika
-              kugira ngo igufashe neza.
-            </p>
-
-          </div>
-
-        </div>
-
-
-        <!-- SAVE MEMORY -->
-
-        <div
-          class="create-panel"
-        >
-
-          <h3>
-            Bika Memory
-          </h3>
-
-
-          <input
-            id="memoryKey"
-            type="text"
-            placeholder="Memory key"
-          >
-
-
-          <textarea
-            id="memoryValue"
-            placeholder="Andika information yo kubika..."
-          ></textarea>
-
-
-          <select
-            id="memoryImportance"
-          >
-
-            <option value="1">
-              Low importance
-            </option>
-
-            <option
-              value="5"
-              selected
-            >
-              Normal importance
-            </option>
-
-            <option value="10">
-              High importance
-            </option>
-
-          </select>
-
-
-          <button
-            id="saveMemoryButton"
-            class="primary-button"
-            type="button"
-          >
-            Bika Memory
-          </button>
-
-        </div>
-
-
-        <div
-          id="memoryList"
-          class="card-list"
-        ></div>
-
-      </section>
-
-
-      <!-- ================================================= -->
-      <!-- KNOWLEDGE VIEW -->
-      <!-- ================================================= -->
-
-      <section
-        id="knowledgeView"
-        class="view"
-      >
-
-        <div class="view-header">
-
-          <div>
-
-            <h2>
-              Knowledge Base
-            </h2>
-
-            <p>
-              Bika knowledge Nkwasibwe IRHCF
-              ishobora gukoresha mu kazi.
-            </p>
-
-          </div>
-
-        </div>
-
-
-        <!-- ADD KNOWLEDGE -->
-
-        <div
-          class="create-panel"
-        >
-
-          <input
-            id="knowledgeTitle"
-            type="text"
-            placeholder="Title (optional)"
-          >
-
-
-          <textarea
-            id="knowledgeContent"
-            placeholder="Andika knowledge..."
-          ></textarea>
-
-
-          <input
-            id="knowledgeSource"
-            type="text"
-            placeholder="Source (optional)"
-          >
-
-
-          <button
-            id="saveKnowledgeButton"
-            class="primary-button"
-            type="button"
-          >
-            Bika Knowledge
-          </button>
-
-        </div>
-
-
-        <div
-          id="knowledgeList"
-          class="card-list"
-        ></div>
-
-      </section>
-
-
-      <!-- ================================================= -->
-      <!-- CAPABILITIES VIEW -->
-      <!-- ================================================= -->
-
-      <section
-        id="capabilitiesView"
-        class="view"
-      >
-
-        <div class="view-header">
-
-          <div>
-
-            <h2>
-              Capabilities
-            </h2>
-
-            <p>
-              Ubushobozi Nkwasibwe IRHCF
-              ifite ubu.
-            </p>
-
-          </div>
-
-        </div>
-
-
-        <div
-          id="capabilitiesList"
-          class="card-list"
-        ></div>
-
-      </section>
-
-
-      <!-- ================================================= -->
-      <!-- AGENT RUNS VIEW -->
-      <!-- ================================================= -->
-
-      <section
-        id="agentRunsView"
-        class="view"
-      >
-
-        <div class="view-header">
-
-          <div>
-
-            <h2>
-              Agent Runs
-            </h2>
-
-            <p>
-              Reba uko AI Agent yakoze
-              tasks zitandukanye.
-            </p>
-
-          </div>
-
-
-          <button
-            id="createAgentRunButton"
-            class="primary-button"
-            type="button"
-          >
-            + Agent Run
-          </button>
-
-        </div>
-
-
-        <!-- CREATE AGENT RUN -->
-
-        <div
-          id="agentRunCreatePanel"
-          class="create-panel hidden"
-        >
-
-          <textarea
-            id="agentGoalInput"
-            placeholder="Andika goal ushaka ko AI Agent ikoraho..."
-          ></textarea>
-
-
-          <button
-            id="saveAgentRunButton"
-            class="primary-button"
-            type="button"
-          >
-            Tangira Agent
-          </button>
-
-        </div>
-
-
-        <div
-          id="agentRunsList"
-          class="card-list"
-        ></div>
-
-      </section>
-
-
-    </main>
 
   </div>
 
 
-  <!-- ===================================================== -->
-  <!-- TOAST NOTIFICATIONS -->
-  <!-- ===================================================== -->
+  <!-- =====================================================
+       JAVASCRIPT
+       ===================================================== -->
 
-  <div
-    id="toastContainer"
-    class="toast-container"
-    aria-live="polite"
-  ></div>
+  <script
+    src="app.js"
+  ></script>
 
-
-  <!-- ===================================================== -->
-  <!-- JAVASCRIPT -->
-  <!-- ===================================================== -->
-
-  <script src="app.js"></script>
 
 </body>
-  </html>
+</html>
