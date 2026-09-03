@@ -494,7 +494,15 @@ async function createSchema() {
     ALTER TABLE capability_requests
       ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
   `);
+  // ============================================================
+  // UNIQUE CONSTRAINTS
+  // ============================================================
 
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS
+      idx_user_memory_user_key_unique
+    ON user_memory(user_id, memory_key);
+  `);
   // ============================================================
   // INDEXES
   // ============================================================
