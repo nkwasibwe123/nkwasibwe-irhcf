@@ -1008,5 +1008,1037 @@ app.post(
       res.status(201).json({
         success: true,
         memory:
+          result.rows[0]      });
+    } catch (error) {
+      console.error(
+        "Save long-term memory error:",
+        error
+      );
+
+      res.status(500).json({
+        success: false,
+        error:
+          "Could not save long-term memory"
+      });
+    }
+  }
+);
+
+// ============================================================
+// LIST LONG-TERM MEMORY
+// ============================================================
+
+app.get(
+  "/api/long-term-memory",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const result =
+        await pool.query(
+          `SELECT *
+           FROM long_term_memory
+           WHERE user_id = $1
+           ORDER BY
+             importance DESC,
+             updated_at DESC`,
+          [req.user.id]
+        );
+
+      res.json({
+        success: true,
+        memories: result.rows
+      });
+    } catch (error) {
+      console.error(
+        "Load long-term memory error:",
+        error
+      );
+
+      res.status(500).json({
+        success: false,
+        error:
+          "Could not load long-term memory"
+      });
+    }
+  }
+);
+
+// ============================================================
+// DELETE LONG-TERM MEMORY
+// ============================================================
+
+app.delete(
+  "/api/long-term-memory/:id",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const id =
+        Number(req.params.id);
+
+      if (
+        !Number.isInteger(id) ||
+        id <= 0
+      ) {
+        return res.status(400).json({
+          success: false,
+          error:
+            "Invalid memory ID"
+        });
+      }
+
+      const result =
+        await pool.query(
+          `DELETE FROM long_term_memory
+           WHERE id = $1
+           AND user_id = $2
+           RETURNING id`,
+          [
+            id,
+            req.user.id
+          ]
+        );
+
+      if (
+        result.rows.length === 0
+      ) {
+        return res.status(404).json({
+          success: false,
+          error:
+            "Long-term memory not found"
+        });
+      }
+
+      res.json({
+        success: true,
+        message:
+          "Long-term memory deleted"
+      });
+    } catch (error) {
+      console.error(
+        "Delete long-term memory error:",
+        error
+      );
+
+      res.status(500).json({
+        success: false,
+        error:
+          "Could not delete long-term memory"
+      });
+    }
+  }
+);
+
+// ============================================================
+// KNOWLEDGE BASE
+// ============================================================
+
+app.post(
+  "/api/knowledge",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const title =
+        normalizeText(
+          req.body?.title
+        );
+
+      const content =
+        normalizeText(
+          req.body?.content
+        );
+
+      const source =
+        normalizeText(
+          req.body?.source
+        );
+
+      const sourceType =
+        normalizeText(
+          req.body?.source_type
+        ) || "text";
+
+      const metadata =
+        safeMetadata(
+          req.body?.metadata
+        );
+
+      if (!content) {
+        return res.status(400).json({
+          success: false,
+          error:
+            "Knowledge content is required"
+        });
+      }
+
+      const result =
+        await pool.query(
+          `INSERT INTO knowledge
+           (
+             user_id,
+             title,
+             content,
+             source,
+             source_type,
+             metadata
+           )
+           VALUES
+           ($1, $2, $3, $4, $5, $6::jsonb)
+           RETURNING *`,
+          [
+            req.user.id,
+            title || null,
+            content,
+            source || null,
+            sourceType,
+            JSON.stringify(metadata)
+          ]
+        );
+
+      res.status(201).json({
+        success: true,
+        knowledge:
           result.rows[0]
+      });
+    } catch (error) {
+      console.error(
+        "Save knowledge error:",
+        error
+      );
+
+      res.status(500).json({
+        success: false,
+        error:
+          "Could not save knowledge"
+      });
+    }
+  }
+);
+
+// ============================================================
+// LIST KNOWLEDGE
+// ============================================================
+
+app.get(
+  "/api/knowledge",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const limitValue =
+        Number(req.query.limit);
+
+      const limit =
+        Number.isInteger(limitValue)
+          ? Math.min(
+              Math.max(limitValue, 1),
+              100
+            )
+          : 50;
+
+      const result =
+        await pool.query(
+          `SELECT *
+           FROM knowledge
+           WHERE
+             user_id = $1
+             OR user_id IS NULL
+           ORDER BY
+             updated_at DESC
+           LIMIT $2`,
+          [
+            req.user.id,
+            limit
+          ]
+        );
+
+      res.json({
+        success: true,
+        knowledge:
+          result.rows
+      });
+    } catch (error) {
+      console.error(
+        "Load knowledge error:",
+        error
+      );
+
+      res.status(500).json({
+        success: false,
+        error:
+          "Could not load knowledge"
+      });
+    }
+  }
+);
+
+// ============================================================
+// GET KNOWLEDGE ITEM
+// ============================================================
+
+app.get(
+  "/api/knowledge/:id",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const id =
+        Number(req.params.id);
+
+      if (
+        !Number.isInteger(id) ||
+        id <= 0
+      ) {
+        return res.status(400).json({
+          success: false,
+          error:
+            "Invalid knowledge ID"
+        });
+      }
+
+      const result =
+        await pool.query(
+          `SELECT *
+           FROM knowledge
+           WHERE id = $1
+           AND (
+             user_id = $2
+             OR user_id IS NULL
+           )`,
+          [
+            id,
+            req.user.id
+          ]
+        );
+
+      if (
+        result.rows.length === 0
+      ) {
+        return res.status(404).json({
+          success: false,
+          error:
+            "Knowledge not found"
+        });
+      }
+
+      res.json({
+        success: true,
+        knowledge:
+          result.rows[0]
+      });
+    } catch (error) {
+      console.error(
+        "Get knowledge error:",
+        error
+      );
+
+      res.status(500).json({
+        success: false,
+        error:
+          "Could not load knowledge"
+      });
+    }
+  }
+);
+
+// ============================================================
+// DELETE KNOWLEDGE
+// ============================================================
+
+app.delete(
+  "/api/knowledge/:id",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const id =
+        Number(req.params.id);
+
+      if (
+        !Number.isInteger(id) ||
+        id <= 0
+      ) {
+        return res.status(400).json({
+          success: false,
+          error:
+            "Invalid knowledge ID"
+        });
+      }
+
+      const result =
+        await pool.query(
+          `DELETE FROM knowledge
+           WHERE id = $1
+           AND user_id = $2
+           RETURNING id`,
+          [
+            id,
+            req.user.id
+          ]
+        );
+
+      if (
+        result.rows.length === 0
+      ) {
+        return res.status(404).json({
+          success: false,
+          error:
+            "Knowledge not found"
+        });
+      }
+
+      res.json({
+        success: true,
+        message:
+          "Knowledge deleted"
+      });
+    } catch (error) {
+      console.error(
+        "Delete knowledge error:",
+        error
+      );
+
+      res.status(500).json({
+        success: false,
+        error:
+          "Could not delete knowledge"
+      });
+    }
+  }
+);
+
+// ============================================================
+// TASK MANAGEMENT
+// ============================================================
+
+app.post(
+  "/api/tasks",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const task =
+        normalizeText(
+          req.body?.task
+        );
+
+      const priority =
+        normalizeImportance(
+          req.body?.priority
+        );
+
+      const metadata =
+        safeMetadata(
+          req.body?.metadata
+        );
+
+      if (!task) {
+        return res.status(400).json({
+          success: false,
+          error:
+            "Task is required"
+        });
+      }
+
+      const result =
+        await pool.query(
+          `INSERT INTO tasks
+           (
+             user_id,
+             task,
+             priority,
+             metadata
+           )
+           VALUES
+           ($1, $2, $3, $4::jsonb)
+           RETURNING *`,
+          [
+            req.user.id,
+            task,
+            priority,
+            JSON.stringify(metadata)
+          ]
+        );
+
+      await systemLog(
+        "info",
+        "tasks",
+        "Task created",
+        {
+          userId:
+            req.user.id,
+          taskId:
+            result.rows[0].id
+        }
+      );
+
+      res.status(201).json({
+        success: true,
+        task:
+          result.rows[0]
+      });
+    } catch (error) {
+      console.error(
+        "Create task error:",
+        error
+      );
+
+      res.status(500).json({
+        success: false,
+        error:
+          "Could not create task"
+      });
+    }
+  }
+);
+
+// ============================================================
+// LIST TASKS
+// ============================================================
+
+app.get(
+  "/api/tasks",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const result =
+        await pool.query(
+          `SELECT *
+           FROM tasks
+           WHERE user_id = $1
+           ORDER BY
+             created_at DESC`,
+          [req.user.id]
+        );
+
+      res.json({
+        success: true,
+        tasks: result.rows
+      });
+    } catch (error) {
+      console.error(
+        "Load tasks error:",
+        error
+      );
+
+      res.status(500).json({
+        success: false,
+        error:
+          "Could not load tasks"
+      });
+    }
+  }
+);
+
+// ============================================================
+// GET TASK
+// ============================================================
+
+app.get(
+  "/api/tasks/:id",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const id =
+        Number(req.params.id);
+
+      if (
+        !Number.isInteger(id) ||
+        id <= 0
+      ) {
+        return res.status(400).json({
+          success: false,
+          error:
+            "Invalid task ID"
+        });
+      }
+
+      const result =
+        await pool.query(
+          `SELECT *
+           FROM tasks
+           WHERE id = $1
+           AND user_id = $2`,
+          [
+            id,
+            req.user.id
+          ]
+        );
+
+      if (
+        result.rows.length === 0
+      ) {
+        return res.status(404).json({
+          success: false,
+          error:
+            "Task not found"
+        });
+      }
+
+      res.json({
+        success: true,
+        task:
+          result.rows[0]
+      });
+    } catch (error) {
+      console.error(
+        "Get task error:",
+        error
+      );
+
+      res.status(500).json({
+        success: false,
+        error:
+          "Could not load task"
+      });
+    }
+  }
+);
+
+// ============================================================
+// UPDATE TASK
+// ============================================================
+
+app.patch(
+  "/api/tasks/:id",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const id =
+        Number(req.params.id);
+
+      if (
+        !Number.isInteger(id) ||
+        id <= 0
+      ) {
+        return res.status(400).json({
+          success: false,
+          error:
+            "Invalid task ID"
+        });
+      }
+
+      const allowedStatuses = [
+        "pending",
+        "planning",
+        "running",
+        "completed",
+        "failed",
+        "cancelled"
+      ];
+
+      const requestedStatus =
+        normalizeText(
+          req.body?.status
+        );
+
+      if (
+        requestedStatus &&
+        !allowedStatuses.includes(
+          requestedStatus
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          error:
+            "Invalid task status"
+        });
+      }
+
+      const resultText =
+        typeof req.body?.result ===
+        "string"
+          ? req.body.result
+          : null;
+
+      const errorText =
+        typeof req.body?.error ===
+        "string"
+          ? req.body.error
+          : null;
+
+      const result =
+        await pool.query(
+          `UPDATE tasks
+           SET
+             status =
+               COALESCE(
+                 $1,
+                 status
+               ),
+             result =
+               COALESCE(
+                 $2,
+                 result
+               ),
+             error =
+               COALESCE(
+                 $3,
+                 error
+               ),
+             updated_at =
+               CURRENT_TIMESTAMP
+           WHERE id = $4
+           AND user_id = $5
+           RETURNING *`,
+          [
+            requestedStatus || null,
+            resultText,
+            errorText,
+            id,
+            req.user.id
+          ]
+        );
+
+      if (
+        result.rows.length === 0
+      ) {
+        return res.status(404).json({
+          success: false,
+          error:
+            "Task not found"
+        });
+      }
+
+      res.json({
+        success: true,
+        task:
+          result.rows[0]
+      });
+    } catch (error) {
+      console.error(
+        "Update task error:",
+        error
+      );
+
+      res.status(500).json({
+        success: false,
+        error:
+          "Could not update task"
+      });
+    }
+  }
+);
+
+// ============================================================
+// DELETE TASK
+// ============================================================
+
+app.delete(
+  "/api/tasks/:id",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const id =
+        Number(req.params.id);
+
+      if (
+        !Number.isInteger(id) ||
+        id <= 0
+      ) {
+        return res.status(400).json({
+          success: false,
+          error:
+            "Invalid task ID"
+        });
+      }
+
+      const result =
+        await pool.query(
+          `DELETE FROM tasks
+           WHERE id = $1
+           AND user_id = $2
+           RETURNING id`,
+          [
+            id,
+            req.user.id
+          ]
+        );
+
+      if (
+        result.rows.length === 0
+      ) {
+        return res.status(404).json({
+          success: false,
+          error:
+            "Task not found"
+        });
+      }
+
+      res.json({
+        success: true,
+        message:
+          "Task deleted"
+      });
+    } catch (error) {
+      console.error(
+        "Delete task error:",
+        error
+      );
+
+      res.status(500).json({
+        success: false,
+        error:
+          "Could not delete task"
+      });
+    }
+  }
+);
+
+// ============================================================
+// CAPABILITIES
+// ============================================================
+
+app.get(
+  "/api/capabilities",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const result =
+        await pool.query(
+          `SELECT
+             id,
+             name,
+             description,
+             category,
+             module_path,
+             enabled,
+             version,
+             metadata,
+             created_at,
+             updated_at
+           FROM capabilities
+           WHERE enabled = TRUE
+           ORDER BY category, name`
+        );
+
+      res.json({
+        success: true,
+        capabilities:
+          result.rows
+      });
+    } catch (error) {
+      console.error(
+        "Load capabilities error:",
+        error
+      );
+
+      res.status(500).json({
+        success: false,
+        error:
+          "Could not load capabilities"
+      });
+    }
+  }
+);
+
+// ============================================================
+// TOOLS
+// ============================================================
+
+app.get(
+  "/api/tools",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const result =
+        await pool.query(
+          `SELECT
+             id,
+             name,
+             description,
+             category,
+             enabled,
+             requires_auth,
+             input_schema,
+             version,
+             metadata
+           FROM tools
+           WHERE enabled = TRUE
+           ORDER BY category, name`
+        );
+
+      res.json({
+        success: true,
+        tools: result.rows
+      });
+    } catch (error) {
+      console.error(
+        "Load tools error:",
+        error
+      );
+
+      res.status(500).json({
+        success: false,
+        error:
+          "Could not load tools"
+      });
+    }
+  }
+);
+
+// ============================================================
+// AGENT RUNS
+// ============================================================
+
+app.post(
+  "/api/agent-runs",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const goal =
+        normalizeText(
+          req.body?.goal
+        );
+
+      const taskId =
+        Number(req.body?.taskId);
+
+      const metadata =
+        safeMetadata(
+          req.body?.metadata
+        );
+
+      if (!goal) {
+        return res.status(400).json({
+          success: false,
+          error:
+            "Agent goal is required"
+        });
+      }
+
+      let validTaskId = null;
+
+      if (
+        Number.isInteger(taskId) &&
+        taskId > 0
+      ) {
+        const taskCheck =
+          await pool.query(
+            `SELECT id
+             FROM tasks
+             WHERE id = $1
+             AND user_id = $2`,
+            [
+              taskId,
+              req.user.id
+            ]
+          );
+
+        if (
+          taskCheck.rows.length === 0
+        ) {
+          return res.status(404).json({
+            success: false,
+            error:
+              "Task not found"
+          });
+        }
+
+        validTaskId = taskId;
+      }
+
+      const result =
+        await pool.query(
+          `INSERT INTO agent_runs
+           (
+             user_id,
+             task_id,
+             goal,
+             status,
+             metadata
+           )
+           VALUES
+           (
+             $1,
+             $2,
+             $3,
+             'planning',
+             $4::jsonb
+           )
+           RETURNING *`,
+          [
+            req.user.id,
+            validTaskId,
+            goal,
+            JSON.stringify(metadata)
+          ]
+        );
+
+      res.status(201).json({
+        success: true,
+        agentRun:
+          result.rows[0]
+      });
+    } catch (error) {
+      console.error(
+        "Create agent run error:",
+        error
+      );
+
+      res.status(500).json({
+        success: false,
+        error:
+          "Could not create agent run"
+      });
+    }
+  }
+);
+
+// ============================================================
+// LIST AGENT RUNS
+// ============================================================
+
+app.get(
+  "/api/agent-runs",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const result =
+        await pool.query(
+          `SELECT *
+           FROM agent_runs
+           WHERE user_id = $1
+           ORDER BY started_at DESC`,
+          [req.user.id]
+        );
+
+      res.json({
+        success: true,
+        agentRuns:
+          result.rows
+      });
+    } catch (error) {
+      console.error(
+        "Load agent runs error:",
+        error
+      );
+
+      res.status(500).json({
+        success: false,
+        error:
+          "Could not load agent runs"
+      });
+    }
+  }
+);
+
+// ============================================================
+// CHAT
+// ============================================================
+
+app.post(
+  "/api/chat",
+  authenticateToken,
+  async (req, res) => {
+    const startedAt =
+      Date.now();
+
+    try {
+      if (!openai) {
+        return res.status(503).json({
+          success: false,
+          error:
+            "OPENAI_API_KEY is not configured"
+        });
+      }
+
+      const message =
+        normalizeText(
+          req.body
      
