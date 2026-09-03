@@ -2464,4 +2464,45 @@ ${knowledgeText}
     }
   }
 );                
-              
+ // ============================================================
+// START SERVER
+// ============================================================
+
+async function startServer() {
+  try {
+    await initializeDatabase();
+
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log("================================");
+      console.log("Nkwasibwe IRHCF server is running");
+      console.log(`Port: ${PORT}`);
+      console.log(
+        `Environment: ${config.environment}`
+      );
+      console.log(
+        `AI: ${
+          openai
+            ? "Configured"
+            : "Not configured"
+        }`
+      );
+      console.log(
+        `Authentication: ${
+          JWT_SECRET
+            ? "Configured"
+            : "Not configured"
+        }`
+      );
+      console.log("================================");
+    });
+  } catch (error) {
+    console.error(
+      "Failed to start server:",
+      error
+    );
+
+    process.exit(1);
+  }
+}
+
+startServer();             
