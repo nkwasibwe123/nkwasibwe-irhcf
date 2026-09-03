@@ -1,6 +1,9 @@
 // ============================================================
-// NKWASIBWE IRHCF - FRONTEND APPLICATION
-// Autonomous AI Agent Platform
+// NKWASIBWE IRHCF
+// AI AGENT PLATFORM - FRONTEND APPLICATION
+//
+// Vision:
+// Understand → Plan → Execute → Test → Repair → Verify → Deliver
 // ============================================================
 
 
@@ -16,92 +19,65 @@ const API_BASE_URL =
 // DOM ELEMENTS
 // ============================================================
 
-// Main chat input
 const userInput =
   document.getElementById("userInput");
 
-// Send button
 const sendButton =
   document.getElementById("sendButton");
 
-// Messages container
 const messages =
   document.getElementById("messages");
 
-// Chat container
 const chat =
   document.getElementById("chat");
 
-// Welcome screen
 const welcomeElement =
   document.getElementById("welcome");
 
-// Suggestions
+const workflowElement =
+  document.getElementById("agentWorkflow");
+
 const suggestionsElement =
   document.getElementById("suggestions");
 
-// Workflow
-const agentWorkflow =
-  document.getElementById("agentWorkflow");
+const conversationList =
+  document.getElementById("conversationList");
 
-// Conversation controls
 const newChatButton =
   document.getElementById("newChatButton");
 
 const headerNewChatButton =
-  document.getElementById(
-    "headerNewChatButton"
-  );
+  document.getElementById("headerNewChatButton");
 
 const clearChatButton =
-  document.getElementById(
-    "clearChatButton"
-  );
+  document.getElementById("clearChatButton");
 
-// Sidebar
+const mobileMenuButton =
+  document.getElementById("mobileMenuButton");
+
 const sidebar =
   document.getElementById("sidebar");
 
-const conversationList =
-  document.getElementById(
-    "conversationList"
-  );
-
-const mobileMenuButton =
-  document.getElementById(
-    "mobileMenuButton"
-  );
-
-// Status elements
-const statusBar =
-  document.getElementById(
-    "statusBar"
-  );
-
 const statusText =
-  document.getElementById(
-    "statusText"
-  );
+  document.getElementById("statusText");
 
 const statusIndicator =
-  document.getElementById(
-    "statusIndicator"
-  );
+  document.getElementById("statusIndicator");
 
 const connectionStatus =
-  document.getElementById(
-    "connectionStatus"
-  );
-
-const agentStatusDot =
-  document.getElementById(
-    "agentStatusDot"
-  );
+  document.getElementById("connectionStatus");
 
 const agentStatusText =
-  document.getElementById(
-    "agentStatusText"
-  );
+  document.getElementById("agentStatusText");
+
+const agentStatusDot =
+  document.getElementById("agentStatusDot");
+
+const suggestionButtons =
+  document.querySelectorAll(".suggestion");
+
+const workflowSteps =
+  document.querySelectorAll(".workflow-step");
 
 
 // ============================================================
@@ -113,37 +89,68 @@ let sessionId =
     "nkwasibwe_session_id"
   ) || null;
 
+
 let authToken =
   localStorage.getItem(
     "nkwasibwe_auth_token"
   ) || null;
 
+
 let currentUser =
   null;
+
 
 let isSending =
   false;
 
+
 let backendOnline =
   false;
+
 
 let conversations =
   [];
 
 
 // ============================================================
-// CREATE SESSION ID
+// LOCAL STORAGE KEYS
+// ============================================================
+
+const STORAGE_KEYS = {
+
+  sessionId:
+    "nkwasibwe_session_id",
+
+  authToken:
+    "nkwasibwe_auth_token",
+
+  user:
+    "nkwasibwe_user",
+
+  conversations:
+    "nkwasibwe_conversations"
+
+};
+
+
+// ============================================================
+// CREATE LOCAL SESSION ID
 // ============================================================
 
 function createLocalSessionId() {
 
   return (
+
     "session-" +
+
     Date.now() +
+
     "-" +
+
     Math.random()
       .toString(36)
       .substring(2, 12)
+
   );
 
 }
@@ -160,12 +167,14 @@ function ensureSessionId() {
     sessionId =
       createLocalSessionId();
 
+
     localStorage.setItem(
-      "nkwasibwe_session_id",
+      STORAGE_KEYS.sessionId,
       sessionId
     );
 
   }
+
 
   return sessionId;
 
@@ -184,11 +193,13 @@ function saveSessionId(
     return;
   }
 
+
   sessionId =
     newSessionId;
 
+
   localStorage.setItem(
-    "nkwasibwe_session_id",
+    STORAGE_KEYS.sessionId,
     sessionId
   );
 
@@ -204,7 +215,10 @@ function setStatus(
   type = "normal"
 ) {
 
-  // Main status text
+  // ----------------------------------------------------------
+  // STATUS TEXT
+  // ----------------------------------------------------------
+
   if (statusText) {
 
     statusText.textContent =
@@ -213,25 +227,42 @@ function setStatus(
   }
 
 
-  // Status bar
-  if (statusBar) {
+  // ----------------------------------------------------------
+  // STATUS INDICATOR
+  // ----------------------------------------------------------
 
-    statusBar.dataset.status =
-      type;
-
-  }
-
-
-  // Status indicator
   if (statusIndicator) {
 
-    statusIndicator.dataset.status =
-      type;
+    statusIndicator.classList.remove(
+      "working",
+      "error"
+    );
+
+
+    if (type === "loading") {
+
+      statusIndicator.classList.add(
+        "working"
+      );
+
+    }
+
+
+    if (type === "error") {
+
+      statusIndicator.classList.add(
+        "error"
+      );
+
+    }
 
   }
 
 
-  // Connection status
+  // ----------------------------------------------------------
+  // CONNECTION STATUS
+  // ----------------------------------------------------------
+
   if (connectionStatus) {
 
     if (type === "online") {
@@ -252,14 +283,19 @@ function setStatus(
     } else {
 
       connectionStatus.textContent =
-        "Ready";
+        backendOnline
+          ? "Connected"
+          : "Checking...";
 
     }
 
   }
 
 
-  // Agent status
+  // ----------------------------------------------------------
+  // AGENT STATUS
+  // ----------------------------------------------------------
+
   if (agentStatusText) {
 
     if (type === "online") {
@@ -280,18 +316,35 @@ function setStatus(
     } else {
 
       agentStatusText.textContent =
-        "AI Agent Ready";
+        message;
 
     }
 
   }
 
 
-  // Agent dot
+  // ----------------------------------------------------------
+  // AGENT STATUS DOT
+  // ----------------------------------------------------------
+
   if (agentStatusDot) {
 
-    agentStatusDot.dataset.status =
-      type;
+    if (type === "error") {
+
+      agentStatusDot.style.background =
+        "var(--danger)";
+
+    } else if (type === "loading") {
+
+      agentStatusDot.style.background =
+        "var(--warning)";
+
+    } else {
+
+      agentStatusDot.style.background =
+        "var(--success)";
+
+    }
 
   }
 
@@ -299,59 +352,25 @@ function setStatus(
 
 
 // ============================================================
-// BACKEND CONNECTION STATUS
+// SCROLL TO BOTTOM
 // ============================================================
 
-function setBackendOnline(
-  online
-) {
+function scrollToBottom() {
 
-  backendOnline =
-    online;
-
-  if (online) {
-
-    setStatus(
-      "Ready",
-      "online"
-    );
-
-  } else {
-
-    setStatus(
-      "Server ntiboneka",
-      "error"
-    );
-
-  }
-
-}
-
-
-// ============================================================
-// SCROLL CHAT TO BOTTOM
-// ============================================================
-
-function scrollToBottom(
-  smooth = true
-) {
-
-  if (!messages) {
+  if (!chat) {
     return;
   }
 
 
   requestAnimationFrame(() => {
 
-    messages.scrollTo({
+    chat.scrollTo({
 
       top:
-        messages.scrollHeight,
+        chat.scrollHeight,
 
       behavior:
-        smooth
-          ? "smooth"
-          : "auto"
+        "smooth"
 
     });
 
@@ -361,7 +380,7 @@ function scrollToBottom(
 
 
 // ============================================================
-// HIDE OR SHOW WELCOME
+// UPDATE WELCOME VISIBILITY
 // ============================================================
 
 function updateWelcomeVisibility() {
@@ -378,39 +397,31 @@ function updateWelcomeVisibility() {
 
   if (hasMessages) {
 
-    welcomeElement.style.display =
-      "none";
+    welcomeElement.classList.add(
+      "hidden"
+    );
+
 
     if (suggestionsElement) {
 
-      suggestionsElement.style.display =
-        "none";
-
-    }
-
-    if (agentWorkflow) {
-
-      agentWorkflow.style.display =
-        "none";
+      suggestionsElement.classList.add(
+        "hidden"
+      );
 
     }
 
   } else {
 
-    welcomeElement.style.display =
-      "";
+    welcomeElement.classList.remove(
+      "hidden"
+    );
+
 
     if (suggestionsElement) {
 
-      suggestionsElement.style.display =
-        "";
-
-    }
-
-    if (agentWorkflow) {
-
-      agentWorkflow.style.display =
-        "";
+      suggestionsElement.classList.remove(
+        "hidden"
+      );
 
     }
 
@@ -420,58 +431,50 @@ function updateWelcomeVisibility() {
 
 
 // ============================================================
-// CREATE MESSAGE ELEMENT
+// CREATE MESSAGE AVATAR
 // ============================================================
 
-function createMessageElement(
-  text,
-  type = "ai"
+function createMessageAvatar(
+  type
 ) {
 
-  const message =
-    document.createElement("article");
+  const avatar =
+    document.createElement("div");
 
 
-  message.classList.add(
-    "message"
+  avatar.classList.add(
+    "message-avatar"
   );
 
 
-  // ----------------------------------------------------------
-  // MESSAGE TYPE
-  // ----------------------------------------------------------
-
   if (type === "user") {
 
-    message.classList.add(
-      "user-message"
+    avatar.classList.add(
+      "user-avatar"
     );
 
-  } else if (type === "system") {
 
-    message.classList.add(
-      "ai-message",
-      "system-message"
-    );
+    avatar.textContent =
+      currentUser?.name
+        ? currentUser.name
+            .charAt(0)
+            .toUpperCase()
+        : "U";
 
   } else {
 
-    message.classList.add(
-      "ai-message"
+    avatar.classList.add(
+      "ai-avatar"
     );
+
+
+    avatar.textContent =
+      "N";
 
   }
 
 
-  // ----------------------------------------------------------
-  // CONTENT
-  // ----------------------------------------------------------
-
-  message.textContent =
-    text;
-
-
-  return message;
+  return avatar;
 
 }
 
@@ -488,7 +491,7 @@ function addMessage(
   if (!messages) {
 
     console.error(
-      "Messages container not found"
+      "Messages container not found."
     );
 
     return null;
@@ -496,25 +499,180 @@ function addMessage(
   }
 
 
-  const message =
-    createMessageElement(
-      text,
-      type
+  // ----------------------------------------------------------
+  // MESSAGE ROW
+  // ----------------------------------------------------------
+
+  const row =
+    document.createElement("div");
+
+
+  row.classList.add(
+    "message-row"
+  );
+
+
+  if (type === "user") {
+
+    row.classList.add(
+      "user"
+    );
+
+  } else {
+
+    row.classList.add(
+      "ai"
+    );
+
+  }
+
+
+  // ----------------------------------------------------------
+  // AVATAR
+  // ----------------------------------------------------------
+
+  const avatar =
+    createMessageAvatar(
+      type === "user"
+        ? "user"
+        : "ai"
     );
 
 
-  messages.appendChild(
+  // ----------------------------------------------------------
+  // MESSAGE WRAPPER
+  // ----------------------------------------------------------
+
+  const contentWrapper =
+    document.createElement("div");
+
+
+  contentWrapper.classList.add(
+    "message-content-wrapper"
+  );
+
+
+  // ----------------------------------------------------------
+  // MESSAGE
+  // ----------------------------------------------------------
+
+  const message =
+    document.createElement("div");
+
+
+  message.classList.add(
+    "message"
+  );
+
+
+  if (type === "user") {
+
+    message.classList.add(
+      "user-message"
+    );
+
+  } else {
+
+    message.classList.add(
+      "ai-message"
+    );
+
+
+    if (type === "system") {
+
+      message.classList.add(
+        "system-message"
+      );
+
+    }
+
+  }
+
+
+  message.textContent =
+    String(text);
+
+
+  // ----------------------------------------------------------
+  // MESSAGE META
+  // ----------------------------------------------------------
+
+  const meta =
+    document.createElement("div");
+
+
+  meta.classList.add(
+    "message-meta"
+  );
+
+
+  const now =
+    new Date();
+
+
+  meta.textContent =
+    now.toLocaleTimeString(
+      [],
+      {
+        hour:
+          "2-digit",
+
+        minute:
+          "2-digit"
+      }
+    );
+
+
+  // ----------------------------------------------------------
+  // BUILD MESSAGE
+  // ----------------------------------------------------------
+
+  contentWrapper.appendChild(
     message
+  );
+
+
+  contentWrapper.appendChild(
+    meta
+  );
+
+
+  if (type === "user") {
+
+    row.appendChild(
+      contentWrapper
+    );
+
+
+    row.appendChild(
+      avatar
+    );
+
+  } else {
+
+    row.appendChild(
+      avatar
+    );
+
+
+    row.appendChild(
+      contentWrapper
+    );
+
+  }
+
+
+  messages.appendChild(
+    row
   );
 
 
   updateWelcomeVisibility();
 
-
   scrollToBottom();
 
 
-  return message;
+  return row;
 
 }
 
@@ -546,45 +704,81 @@ function addTypingIndicator() {
   }
 
 
+  const row =
+    document.createElement("div");
+
+
+  row.classList.add(
+    "message-row",
+    "ai",
+    "typing-row"
+  );
+
+
+  const avatar =
+    createMessageAvatar(
+      "ai"
+    );
+
+
   const typing =
-    document.createElement("article");
+    document.createElement("div");
 
 
   typing.classList.add(
-    "message",
-    "ai-message",
     "typing-indicator"
   );
 
 
   typing.setAttribute(
-    "aria-live",
-    "polite"
-  );
-
-
-  typing.setAttribute(
     "aria-label",
-    "AI is thinking"
+    "Nkwasibwe IRHCF is thinking"
   );
 
 
-  typing.textContent =
-    "Nkwasibwe IRHCF iri gutekereza...";
+  for (
+    let i = 0;
+    i < 3;
+    i++
+  ) {
+
+    const dot =
+      document.createElement("span");
+
+
+    dot.classList.add(
+      "typing-dot"
+    );
+
+
+    typing.appendChild(
+      dot
+    );
+
+  }
+
+
+  row.appendChild(
+    avatar
+  );
+
+
+  row.appendChild(
+    typing
+  );
 
 
   messages.appendChild(
-    typing
+    row
   );
 
 
   updateWelcomeVisibility();
 
-
   scrollToBottom();
 
 
-  return typing;
+  return row;
 
 }
 
@@ -610,78 +804,6 @@ function removeTypingIndicator(
 
 
 // ============================================================
-// AUTO RESIZE TEXTAREA
-// ============================================================
-
-function autoResizeInput() {
-
-  if (!userInput) {
-    return;
-  }
-
-
-  if (
-    userInput.tagName
-      .toLowerCase() !==
-    "textarea"
-  ) {
-
-    return;
-
-  }
-
-
-  userInput.style.height =
-    "auto";
-
-
-  const maxHeight =
-    180;
-
-
-  userInput.style.height =
-    Math.min(
-      userInput.scrollHeight,
-      maxHeight
-    ) + "px";
-
-
-  userInput.style.overflowY =
-    userInput.scrollHeight >
-    maxHeight
-      ? "auto"
-      : "hidden";
-
-}
-
-
-// ============================================================
-// SET SENDING STATE
-// ============================================================
-
-function setSendingState(
-  sending
-) {
-
-  if (sendButton) {
-
-    sendButton.disabled =
-      sending;
-
-  }
-
-
-  if (userInput) {
-
-    userInput.disabled =
-      sending;
-
-  }
-
-}
-
-
-// ============================================================
 // SAVE AUTHENTICATION
 // ============================================================
 
@@ -697,7 +819,7 @@ function saveAuth(
 
 
     localStorage.setItem(
-      "nkwasibwe_auth_token",
+      STORAGE_KEYS.authToken,
       token
     );
 
@@ -711,10 +833,8 @@ function saveAuth(
 
 
     localStorage.setItem(
-      "nkwasibwe_user",
-      JSON.stringify(
-        user
-      )
+      STORAGE_KEYS.user,
+      JSON.stringify(user)
     );
 
   }
@@ -732,7 +852,7 @@ function loadSavedUser() {
 
     const savedUser =
       localStorage.getItem(
-        "nkwasibwe_user"
+        STORAGE_KEYS.user
       );
 
 
@@ -766,16 +886,18 @@ function logout() {
   authToken =
     null;
 
+
   currentUser =
     null;
 
 
   localStorage.removeItem(
-    "nkwasibwe_auth_token"
+    STORAGE_KEYS.authToken
   );
 
+
   localStorage.removeItem(
-    "nkwasibwe_user"
+    STORAGE_KEYS.user
   );
 
 
@@ -804,12 +926,12 @@ async function apiRequest(
 
 
   // ----------------------------------------------------------
-  // ADD JSON HEADER WHEN NEEDED
+  // CONTENT TYPE
   // ----------------------------------------------------------
 
   if (
-    !headers["Content-Type"] &&
-    options.body
+    options.body &&
+    !headers["Content-Type"]
   ) {
 
     headers["Content-Type"] =
@@ -819,7 +941,7 @@ async function apiRequest(
 
 
   // ----------------------------------------------------------
-  // ADD AUTHORIZATION
+  // AUTHORIZATION
   // ----------------------------------------------------------
 
   if (authToken) {
@@ -830,12 +952,12 @@ async function apiRequest(
   }
 
 
-  let response;
-
-
   // ----------------------------------------------------------
   // REQUEST
   // ----------------------------------------------------------
+
+  let response;
+
 
   try {
 
@@ -861,7 +983,7 @@ async function apiRequest(
 
 
   // ----------------------------------------------------------
-  // READ RESPONSE
+  // RESPONSE DATA
   // ----------------------------------------------------------
 
   let data;
@@ -882,7 +1004,7 @@ async function apiRequest(
 
 
   // ----------------------------------------------------------
-  // HANDLE UNAUTHORIZED
+  // UNAUTHORIZED
   // ----------------------------------------------------------
 
   if (
@@ -897,7 +1019,7 @@ async function apiRequest(
 
 
   // ----------------------------------------------------------
-  // HANDLE HTTP ERROR
+  // ERROR
   // ----------------------------------------------------------
 
   if (!response.ok) {
@@ -908,7 +1030,7 @@ async function apiRequest(
 
       data.message ||
 
-      `Server error (${response.status})`
+      "Backend error"
 
     );
 
@@ -926,13 +1048,6 @@ async function apiRequest(
 
 async function checkBackendHealth() {
 
-  const controller =
-    new AbortController();
-
-
-  let timeout;
-
-
   try {
 
     setStatus(
@@ -941,10 +1056,18 @@ async function checkBackendHealth() {
     );
 
 
-    timeout =
+    const controller =
+      new AbortController();
+
+
+    const timeout =
       setTimeout(
-        () => controller.abort(),
-        20000
+        () => {
+
+          controller.abort();
+
+        },
+        15000
       );
 
 
@@ -965,7 +1088,8 @@ async function checkBackendHealth() {
     );
 
 
-    let data;
+    let data =
+      null;
 
 
     try {
@@ -975,16 +1099,18 @@ async function checkBackendHealth() {
 
     } catch (error) {
 
-      throw new Error(
-        "Health response ntabwo ari JSON."
-      );
+      data =
+        null;
 
     }
 
 
     if (
       response.ok &&
-      data.success
+      (
+        !data ||
+        data.success !== false
+      )
     ) {
 
       backendOnline =
@@ -992,7 +1118,7 @@ async function checkBackendHealth() {
 
 
       setStatus(
-        "Ready",
+        "Server iri online",
         "online"
       );
 
@@ -1014,17 +1140,7 @@ async function checkBackendHealth() {
 
     return false;
 
-
   } catch (error) {
-
-    if (timeout) {
-
-      clearTimeout(
-        timeout
-      );
-
-    }
-
 
     console.error(
       "Health check error:",
@@ -1037,7 +1153,7 @@ async function checkBackendHealth() {
 
 
     setStatus(
-      "Server iri kubyuka cyangwa ntiboneka",
+      "Server ntiboneka cyangwa iri kubyuka",
       "error"
     );
 
@@ -1146,9 +1262,7 @@ async function login(
 async function getCurrentUser() {
 
   if (!authToken) {
-
     return null;
-
   }
 
 
@@ -1160,19 +1274,12 @@ async function getCurrentUser() {
       );
 
 
-    if (!data.user) {
-
-      return null;
-
-    }
-
-
     currentUser =
       data.user;
 
 
     localStorage.setItem(
-      "nkwasibwe_user",
+      STORAGE_KEYS.user,
       JSON.stringify(
         currentUser
       )
@@ -1181,12 +1288,11 @@ async function getCurrentUser() {
 
     return currentUser;
 
-
   } catch (error) {
 
-    console.error(
+    console.log(
       "Could not get current user:",
-      error
+      error.message
     );
 
 
@@ -1198,128 +1304,292 @@ async function getCurrentUser() {
 
 
 // ============================================================
-// CREATE CONVERSATION
+// WORKFLOW
 // ============================================================
 
-async function createConversation(
-  title = "New conversation"
+function resetWorkflow() {
+
+  workflowSteps.forEach(
+    step => {
+
+      step.classList.remove(
+        "active",
+        "completed"
+      );
+
+    }
+  );
+
+}
+
+
+function activateWorkflowStep(
+  phase
 ) {
 
-  const data =
-    await apiRequest(
-      "/api/conversations",
-      {
+  workflowSteps.forEach(
+    step => {
 
-        method:
-          "POST",
+      if (
+        step.dataset.phase ===
+        phase
+      ) {
 
-        body:
-          JSON.stringify({
-            title
-          })
+        step.classList.add(
+          "active"
+        );
+
+      } else {
+
+        step.classList.remove(
+          "active"
+        );
 
       }
-    );
 
-
-  if (
-    data.conversation &&
-    data.conversation.session_id
-  ) {
-
-    saveSessionId(
-      data.conversation.session_id
-    );
-
-  }
-
-
-  return data;
+    }
+  );
 
 }
 
 
-// ============================================================
-// LOAD CONVERSATION
-// ============================================================
-
-async function loadConversation(
-  requestedSessionId = sessionId
+function completeWorkflowStep(
+  phase
 ) {
 
-  if (!requestedSessionId) {
+  workflowSteps.forEach(
+    step => {
 
-    return null;
+      if (
+        step.dataset.phase ===
+        phase
+      ) {
 
-  }
+        step.classList.remove(
+          "active"
+        );
 
 
-  const encodedSessionId =
-    encodeURIComponent(
-      requestedSessionId
-    );
+        step.classList.add(
+          "completed"
+        );
 
+      }
 
-  return await apiRequest(
-    `/api/conversations/${encodedSessionId}`
+    }
   );
 
 }
 
 
 // ============================================================
-// LOAD CONVERSATION LIST
+// RUN VISUAL WORKFLOW
 // ============================================================
 
-async function loadConversations() {
+async function runWorkflowAnimation() {
 
-  if (!authToken) {
+  const phases = [
 
-    return [];
+    "understand",
 
-  }
+    "plan",
 
+    "execute",
 
-  try {
+    "test",
 
-    const data =
-      await apiRequest(
-        "/api/conversations"
-      );
+    "repair",
 
+    "verify",
 
-    const list =
+    "deliver"
 
-      data.conversations ||
+  ];
 
-      data.items ||
-
-      [];
+resetWorkflow();
 
 
-    conversations =
-      Array.isArray(list)
-        ? list
-        : [];
+  for (
+    let i = 0;
+    i < phases.length;
+    i++
+  ) {
+
+    if (!isSending) {
+      return;
+    }
 
 
-    renderConversationList();
+    const phase =
+      phases[i];
 
 
-    return conversations;
-
-
-  } catch (error) {
-
-    console.log(
-      "Could not load conversations:",
-      error.message
+    activateWorkflowStep(
+      phase
     );
 
 
-    return [];
+    await new Promise(
+      resolve => {
+
+        setTimeout(
+          resolve,
+          450
+        );
+
+      }
+    );
+
+
+    completeWorkflowStep(
+      phase
+    );
 
   }
+
+}
+
+
+// ============================================================
+// CONVERSATION STORAGE
+// ============================================================
+
+function loadLocalConversations() {
+
+  try {
+
+    const saved =
+      localStorage.getItem(
+        STORAGE_KEYS.conversations
+      );
+
+
+    if (saved) {
+
+      conversations =
+        JSON.parse(saved);
+
+    }
+
+  } catch (error) {
+
+    conversations =
+      [];
+
+  }
+
+}
+
+
+function saveLocalConversations() {
+
+  try {
+
+    localStorage.setItem(
+      STORAGE_KEYS.conversations,
+      JSON.stringify(conversations)
+    );
+
+  } catch (error) {
+
+    console.error(
+      "Could not save conversations:",
+      error
+    );
+
+  }
+
+}
+
+
+// ============================================================
+// ADD OR UPDATE LOCAL CONVERSATION
+// ============================================================
+
+function saveCurrentConversation(
+  title = null
+) {
+
+  if (!sessionId) {
+    return;
+  }
+
+
+  const existingIndex =
+    conversations.findIndex(
+      conversation =>
+        conversation.session_id ===
+        sessionId
+    );
+
+
+  const conversationTitle =
+
+    title ||
+
+    (
+      conversations[existingIndex]
+        ?.title
+    ) ||
+
+    "New conversation";
+
+
+  const conversationData = {
+
+    session_id:
+      sessionId,
+
+    title:
+      conversationTitle,
+
+    updated_at:
+      new Date().toISOString()
+
+  };
+
+
+  if (
+    existingIndex >= 0
+  ) {
+
+    conversations[
+      existingIndex
+    ] =
+      conversationData;
+
+  } else {
+
+    conversations.unshift(
+      conversationData
+    );
+
+  }
+
+
+  conversations.sort(
+    (a, b) =>
+
+      new Date(
+        b.updated_at
+      ) -
+
+      new Date(
+        a.updated_at
+      )
+  );
+
+
+  conversations =
+    conversations.slice(
+      0,
+      50
+    );
+
+
+  saveLocalConversations();
+
+  renderConversationList();
 
 }
 
@@ -1331,9 +1601,7 @@ async function loadConversations() {
 function renderConversationList() {
 
   if (!conversationList) {
-
     return;
-
   }
 
 
@@ -1342,9 +1610,6 @@ function renderConversationList() {
 
 
   if (
-    !Array.isArray(
-      conversations
-    ) ||
     conversations.length === 0
   ) {
 
@@ -1352,12 +1617,20 @@ function renderConversationList() {
       document.createElement("div");
 
 
-    empty.className =
-      "conversation-empty";
+    empty.style.padding =
+      "15px";
+
+
+    empty.style.color =
+      "var(--text-muted)";
+
+
+    empty.style.fontSize =
+      "12px";
 
 
     empty.textContent =
-      "Nta conversations ziraboneka.";
+      "Nta conversations zirabikwa hano.";
 
 
     conversationList.appendChild(
@@ -1383,8 +1656,9 @@ function renderConversationList() {
         "button";
 
 
-      button.className =
-        "conversation-item";
+      button.classList.add(
+        "conversation-item"
+      );
 
 
       if (
@@ -1400,9 +1674,7 @@ function renderConversationList() {
 
 
       button.textContent =
-
         conversation.title ||
-
         "New conversation";
 
 
@@ -1410,15 +1682,9 @@ function renderConversationList() {
         "click",
         async () => {
 
-          if (
+          await switchConversation(
             conversation.session_id
-          ) {
-
-            await openConversation(
-              conversation.session_id
-            );
-
-          }
+          );
 
         }
       );
@@ -1435,55 +1701,174 @@ function renderConversationList() {
 
 
 // ============================================================
-// OPEN CONVERSATION
+// CREATE CONVERSATION
 // ============================================================
 
-async function openConversation(
-  requestedSessionId
+async function createConversation(
+  title = "New conversation"
 ) {
 
-  if (!requestedSessionId) {
+  // ----------------------------------------------------------
+  // If backend conversation endpoint exists,
+  // use it. Otherwise frontend local session still works.
+  // ----------------------------------------------------------
 
-    return;
+  if (authToken) {
+
+    try {
+
+      const data =
+        await apiRequest(
+          "/api/conversations",
+          {
+
+            method:
+              "POST",
+
+            body:
+              JSON.stringify({
+                title
+              })
+
+          }
+        );
+
+
+      if (
+        data.conversation &&
+        data.conversation.session_id
+      ) {
+
+        saveSessionId(
+          data.conversation.session_id
+        );
+
+      }
+
+
+      saveCurrentConversation(
+        data.conversation?.title ||
+        title
+      );
+
+
+      return data;
+
+    } catch (error) {
+
+      console.log(
+        "Using local conversation:",
+        error.message
+      );
+
+    }
+
+  }
+
+
+  saveSessionId(
+    createLocalSessionId()
+  );
+
+
+  saveCurrentConversation(
+    title
+  );
+
+
+  return {
+
+    success:
+      true,
+
+    conversation: {
+
+      session_id:
+        sessionId,
+
+      title
+
+    }
+
+  };
+
+}
+
+
+// ============================================================
+// LOAD CONVERSATION FROM BACKEND
+// ============================================================
+
+async function loadConversation(
+  requestedSessionId = sessionId
+) {
+
+  if (
+    !requestedSessionId
+  ) {
+
+    return null;
+
+  }
+
+
+  return await apiRequest(
+
+    `/api/conversations/${encodeURIComponent(
+      requestedSessionId
+    )}`
+
+  );
+
+}
+
+
+// ============================================================
+// DISPLAY CONVERSATION HISTORY
+// ============================================================
+
+async function displayConversationHistory() {
+
+  if (
+    !authToken ||
+    !sessionId ||
+    !messages
+  ) {
+
+    return false;
 
   }
 
 
   try {
 
-    saveSessionId(
-      requestedSessionId
-    );
+    const data =
+      await loadConversation(
+        sessionId
+      );
 
 
-    if (messages) {
+    if (
+      !data ||
+      !Array.isArray(
+        data.messages
+      )
+    ) {
 
-      messages.innerHTML =
-        "";
+      return false;
 
     }
 
 
-    const data =
-      await loadConversation(
-        requestedSessionId
-      );
+    messages.innerHTML =
+      "";
 
 
-    const history =
-
-      data.messages ||
-
-      [];
-
-
-    history.forEach(
+    data.messages.forEach(
       message => {
 
         if (!message.content) {
-
           return;
-
         }
 
 
@@ -1504,63 +1889,7 @@ async function openConversation(
     updateWelcomeVisibility();
 
 
-    renderConversationList();
-
-
-    setStatus(
-      "Conversation yafunguwe",
-      "online"
-    );
-
-
-    if (
-      window.innerWidth <=
-      768
-    ) {
-
-      closeMobileSidebar();
-
-    }
-
-
-  } catch (error) {
-
-    console.error(
-      "Could not open conversation:",
-      error
-    );
-
-
-    addSystemMessage(
-      "Ntibyashoboye gufungura conversation."
-    );
-
-  }
-
-}
-
-
-// ============================================================
-// DISPLAY CURRENT CONVERSATION HISTORY
-// ============================================================
-
-async function displayConversationHistory() {
-
-  if (
-    !authToken ||
-    !sessionId
-  ) {
-
-    return;
-
-  }
-
-
-  try {
-
-    await openConversation(
-      sessionId
-    );
+    return true;
 
   } catch (error) {
 
@@ -1569,33 +1898,37 @@ async function displayConversationHistory() {
       error.message
     );
 
+
+    return false;
+
   }
 
 }
 
 
 // ============================================================
-// START NEW CONVERSATION
+// SWITCH CONVERSATION
 // ============================================================
 
-async function startNewConversation() {
+async function switchConversation(
+  requestedSessionId
+) {
 
-  // ----------------------------------------------------------
-  // CREATE LOCAL SESSION FIRST
-  // ----------------------------------------------------------
+  if (
+    !requestedSessionId ||
+    requestedSessionId ===
+      sessionId
+  ) {
 
-  const newSessionId =
-    createLocalSessionId();
+    return;
+
+  }
 
 
   saveSessionId(
-    newSessionId
+    requestedSessionId
   );
 
-
-  // ----------------------------------------------------------
-  // CLEAR SCREEN
-  // ----------------------------------------------------------
 
   if (messages) {
 
@@ -1607,51 +1940,92 @@ async function startNewConversation() {
 
   updateWelcomeVisibility();
 
-
-  // ----------------------------------------------------------
-  // CREATE BACKEND CONVERSATION IF AUTHENTICATED
-  // ----------------------------------------------------------
-
-  if (authToken) {
-
-    try {
-
-      const data =
-        await createConversation(
-          "New conversation"
-        );
+  renderConversationList();
 
 
-      if (
-        data.conversation &&
-        data.conversation.session_id
-      ) {
-
-        saveSessionId(
-          data.conversation.session_id
-        );
-
-      }
+  setStatus(
+    "Loading conversation...",
+    "loading"
+  );
 
 
-      await loadConversations();
+  const loaded =
+    await displayConversationHistory();
 
 
-    } catch (error) {
+  if (!loaded) {
 
-      console.log(
-        "Backend conversation creation skipped:",
-        error.message
-      );
-
-    }
+    addSystemMessage(
+      "Iyi conversation ntirabasha kuboneka muri database."
+    );
 
   }
 
 
   setStatus(
+    "Server iri online",
+    backendOnline
+      ? "online"
+      : "normal"
+  );
+
+
+  closeMobileSidebar();
+}
+// ============================================================
+// START NEW CONVERSATION
+// ============================================================
+
+async function startNewConversation() {
+
+  if (isSending) {
+    return;
+  }
+
+
+  if (messages) {
+
+    messages.innerHTML =
+      "";
+
+  }
+
+
+  resetWorkflow();
+
+
+  try {
+
+    await createConversation(
+      "New conversation"
+    );
+
+  } catch (error) {
+
+    saveSessionId(
+      createLocalSessionId()
+    );
+
+
+    saveCurrentConversation(
+      "New conversation"
+    );
+
+  }
+
+
+  updateWelcomeVisibility();
+
+  renderConversationList();
+
+  closeMobileSidebar();
+
+
+  setStatus(
     "Conversation nshya yatangiye",
-    "online"
+    backendOnline
+      ? "online"
+      : "normal"
   );
 
 
@@ -1661,26 +2035,19 @@ async function startNewConversation() {
 
   }
 
-
-  if (
-    window.innerWidth <=
-    768
-  ) {
-
-    closeMobileSidebar();
-
-  }
-
 }
 
 
 // ============================================================
-// CLEAR CHAT SCREEN
+// CLEAR CONVERSATION
 // ============================================================
 
 function clearConversation() {
 
-  if (!messages) {
+  if (
+    !messages ||
+    isSending
+  ) {
 
     return;
 
@@ -1691,11 +2058,14 @@ function clearConversation() {
     "";
 
 
+  resetWorkflow();
+
+
   updateWelcomeVisibility();
 
 
   setStatus(
-    "Chat yasibwe kuri screen",
+    "Screen yasukuwe",
     "normal"
   );
 
@@ -1710,98 +2080,38 @@ function clearConversation() {
 
 
 // ============================================================
-// WORKFLOW MANAGEMENT
+// SET SENDING STATE
 // ============================================================
 
-function resetWorkflow() {
-
-  if (!agentWorkflow) {
-
-    return;
-
-  }
-
-
-  const steps =
-    agentWorkflow.querySelectorAll(
-      ".workflow-step"
-    );
-
-
-  steps.forEach(
-    step => {
-
-      step.classList.remove(
-        "active",
-        "completed",
-        "error"
-      );
-
-    }
-  );
-
-}
-
-
-// ============================================================
-// SET WORKFLOW PHASE
-// ============================================================
-
-function setWorkflowPhase(
-  phase,
-  state = "active"
+function setSendingState(
+  sending
 ) {
 
-  if (!agentWorkflow) {
+  if (sendButton) {
 
-    return;
-
-  }
-
-
-  const step =
-    agentWorkflow.querySelector(
-      `[data-phase="${phase}"]`
-    );
-
-
-  if (!step) {
-
-    return;
+    sendButton.disabled =
+      sending;
 
   }
 
 
-  if (state === "active") {
+  if (userInput) {
 
-    step.classList.add(
-      "active"
-    );
+    userInput.disabled =
+      sending;
 
-  } else if (
-    state === "completed"
-  ) {
-
-    step.classList.remove(
-      "active"
-    );
+  }
 
 
-    step.classList.add(
-      "completed"
-    );
+  if (suggestionButtons) {
 
-  } else if (
-    state === "error"
-  ) {
+    suggestionButtons.forEach(
+      button => {
 
-    step.classList.remove(
-      "active"
-    );
+        button.disabled =
+          sending;
 
-
-    step.classList.add(
-      "error"
+      }
     );
 
   }
@@ -1810,141 +2120,76 @@ function setWorkflowPhase(
 
 
 // ============================================================
-// AGENT VISUAL WORKFLOW
+// AUTO RESIZE TEXTAREA
 // ============================================================
 
-function startWorkflowAnimation() {
+function autoResizeInput() {
 
-  resetWorkflow();
-
-
-  const phases = [
-
-    "understand",
-
-    "plan",
-
-    "execute",
-
-    "test",
-
-    "repair",
-
-    "verify",
-
-    "deliver"
-
-  ];
+  if (!userInput) {
+    return;
+  }
 
 
-  let currentIndex =
-    0;
+  if (
+    userInput.tagName
+      .toLowerCase() !==
+    "textarea"
+  ) {
+
+    return;
+
+  }
 
 
-  const interval =
-    setInterval(
-      () => {
-
-        if (
-          currentIndex > 0
-        ) {
-
-          setWorkflowPhase(
-
-            phases[
-              currentIndex - 1
-            ],
-
-            "completed"
-
-          );
-
-        }
+  userInput.style.height =
+    "auto";
 
 
-        if (
-          currentIndex >=
-          phases.length
-        ) {
+  userInput.style.height =
 
-          clearInterval(
-            interval
-          );
+    Math.min(
 
+      userInput.scrollHeight,
 
-          return;
+      150
 
-        }
+    ) +
 
-
-        setWorkflowPhase(
-
-          phases[
-            currentIndex
-          ],
-
-          "active"
-
-        );
-
-
-        currentIndex++;
-
-      },
-      700
-    );
-
-
-  return interval;
+    "px";
 
 }
 
 
 // ============================================================
-// COMPLETE WORKFLOW
+// GENERATE CONVERSATION TITLE
 // ============================================================
 
-function completeWorkflow(
-  intervalId = null
+function generateConversationTitle(
+  text
 ) {
 
-  if (intervalId) {
+  const cleanText =
+    text
+      .replace(/\s+/g, " ")
+      .trim();
 
-    clearInterval(
-      intervalId
-    );
+
+  if (
+    cleanText.length <= 35
+  ) {
+
+    return cleanText;
 
   }
 
 
-  const phases = [
-
-    "understand",
-
-    "plan",
-
-    "execute",
-
-    "test",
-
-    "repair",
-
-    "verify",
-
-    "deliver"
-
-  ];
-
-
-  phases.forEach(
-    phase => {
-
-      setWorkflowPhase(
-        phase,
-        "completed"
-      );
-
-    }
+  return (
+    cleanText
+      .substring(
+        0,
+        35
+      ) +
+    "..."
   );
 
 }
@@ -1958,22 +2203,19 @@ async function sendMessage() {
 
 
   // ----------------------------------------------------------
-  // PREVENT DOUBLE REQUESTS
+  // PREVENT DOUBLE REQUEST
   // ----------------------------------------------------------
 
   if (isSending) {
-
     return;
-
   }
 
 
   if (!userInput) {
 
     console.error(
-      "Input element not found"
+      "Input element not found."
     );
-
 
     return;
 
@@ -1981,7 +2223,7 @@ async function sendMessage() {
 
 
   // ----------------------------------------------------------
-  // GET TEXT
+  // GET MESSAGE
   // ----------------------------------------------------------
 
   const text =
@@ -1992,14 +2234,13 @@ async function sendMessage() {
 
     userInput.focus();
 
-
     return;
 
   }
 
 
   // ----------------------------------------------------------
-  // START STATE
+  // START
   // ----------------------------------------------------------
 
   isSending =
@@ -2008,6 +2249,47 @@ async function sendMessage() {
 
   setSendingState(
     true
+  );
+
+
+  // ----------------------------------------------------------
+  // ENSURE SESSION
+  // ----------------------------------------------------------
+
+  const activeSessionId =
+    ensureSessionId();
+
+
+  // ----------------------------------------------------------
+  // SAVE CONVERSATION
+  // ----------------------------------------------------------
+
+  const existingConversation =
+    conversations.find(
+      conversation =>
+        conversation.session_id ===
+        activeSessionId
+    );
+
+
+  const title =
+    existingConversation?.title ===
+    "New conversation"
+
+      ? generateConversationTitle(
+          text
+        )
+
+      : (
+          existingConversation?.title ||
+          generateConversationTitle(
+            text
+          )
+        );
+
+
+  saveCurrentConversation(
+    title
   );
 
 
@@ -2021,6 +2303,10 @@ async function sendMessage() {
   );
 
 
+  // ----------------------------------------------------------
+  // CLEAR INPUT
+  // ----------------------------------------------------------
+
   userInput.value =
     "";
 
@@ -2029,7 +2315,7 @@ async function sendMessage() {
 
 
   // ----------------------------------------------------------
-  // UPDATE STATUS
+  // STATUS
   // ----------------------------------------------------------
 
   setStatus(
@@ -2039,11 +2325,11 @@ async function sendMessage() {
 
 
   // ----------------------------------------------------------
-  // WORKFLOW ANIMATION
+  // START VISUAL WORKFLOW
   // ----------------------------------------------------------
 
-  const workflowInterval =
-    startWorkflowAnimation();
+  const workflowPromise =
+    runWorkflowAnimation();
 
 
   // ----------------------------------------------------------
@@ -2058,15 +2344,7 @@ async function sendMessage() {
 
 
     // --------------------------------------------------------
-    // ENSURE SESSION
-    // --------------------------------------------------------
-
-    const activeSessionId =
-      ensureSessionId();
-
-
-    // --------------------------------------------------------
-    // SEND REQUEST
+    // SEND REQUEST TO BACKEND
     // --------------------------------------------------------
 
     const data =
@@ -2093,15 +2371,6 @@ async function sendMessage() {
 
 
     // --------------------------------------------------------
-    // REMOVE TYPING
-    // --------------------------------------------------------
-
-    removeTypingIndicator(
-      typingIndicator
-    );
-
-
-    // --------------------------------------------------------
     // UPDATE SESSION
     // --------------------------------------------------------
 
@@ -2118,7 +2387,23 @@ async function sendMessage() {
 
 
     // --------------------------------------------------------
-    // GET AI RESPONSE
+    // WAIT FOR WORKFLOW VISUALIZATION
+    // --------------------------------------------------------
+
+    await workflowPromise;
+
+
+    // --------------------------------------------------------
+    // REMOVE TYPING
+    // --------------------------------------------------------
+
+    removeTypingIndicator(
+      typingIndicator
+    );
+
+
+    // --------------------------------------------------------
+    // GET RESPONSE
     // --------------------------------------------------------
 
     const aiResponse =
@@ -2131,11 +2416,13 @@ async function sendMessage() {
 
       data.result ||
 
+      data.message ||
+
       "Ntabwo habonetse igisubizo cya AI.";
 
 
     // --------------------------------------------------------
-    // DISPLAY AI RESPONSE
+    // DISPLAY RESPONSE
     // --------------------------------------------------------
 
     if (
@@ -2166,16 +2453,16 @@ async function sendMessage() {
 
 
     // --------------------------------------------------------
-    // COMPLETE WORKFLOW
+    // UPDATE CONVERSATION
     // --------------------------------------------------------
 
-    completeWorkflow(
-      workflowInterval
+    saveCurrentConversation(
+      title
     );
 
 
     // --------------------------------------------------------
-    // BACKEND ONLINE
+    // SUCCESS
     // --------------------------------------------------------
 
     backendOnline =
@@ -2183,20 +2470,9 @@ async function sendMessage() {
 
 
     setStatus(
-      "Ready",
+      "Server iri online",
       "online"
     );
-
-
-    // --------------------------------------------------------
-    // REFRESH CONVERSATIONS
-    // --------------------------------------------------------
-
-    if (authToken) {
-
-      loadConversations();
-
-    }
 
 
   } catch (error) {
@@ -2218,20 +2494,13 @@ async function sendMessage() {
 
 
     // --------------------------------------------------------
-    // STOP WORKFLOW
-    // --------------------------------------------------------
-
-    clearInterval(
-      workflowInterval
-    );
-
-
-    // --------------------------------------------------------
-    // GET ERROR MESSAGE
+    // ERROR MESSAGE
     // --------------------------------------------------------
 
     let errorMessage =
+
       error.message ||
+
       "Habaye ikibazo.";
 
 
@@ -2240,7 +2509,7 @@ async function sendMessage() {
 
 
     // --------------------------------------------------------
-    // NETWORK ERROR
+    // RENDER / NETWORK WAKE-UP
     // --------------------------------------------------------
 
     if (
@@ -2250,37 +2519,29 @@ async function sendMessage() {
       ) ||
 
       lowerError.includes(
-        "network"
+        "ntibyashoboye kugera"
       ) ||
 
       lowerError.includes(
-        "server"
+        "abort"
       )
 
     ) {
 
       errorMessage =
-        "Ntibyashoboye kuvugana na server. Niba ari ubwa mbere, Render free server ishobora kuba iri kubyuka. Tegereza gato wongere ugerageze.";
+        "Server ishobora kuba iri kubyuka cyangwa hari ikibazo cya internet. Tegereza amasegonda make wongere ugerageze.";
 
     }
 
 
     // --------------------------------------------------------
-    // SHOW ERROR
+    // DISPLAY ERROR
     // --------------------------------------------------------
 
     addSystemMessage(
+
       `Habaye ikibazo: ${errorMessage}`
-    );
 
-
-    // --------------------------------------------------------
-    // WORKFLOW ERROR
-    // --------------------------------------------------------
-
-    setWorkflowPhase(
-      "execute",
-      "error"
     );
 
 
@@ -2289,17 +2550,13 @@ async function sendMessage() {
 
 
     setStatus(
-      "Hari ikibazo",
+      "Hari ikibazo cya connection",
       "error"
     );
 
 
   } finally {
 
-
-    // --------------------------------------------------------
-    // RESET STATE
-    // --------------------------------------------------------
 
     isSending =
       false;
@@ -2322,49 +2579,31 @@ async function sendMessage() {
 
 
 // ============================================================
-// SUGGESTION BUTTONS
+// SEND SUGGESTION
 // ============================================================
 
-function initializeSuggestions() {
+function sendSuggestion(
+  prompt
+) {
 
-  const suggestionButtons =
-    document.querySelectorAll(
-      ".suggestion"
-    );
+  if (
+    !prompt ||
+    !userInput
+  ) {
 
+    return;
 
-  suggestionButtons.forEach(
-    button => {
-
-      button.addEventListener(
-        "click",
-        () => {
-
-          const prompt =
-            button.dataset.prompt;
+  }
 
 
-          if (
-            prompt &&
-            userInput
-          ) {
-
-            userInput.value =
-              prompt;
+  userInput.value =
+    prompt;
 
 
-            autoResizeInput();
+  autoResizeInput();
 
 
-            userInput.focus();
-
-          }
-
-        }
-      );
-
-    }
-  );
+  sendMessage();
 
 }
 
@@ -2376,178 +2615,263 @@ function initializeSuggestions() {
 function openMobileSidebar() {
 
   if (!sidebar) {
-
     return;
-
   }
 
 
   sidebar.classList.add(
-    "mobile-open"
+    "open"
   );
 
 }
 
-
-// ============================================================
-// CLOSE MOBILE SIDEBAR
-// ============================================================
 
 function closeMobileSidebar() {
 
   if (!sidebar) {
-
     return;
-
   }
 
 
   sidebar.classList.remove(
-    "mobile-open"
+    "open"
   );
 
 }
 
-
-// ============================================================
-// TOGGLE MOBILE SIDEBAR
-// ============================================================
 
 function toggleMobileSidebar() {
 
   if (!sidebar) {
-
     return;
-
   }
 
 
   sidebar.classList.toggle(
-    "mobile-open"
+    "open"
   );
 
 }
+
+
+// ============================================================
+// CLICK OUTSIDE MOBILE SIDEBAR
+// ============================================================
+
+document.addEventListener(
+  "click",
+  function (event) {
+
+    if (
+      window.innerWidth > 700
+    ) {
+
+      return;
+
+    }
+
+
+    if (
+      !sidebar ||
+      !sidebar.classList.contains(
+        "open"
+      )
+    ) {
+
+      return;
+
+    }
+
+
+    const clickedInsideSidebar =
+      sidebar.contains(
+        event.target
+      );
+
+
+    const clickedMenuButton =
+      mobileMenuButton &&
+      mobileMenuButton.contains(
+        event.target
+      );
+
+
+    if (
+      !clickedInsideSidebar &&
+      !clickedMenuButton
+    ) {
+
+      closeMobileSidebar();
+
+    }
+
+  }
+);
 
 
 // ============================================================
 // EVENT LISTENERS
 // ============================================================
 
-function initializeEventListeners() {
+
+// SEND BUTTON
+
+if (sendButton) {
+
+  sendButton.addEventListener(
+    "click",
+    sendMessage
+  );
+
+}
 
 
-  // ----------------------------------------------------------
-  // SEND BUTTON
-  // ----------------------------------------------------------
+// TEXTAREA INPUT
 
-  if (sendButton) {
+if (userInput) {
 
-    sendButton.addEventListener(
+  userInput.addEventListener(
+    "input",
+    autoResizeInput
+  );
+
+
+  userInput.addEventListener(
+    "keydown",
+    function (event) {
+
+      if (
+
+        event.key === "Enter" &&
+
+        !event.shiftKey
+
+      ) {
+
+        event.preventDefault();
+
+        sendMessage();
+
+      }
+
+    }
+  );
+
+}
+
+
+// NEW CONVERSATION BUTTON
+
+if (newChatButton) {
+
+  newChatButton.addEventListener(
+    "click",
+    startNewConversation
+  );
+
+}
+
+
+// HEADER NEW CONVERSATION
+
+if (headerNewChatButton) {
+
+  headerNewChatButton.addEventListener(
+    "click",
+    startNewConversation
+  );
+
+}
+
+
+// CLEAR CHAT
+
+if (clearChatButton) {
+
+  clearChatButton.addEventListener(
+    "click",
+    clearConversation
+  );
+
+}
+
+
+// MOBILE MENU
+
+if (mobileMenuButton) {
+
+  mobileMenuButton.addEventListener(
+    "click",
+    function (event) {
+
+      event.stopPropagation();
+
+      toggleMobileSidebar();
+
+    }
+  );
+
+}
+
+
+// SUGGESTIONS
+
+suggestionButtons.forEach(
+  button => {
+
+    button.addEventListener(
       "click",
-      sendMessage
-    );
+      function () {
 
-  }
-
-
-  // ----------------------------------------------------------
-  // TEXT INPUT
-  // ----------------------------------------------------------
-
-  if (userInput) {
-
-    userInput.addEventListener(
-      "input",
-      autoResizeInput
-    );
+        const prompt =
+          button.dataset.prompt;
 
 
-    userInput.addEventListener(
-      "keydown",
-      function(event) {
-
-
-        // Enter sends message.
-        // Shift + Enter creates a new line.
-
-        if (
-
-          event.key ===
-          "Enter" &&
-
-          !event.shiftKey
-
-        ) {
-
-          event.preventDefault();
-
-
-          sendMessage();
-
-        }
+        sendSuggestion(
+          prompt
+        );
 
       }
     );
 
   }
+);
 
 
-  // ----------------------------------------------------------
-  // NEW CONVERSATION - SIDEBAR
-  // ----------------------------------------------------------
+// ============================================================
+// KEYBOARD SHORTCUT
+// CTRL + K = FOCUS INPUT
+// ============================================================
 
-  if (newChatButton) {
+document.addEventListener(
+  "keydown",
+  function (event) {
 
-    newChatButton.addEventListener(
-      "click",
-      startNewConversation
-    );
+    if (
 
-  }
+      (
+        event.ctrlKey ||
+        event.metaKey
+      ) &&
 
+      event.key.toLowerCase() ===
+      "k"
 
-  // ----------------------------------------------------------
-  // NEW CONVERSATION - HEADER
-  // ----------------------------------------------------------
+    ) {
 
-  if (headerNewChatButton) {
-
-    headerNewChatButton.addEventListener(
-      "click",
-      startNewConversation
-    );
-
-  }
+      event.preventDefault();
 
 
-  // ----------------------------------------------------------
-  // CLEAR CHAT
-  // ----------------------------------------------------------
+      if (userInput) {
 
-  if (clearChatButton) {
+        userInput.focus();
 
-    clearChatButton.addEventListener(
-      "click",
-      clearConversation
-    );
+      }
+
+    }
 
   }
-
-
-  // ----------------------------------------------------------
-  // MOBILE MENU
-  // ----------------------------------------------------------
-
-  if (mobileMenuButton) {
-
-    mobileMenuButton.addEventListener(
-      "click",
-      toggleMobileSidebar
-    );
-
-  }
-
-}
+);
 
 
 // ============================================================
@@ -2558,93 +2882,88 @@ async function initializeApp() {
 
 
   console.log(
-    "================================"
-  );
-
-
-  console.log(
     "Initializing Nkwasibwe IRHCF..."
   );
 
 
-  console.log(
-    "================================"
-  );
-
-
   // ----------------------------------------------------------
-  // LOAD USER
+  // LOAD LOCAL DATA
   // ----------------------------------------------------------
 
   loadSavedUser();
 
-
-  // ----------------------------------------------------------
-  // EVENT LISTENERS
-  // ----------------------------------------------------------
-
-  initializeEventListeners();
+  loadLocalConversations();
 
 
   // ----------------------------------------------------------
-  // SUGGESTIONS
+  // ENSURE SESSION
   // ----------------------------------------------------------
 
-  initializeSuggestions();
+  ensureSessionId();
 
 
   // ----------------------------------------------------------
-  // AUTO RESIZE
+  // RENDER SIDEBAR
   // ----------------------------------------------------------
+
+  saveCurrentConversation(
+    "New conversation"
+  );
+
+
+  renderConversationList();
+
+
+  // ----------------------------------------------------------
+  // INITIAL UI
+  // ----------------------------------------------------------
+
+  updateWelcomeVisibility();
+
+  resetWorkflow();
 
   autoResizeInput();
 
 
   // ----------------------------------------------------------
-  // WELCOME STATE
-  // ----------------------------------------------------------
-
-  updateWelcomeVisibility();
-
-
-  // ----------------------------------------------------------
-  // CHECK SERVER
+  // CHECK BACKEND
   // ----------------------------------------------------------
 
   await checkBackendHealth();
 
 
   // ----------------------------------------------------------
-  // CHECK AUTH USER
+  // LOAD USER
   // ----------------------------------------------------------
 
   if (authToken) {
 
     await getCurrentUser();
 
-
-    // --------------------------------------------------------
-    // LOAD CONVERSATIONS
-    // --------------------------------------------------------
-
-    if (currentUser) {
-
-      await loadConversations();
+  }
 
 
-      if (sessionId) {
+  // ----------------------------------------------------------
+  // LOAD CONVERSATION HISTORY
+  // ----------------------------------------------------------
 
-        await displayConversationHistory();
+  if (
 
-      }
+    authToken &&
 
-    }
+    currentUser &&
+
+    sessionId
+
+  ) {
+
+    await displayConversationHistory();
 
   }
 
 
   // ----------------------------------------------------------
-  // INPUT FOCUS
+  // FOCUS INPUT
   // ----------------------------------------------------------
 
   if (userInput) {
@@ -2655,9 +2974,8 @@ async function initializeApp() {
 
 
   console.log(
-    "Nkwasibwe IRHCF initialized successfully."
+    "Nkwasibwe IRHCF initialized."
   );
-
 
 }
 
@@ -2676,26 +2994,45 @@ initializeApp();
 window.NkwasibweIRHCF = {
 
   // Authentication
+
   login,
+
   register,
+
   logout,
+
   getCurrentUser,
 
+
+  // Conversations
+
+  startNewConversation,
+
+  clearConversation,
+
+  createConversation,
+
+  loadConversation,
+
+  switchConversation,
+
+
   // Chat
+
   sendMessage,
 
-  // Conversation
-  startNewConversation,
-  clearConversation,
-  loadConversation,
-  loadConversations,
-  openConversation,
 
-  // Backend
+  // System
+
   checkBackendHealth,
 
-  // Utility
-  addMessage,
-  setStatus
+
+  // Agent
+
+  resetWorkflow,
+
+  activateWorkflowStep,
+
+  completeWorkflowStep
 
 };
