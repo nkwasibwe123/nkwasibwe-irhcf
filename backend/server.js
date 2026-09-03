@@ -2041,4 +2041,579 @@ app.post(
       const message =
         normalizeText(
           req.body
-     
+     ?.message
+        );
+
+      const sessionId =
+        normalizeText(
+          req.body?.sessionId
+        );
+
+      if (!message) {
+        return res.status(400).json({
+          success: false,
+          error:
+            "Message is required"
+        });
+      }
+
+      let conversation = null;
+
+      // ======================================================
+      // FIND OR CREATE CONVERSATION
+      // ======================================================
+
+      if (sessionId) {
+        const conversationResult =
+          await pool.query(
+            `SELECT *
+             FROM conversations
+             WHERE user_id = $1
+             AND session_id = $2`,
+            [
+              req.user.id,
+              sessionId
+            ]
+          );
+
+        if (
+          conversationResult.rows.length ===
+          0
+        ) {
+          return res.status(404).json({
+            success: false,
+            error:
+              "Conversation not found"
+          });
+        }
+
+        conversation =
+          conversationResult.rows[0];
+      } else {
+        const newSessionId =
+          crypto.randomUUID();
+
+        const title =
+          message.length > 80
+            ? `${message.slice(
+                0,
+                77
+              )}...`
+            : message;
+
+        const conversationResult =
+          await pool.query(
+            `INSERT INTO conversations
+             (
+               user_id,
+               session_id,
+               title
+             )
+             VALUES
+             ($1, $2, $3)
+             RETURNING *`,
+            [
+              req.user.id,
+              newSessionId,
+              title
+            ]
+          );
+
+        conversation =
+          conversationResult.rows[0];
+      }
+
+      // ======================================================
+      // SAVE USER MESSAGE
+      // ======================================================
+
+      await pool.query(
+        `INSERT INTO messages
+         (
+           conversation_id,
+           role,
+           content
+         )
+         VALUES
+         ($1, $2, $3)`,
+        [
+          conversation.id,
+          "user",
+          message
+        ]
+      );
+
+      // ======================================================
+      // LOAD CONVERSATION HISTORY
+      // ======================================================
+
+      const historyResult =
+        await pool.query(
+          `SELECT
+             role,
+             content
+           FROM messages
+           WHERE conversation_id = $1
+           ORDER BY created_at ASC
+           LIMIT 30`,
+          [conversation.id]
+        );
+
+      // ======================================================
+      // LOAD USER MEMORY
+      // ======================================================
+
+      const memoryResult =
+        await pool.query(
+          `SELECT
+             memory_key,
+             memory_value,
+             memory_type,
+             importance
+           FROM user_memory
+           WHERE user_id = $1
+           ORDER BY
+             importance DESC,
+             updated_at DESC
+           LIMIT 20`,
+          [req.user.id]
+        );
+
+      // ======================================================
+      // LOAD LONG-TERM MEMORY
+      // ======================================================
+
+      const longTermMemoryResult =
+        await pool.query(
+          `SELECT
+             content,
+             memory_type,
+             importance,
+             source
+           FROM long_term_memory
+           WHERE user_id = $1
+           ORDER BY
+             importance DESC,
+             updated_at DESC
+           LIMIT 20`,
+          [req.user.id]
+        );
+
+      // ======================================================
+      // LOAD KNOWLEDGE
+      // ======================================================
+
+      const knowledgeResult =
+        await pool.query(
+          `SELECT
+             title,
+             content,
+             source,
+             source_type
+           FROM knowledge
+           WHERE
+             user_id = $1
+             OR user_id IS NULL
+           ORDER BY
+             updated_at DESC
+           LIMIT 10`,
+          [req.user.id]
+        );
+
+      // ======================================================
+      // FORMAT MEMORY
+      // ======================================================
+
+      const memoryText =
+        memoryResult.rows.length > 0
+          ? memoryResult.rows
+              .map(
+                memory =>
+                  `- ${memory.memory_key}: ${memory.memory_value}`
+              )
+              .join("\n")
+          : "No persistent memory available.";
+
+      const longTermMemoryText =
+        longTermMemoryResult.rows.length > 0
+          ? longTermMemoryResult.rows
+              .map(
+                memory =>
+                  `- ${memory.content}`
+              )
+              .join("\n")
+          : "No long-term memory available.";
+
+      const knowledgeText =
+        knowledgeResult.rows.length > 0
+          ? knowledgeResult.rows
+              .map(
+                item =>
+                  `Title: ${
+                    item.title ||
+                    "Untitled"
+                  }\nContent: ${
+                    item.content
+                  }`
+              )
+              .join("\n\n")
+          : "No additional knowledge available.";
+
+      // ======================================================
+      // SYSTEM INSTRUCTIONS
+      // ======================================================
+
+      const systemPrompt = `
+You are Nkwasibwe IRHCF, an AI Agent Platform.
+
+Your purpose is not to behave as only a simple chatbot.
+
+Your goal is to help users understand problems, plan tasks,
+execute tasks when tools and capabilities are available,
+check results, identify errors, and provide useful final answers.
+
+Core workflow:
+
+Understand → Plan → Execute → Test → Repair → Verify → Deliver
+
+Important rules:
+
+1. Be helpful, accurate and honest.
+2. Do not claim that you performed an action when you did not.
+3. If you cannot access a required capability, explain what is missing.
+4. Use the user's stored memory only when relevant.
+5. Respect user privacy and security.
+6. Do not expose secrets, passwords, API keys or authentication tokens.
+7. When a task is complex, break it into clear steps.
+8. Clearly distinguish between planning and completed execution.
+9. Prefer practical solutions.
+10. Never pretend that external actions were completed without actual confirmation.
+
+USER PERSISTENT MEMORY:
+
+${memoryText}
+
+USER LONG-TERM MEMORY:
+
+${longTermMemoryText}
+
+KNOWLEDGE BASE:
+
+${knowledgeText}
+`;
+
+      // ======================================================
+      // BUILD AI MESSAGES
+      // ======================================================
+
+      const aiMessages = [
+        {
+          role: "system",
+          content: systemPrompt
+        },
+        ...historyResult.rows.map(
+          item => ({
+            role: item.role,
+            content: item.content
+          })
+        )
+      ];
+
+      // ======================================================
+      // CALL OPENAI
+      // ======================================================
+
+      const completion =
+        await openai.chat.completions.create({
+          model:
+            config.openaiModel ||
+            "gpt-4o-mini",
+          messages:
+            aiMessages,
+          temperature: 0.7
+        });
+
+      const assistantMessage =
+        completion.choices?.[0]?.message
+          ?.content ||
+        "I could not generate a response.";
+
+      // ======================================================
+      // SAVE ASSISTANT MESSAGE
+      // ======================================================
+
+      const savedAssistantMessage =
+        await pool.query(
+          `INSERT INTO messages
+           (
+             conversation_id,
+             role,
+             content
+           )
+           VALUES
+           ($1, $2, $3)
+           RETURNING *`,
+          [
+            conversation.id,
+            "assistant",
+            assistantMessage
+          ]
+        );
+
+      // ======================================================
+      // UPDATE CONVERSATION
+      // ======================================================
+
+      await pool.query(
+        `UPDATE conversations
+         SET
+           updated_at =
+             CURRENT_TIMESTAMP
+         WHERE id = $1`,
+        [conversation.id]
+      );
+
+      // ======================================================
+      // CREATE AGENT RUN RECORD
+      // ======================================================
+
+      const agentRunResult =
+        await pool.query(
+          `INSERT INTO agent_runs
+           (
+             user_id,
+             goal,
+             status,
+             result,
+             metadata,
+             completed_at
+           )
+           VALUES
+           (
+             $1,
+             $2,
+             'completed',
+             $3,
+             $4::jsonb,
+             CURRENT_TIMESTAMP
+           )
+           RETURNING *`,
+          [
+            req.user.id,
+            message,
+            assistantMessage,
+            JSON.stringify({
+              source: "chat",
+              conversationId:
+                conversation.id,
+              durationMs:
+                Date.now() -
+                startedAt
+            })
+          ]
+        );
+
+      // ======================================================
+      // LOG
+      // ======================================================
+
+      await systemLog(
+        "info",
+        "chat",
+        "AI response generated",
+        {
+          userId:
+            req.user.id,
+          conversationId:
+            conversation.id,
+          durationMs:
+            Date.now() -
+            startedAt
+        }
+      );
+
+      // ======================================================
+      // RESPONSE
+      // ======================================================
+
+      res.json({
+        success: true,
+        conversation: {
+          id:
+            conversation.id,
+          session_id:
+            conversation.session_id,
+          title:
+            conversation.title
+        },
+        message:
+          savedAssistantMessage.rows[0],
+        response:
+          assistantMessage,
+        agentRun:
+          agentRunResult.rows[0],
+        durationMs:
+          Date.now() -
+          startedAt
+      });
+    } catch (error) {
+      console.error(
+        "Chat error:",
+        error
+      );
+
+      await systemLog(
+        "error",
+        "chat",
+        "Chat request failed",
+        {
+          message:
+            error.message
+        }
+      );
+
+      res.status(500).json({
+        success: false,
+        error:
+          "Could not process chat request"
+      });
+    }
+  }
+);
+
+// ============================================================
+// ERROR HANDLER
+// ============================================================
+
+app.use(
+  (error, req, res, next) => {
+    console.error(
+      "Unhandled application error:",
+      error
+    );
+
+    res.status(500).json({
+      success: false,
+      error:
+        "Internal server error"
+    });
+  }
+);
+
+// ============================================================
+// 404 HANDLER
+// ============================================================
+
+app.use(
+  (req, res) => {
+    res.status(404).json({
+      success: false,
+      error:
+        "Route not found"
+    });
+  }
+);
+
+// ============================================================
+// START SERVER
+// ============================================================
+
+async function startServer() {
+  try {
+    await initializeDatabase();
+
+    app.listen(
+      PORT,
+      "0.0.0.0",
+      () => {
+        console.log(
+          "================================"
+        );
+
+        console.log(
+          "Nkwasibwe IRHCF server is running"
+        );
+
+        console.log(
+          `Port: ${PORT}`
+        );
+
+        console.log(
+          `Environment: ${
+            config.environment
+          }`
+        );
+
+        console.log(
+          `AI: ${
+            openai
+              ? "Configured"
+              : "Not configured"
+          }`
+        );
+
+        console.log(
+          `Authentication: ${
+            JWT_SECRET
+              ? "Configured"
+              : "Not configured"
+          }`
+        );
+
+        console.log(
+          "================================"
+        );
+      }
+    );
+  } catch (error) {
+    console.error(
+      "Failed to start server:",
+      error
+    );
+
+    process.exit(1);
+  }
+}
+
+// ============================================================
+// GRACEFUL SHUTDOWN
+// ============================================================
+
+async function shutdown(signal) {
+  console.log(
+    `${signal} received. Shutting down...`
+  );
+
+  try {
+    await pool.end();
+
+    console.log(
+      "Database connection pool closed."
+    );
+
+    process.exit(0);
+  } catch (error) {
+    console.error(
+      "Shutdown error:",
+      error
+    );
+
+    process.exit(1);
+  }
+}
+
+process.on(
+  "SIGTERM",
+  () => shutdown("SIGTERM")
+);
+
+process.on(
+  "SIGINT",
+  () => shutdown("SIGINT")
+);
+
+// ============================================================
+// START APPLICATION
+// ============================================================
+
+startServer();
