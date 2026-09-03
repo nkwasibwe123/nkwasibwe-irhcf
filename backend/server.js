@@ -912,5 +912,246 @@ ${longTermText}
         sessionId: conversation.session_id,
         conversationId: conversation.id
       });
+        } catch (error) {
+      console.error("Chat error:", error);
+
+      await systemLog(
+        "error",
+        "chat",
+        "Chat failed",
+        {
+          userId: req.user?.id || null,
+          error: error.message
+        }
+      );
+
+      res.status(500).json({
+        success: false,
+        error: error.message || "AI request failed"
+      });
+    }
+  }
+);
+
+// ============================================================
+// TASKS
+// ============================================================
+
+app.post(
+  "/api/tasks",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const { task } = req.body;
+
+      if (!task || !task.trim()) {
+        return res.status(400).json({
+          success: false,
+          error: "Task is required"
+        });
+      }
+
+      const result = await pool.query(
+        `INSERT INTO tasks
+         (user_id, task, status)
+         VALUES ($1, $2, $3)
+         RETURNING *`,
+        [
+          req.user.id,
+          task.trim(),
+          "pending"
+        ]
+      );
+
+      res.status(201).json({
+        success: true,
+        task: result.rows[0]
+      });
     } catch (error) {
-      console.error("Chat error:"
+      console.error("Create task error:", error);
+
+      res.status(500).json({
+        success: false,
+        error: "Could not create task"
+      });
+    }
+  }
+);
+
+app.get(
+  "/api/tasks",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const result = await pool.query(
+        `SELECT *
+         FROM tasks
+         WHERE user_id = $1
+         ORDER BY created_at DESC`,
+        [req.user.id]
+      );
+
+      res.json({
+        success: true,
+        tasks: result.rows
+      });
+    } catch (error) {
+      console.error("Tasks load error:", error);
+
+      res.status(500).json({
+        success: false,
+        error: "Could not load tasks"
+      });
+    }
+  }
+);
+
+// ============================================================
+// CAPABILITIES
+// ============================================================
+
+app.get(
+  "/api/capabilities",
+  async (req, res) => {
+    try {
+      const result = await pool.query(
+        `SELECT
+           id,
+           name,
+           description,
+           category,
+           module_path,
+           enabled,
+           version,
+           metadata,
+           created_at,
+           updated_at
+         FROM capabilities
+         WHERE enabled = TRUE
+         ORDER BY name ASC`
+      );
+
+      res.json({
+        success: true,
+        capabilities: result.rows
+      });
+    } catch (error) {
+      console.error("Capabilities error:", error);
+
+      res.status(500).json({
+        success: false,
+        error: "Could not load capabilities"
+      });
+    }
+  }
+);
+
+// ============================================================
+// KNOWLEDGE
+// ============================================================
+
+app.post(
+  "/api/knowledge",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const {
+        title,
+        content,
+        source,
+        sourceType = "text",
+        metadata = {}
+      } = req.body;
+
+      if (!content || !content.trim()) {
+        return res.status(400).json({
+          success: false,
+          error: "Knowledge content is required"
+        });
+      }
+
+      const result = await pool.query(
+        `INSERT INTO knowledge
+         (
+           user_id,
+           title,
+           content,
+           source,
+           source_type,
+           metadata
+         )
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING *`,
+        [
+          req.user.id,
+          title || null,
+          content.trim(),
+          source || null,
+          sourceType,
+          JSON.stringify(metadata)
+        ]
+      );
+
+      res.status(201).json({
+        success: true,
+        knowledge: result.rows[0]
+      });
+    } catch (error) {
+      console.error("Knowledge save error:", error);
+
+      res.status(500).json({
+        success: false,
+        error: "Could not save knowledge"
+      });
+    }
+  }
+);
+
+// ============================================================
+// ERROR HANDLER
+// ============================================================
+
+app.use((error, req, res, next) => {
+  console.error(
+    "Unhandled server error:",
+    error
+  );
+
+  res.status(500).json({
+    success: false,
+    error: "Internal server error"
+  });
+});
+
+// ============================================================
+// START SERVER
+// ============================================================
+
+async function startServer() {
+  try {
+    await initializeDatabase();
+
+    app.listen(
+      PORT,
+      "0.0.0.0",
+      () => {
+        console.log(
+          `Server running on port ${PORT}`
+        );
+
+        console.log(
+          "Nkwasibwe IRHCF backend started successfully."
+        );
+      }
+    );
+  } catch (error) {
+    console.error(
+      "Server startup failed:",
+      error
+    );
+
+    process.exit(1);
+  }
+}
+
+startServer();
