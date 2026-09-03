@@ -1,6 +1,6 @@
 // ============================================================
 // NKWASIBWE IRHCF - FRONTEND APPLICATION
-// AI AGENT PLATFORM
+// Autonomous AI Agent Platform
 // ============================================================
 
 
@@ -16,26 +16,92 @@ const API_BASE_URL =
 // DOM ELEMENTS
 // ============================================================
 
+// Main chat input
 const userInput =
   document.getElementById("userInput");
 
+// Send button
 const sendButton =
   document.getElementById("sendButton");
 
+// Messages container
 const messages =
   document.getElementById("messages");
 
-const clearButton =
-  document.getElementById("clearButton");
+// Chat container
+const chat =
+  document.getElementById("chat");
 
+// Welcome screen
+const welcomeElement =
+  document.getElementById("welcome");
+
+// Suggestions
+const suggestionsElement =
+  document.getElementById("suggestions");
+
+// Workflow
+const agentWorkflow =
+  document.getElementById("agentWorkflow");
+
+// Conversation controls
 const newChatButton =
   document.getElementById("newChatButton");
 
-const statusElement =
-  document.getElementById("status");
+const headerNewChatButton =
+  document.getElementById(
+    "headerNewChatButton"
+  );
 
-const welcomeElement =
-  document.querySelector(".welcome");
+const clearChatButton =
+  document.getElementById(
+    "clearChatButton"
+  );
+
+// Sidebar
+const sidebar =
+  document.getElementById("sidebar");
+
+const conversationList =
+  document.getElementById(
+    "conversationList"
+  );
+
+const mobileMenuButton =
+  document.getElementById(
+    "mobileMenuButton"
+  );
+
+// Status elements
+const statusBar =
+  document.getElementById(
+    "statusBar"
+  );
+
+const statusText =
+  document.getElementById(
+    "statusText"
+  );
+
+const statusIndicator =
+  document.getElementById(
+    "statusIndicator"
+  );
+
+const connectionStatus =
+  document.getElementById(
+    "connectionStatus"
+  );
+
+const agentStatusDot =
+  document.getElementById(
+    "agentStatusDot"
+  );
+
+const agentStatusText =
+  document.getElementById(
+    "agentStatusText"
+  );
 
 
 // ============================================================
@@ -60,6 +126,9 @@ let isSending =
 
 let backendOnline =
   false;
+
+let conversations =
+  [];
 
 
 // ============================================================
@@ -104,7 +173,30 @@ function ensureSessionId() {
 
 
 // ============================================================
-// STATUS
+// SAVE SESSION
+// ============================================================
+
+function saveSessionId(
+  newSessionId
+) {
+
+  if (!newSessionId) {
+    return;
+  }
+
+  sessionId =
+    newSessionId;
+
+  localStorage.setItem(
+    "nkwasibwe_session_id",
+    sessionId
+  );
+
+}
+
+
+// ============================================================
+// STATUS MANAGEMENT
 // ============================================================
 
 function setStatus(
@@ -112,34 +204,155 @@ function setStatus(
   type = "normal"
 ) {
 
-  if (!statusElement) {
-    return;
+  // Main status text
+  if (statusText) {
+
+    statusText.textContent =
+      message;
+
   }
 
-  statusElement.textContent =
-    message;
 
-  statusElement.dataset.status =
-    type;
+  // Status bar
+  if (statusBar) {
+
+    statusBar.dataset.status =
+      type;
+
+  }
+
+
+  // Status indicator
+  if (statusIndicator) {
+
+    statusIndicator.dataset.status =
+      type;
+
+  }
+
+
+  // Connection status
+  if (connectionStatus) {
+
+    if (type === "online") {
+
+      connectionStatus.textContent =
+        "Connected";
+
+    } else if (type === "loading") {
+
+      connectionStatus.textContent =
+        "Working...";
+
+    } else if (type === "error") {
+
+      connectionStatus.textContent =
+        "Disconnected";
+
+    } else {
+
+      connectionStatus.textContent =
+        "Ready";
+
+    }
+
+  }
+
+
+  // Agent status
+  if (agentStatusText) {
+
+    if (type === "online") {
+
+      agentStatusText.textContent =
+        "AI Agent Ready";
+
+    } else if (type === "loading") {
+
+      agentStatusText.textContent =
+        "AI Agent Working";
+
+    } else if (type === "error") {
+
+      agentStatusText.textContent =
+        "Connection Problem";
+
+    } else {
+
+      agentStatusText.textContent =
+        "AI Agent Ready";
+
+    }
+
+  }
+
+
+  // Agent dot
+  if (agentStatusDot) {
+
+    agentStatusDot.dataset.status =
+      type;
+
+  }
 
 }
 
 
 // ============================================================
-// SCROLL TO BOTTOM
+// BACKEND CONNECTION STATUS
 // ============================================================
 
-function scrollToBottom() {
+function setBackendOnline(
+  online
+) {
+
+  backendOnline =
+    online;
+
+  if (online) {
+
+    setStatus(
+      "Ready",
+      "online"
+    );
+
+  } else {
+
+    setStatus(
+      "Server ntiboneka",
+      "error"
+    );
+
+  }
+
+}
+
+
+// ============================================================
+// SCROLL CHAT TO BOTTOM
+// ============================================================
+
+function scrollToBottom(
+  smooth = true
+) {
 
   if (!messages) {
     return;
   }
 
+
   requestAnimationFrame(() => {
 
     messages.scrollTo({
-      top: messages.scrollHeight,
-      behavior: "smooth"
+
+      top:
+        messages.scrollHeight,
+
+      behavior:
+        smooth
+          ? "smooth"
+          : "auto"
+
     });
 
   });
@@ -148,7 +361,7 @@ function scrollToBottom() {
 
 
 // ============================================================
-// HIDE WELCOME
+// HIDE OR SHOW WELCOME
 // ============================================================
 
 function updateWelcomeVisibility() {
@@ -157,18 +370,49 @@ function updateWelcomeVisibility() {
     return;
   }
 
-  if (
+
+  const hasMessages =
     messages &&
-    messages.children.length > 0
-  ) {
+    messages.children.length > 0;
+
+
+  if (hasMessages) {
 
     welcomeElement.style.display =
       "none";
+
+    if (suggestionsElement) {
+
+      suggestionsElement.style.display =
+        "none";
+
+    }
+
+    if (agentWorkflow) {
+
+      agentWorkflow.style.display =
+        "none";
+
+    }
 
   } else {
 
     welcomeElement.style.display =
       "";
+
+    if (suggestionsElement) {
+
+      suggestionsElement.style.display =
+        "";
+
+    }
+
+    if (agentWorkflow) {
+
+      agentWorkflow.style.display =
+        "";
+
+    }
 
   }
 
@@ -176,26 +420,17 @@ function updateWelcomeVisibility() {
 
 
 // ============================================================
-// ADD MESSAGE
+// CREATE MESSAGE ELEMENT
 // ============================================================
 
-function addMessage(
+function createMessageElement(
   text,
   type = "ai"
 ) {
 
-  if (!messages) {
-
-    console.error(
-      "Messages container not found"
-    );
-
-    return null;
-
-  }
-
   const message =
-    document.createElement("div");
+    document.createElement("article");
+
 
   message.classList.add(
     "message"
@@ -236,17 +471,48 @@ function addMessage(
     text;
 
 
-  // ----------------------------------------------------------
-  // ADD TO CHAT
-  // ----------------------------------------------------------
+  return message;
+
+}
+
+
+// ============================================================
+// ADD MESSAGE
+// ============================================================
+
+function addMessage(
+  text,
+  type = "ai"
+) {
+
+  if (!messages) {
+
+    console.error(
+      "Messages container not found"
+    );
+
+    return null;
+
+  }
+
+
+  const message =
+    createMessageElement(
+      text,
+      type
+    );
+
 
   messages.appendChild(
     message
   );
 
+
   updateWelcomeVisibility();
 
+
   scrollToBottom();
+
 
   return message;
 
@@ -281,7 +547,8 @@ function addTypingIndicator() {
 
 
   const typing =
-    document.createElement("div");
+    document.createElement("article");
+
 
   typing.classList.add(
     "message",
@@ -289,14 +556,18 @@ function addTypingIndicator() {
     "typing-indicator"
   );
 
+
   typing.setAttribute(
     "aria-live",
     "polite"
   );
 
 
-  // Simple text version.
-  // Works even if CSS animation does not exist.
+  typing.setAttribute(
+    "aria-label",
+    "AI is thinking"
+  );
+
 
   typing.textContent =
     "Nkwasibwe IRHCF iri gutekereza...";
@@ -306,9 +577,12 @@ function addTypingIndicator() {
     typing
   );
 
+
   updateWelcomeVisibility();
 
+
   scrollToBottom();
+
 
   return typing;
 
@@ -336,6 +610,78 @@ function removeTypingIndicator(
 
 
 // ============================================================
+// AUTO RESIZE TEXTAREA
+// ============================================================
+
+function autoResizeInput() {
+
+  if (!userInput) {
+    return;
+  }
+
+
+  if (
+    userInput.tagName
+      .toLowerCase() !==
+    "textarea"
+  ) {
+
+    return;
+
+  }
+
+
+  userInput.style.height =
+    "auto";
+
+
+  const maxHeight =
+    180;
+
+
+  userInput.style.height =
+    Math.min(
+      userInput.scrollHeight,
+      maxHeight
+    ) + "px";
+
+
+  userInput.style.overflowY =
+    userInput.scrollHeight >
+    maxHeight
+      ? "auto"
+      : "hidden";
+
+}
+
+
+// ============================================================
+// SET SENDING STATE
+// ============================================================
+
+function setSendingState(
+  sending
+) {
+
+  if (sendButton) {
+
+    sendButton.disabled =
+      sending;
+
+  }
+
+
+  if (userInput) {
+
+    userInput.disabled =
+      sending;
+
+  }
+
+}
+
+
+// ============================================================
 // SAVE AUTHENTICATION
 // ============================================================
 
@@ -348,6 +694,7 @@ function saveAuth(
 
     authToken =
       token;
+
 
     localStorage.setItem(
       "nkwasibwe_auth_token",
@@ -362,9 +709,12 @@ function saveAuth(
     currentUser =
       user;
 
+
     localStorage.setItem(
       "nkwasibwe_user",
-      JSON.stringify(user)
+      JSON.stringify(
+        user
+      )
     );
 
   }
@@ -384,6 +734,7 @@ function loadSavedUser() {
       localStorage.getItem(
         "nkwasibwe_user"
       );
+
 
     if (savedUser) {
 
@@ -447,12 +798,24 @@ async function apiRequest(
 
   const headers = {
 
-    "Content-Type":
-      "application/json",
-
     ...(options.headers || {})
 
   };
+
+
+  // ----------------------------------------------------------
+  // ADD JSON HEADER WHEN NEEDED
+  // ----------------------------------------------------------
+
+  if (
+    !headers["Content-Type"] &&
+    options.body
+  ) {
+
+    headers["Content-Type"] =
+      "application/json";
+
+  }
 
 
   // ----------------------------------------------------------
@@ -467,12 +830,12 @@ async function apiRequest(
   }
 
 
+  let response;
+
+
   // ----------------------------------------------------------
   // REQUEST
   // ----------------------------------------------------------
-
-  let response;
-
 
   try {
 
@@ -498,7 +861,7 @@ async function apiRequest(
 
 
   // ----------------------------------------------------------
-  // PARSE RESPONSE
+  // READ RESPONSE
   // ----------------------------------------------------------
 
   let data;
@@ -534,7 +897,7 @@ async function apiRequest(
 
 
   // ----------------------------------------------------------
-  // HANDLE ERRORS
+  // HANDLE HTTP ERROR
   // ----------------------------------------------------------
 
   if (!response.ok) {
@@ -545,7 +908,7 @@ async function apiRequest(
 
       data.message ||
 
-      "Backend error"
+      `Server error (${response.status})`
 
     );
 
@@ -563,6 +926,13 @@ async function apiRequest(
 
 async function checkBackendHealth() {
 
+  const controller =
+    new AbortController();
+
+
+  let timeout;
+
+
   try {
 
     setStatus(
@@ -571,14 +941,10 @@ async function checkBackendHealth() {
     );
 
 
-    const controller =
-      new AbortController();
-
-
-    const timeout =
+    timeout =
       setTimeout(
         () => controller.abort(),
-        15000
+        20000
       );
 
 
@@ -586,8 +952,10 @@ async function checkBackendHealth() {
       await fetch(
         `${API_BASE_URL}/api/health`,
         {
+
           signal:
             controller.signal
+
         }
       );
 
@@ -597,8 +965,21 @@ async function checkBackendHealth() {
     );
 
 
-    const data =
-      await response.json();
+    let data;
+
+
+    try {
+
+      data =
+        await response.json();
+
+    } catch (error) {
+
+      throw new Error(
+        "Health response ntabwo ari JSON."
+      );
+
+    }
 
 
     if (
@@ -611,7 +992,7 @@ async function checkBackendHealth() {
 
 
       setStatus(
-        "Server iri online",
+        "Ready",
         "online"
       );
 
@@ -636,6 +1017,15 @@ async function checkBackendHealth() {
 
   } catch (error) {
 
+    if (timeout) {
+
+      clearTimeout(
+        timeout
+      );
+
+    }
+
+
     console.error(
       "Health check error:",
       error
@@ -647,7 +1037,7 @@ async function checkBackendHealth() {
 
 
     setStatus(
-      "Server ntiboneka cyangwa iri kubyuka",
+      "Server iri kubyuka cyangwa ntiboneka",
       "error"
     );
 
@@ -756,7 +1146,9 @@ async function login(
 async function getCurrentUser() {
 
   if (!authToken) {
+
     return null;
+
   }
 
 
@@ -766,6 +1158,13 @@ async function getCurrentUser() {
       await apiRequest(
         "/api/me"
       );
+
+
+    if (!data.user) {
+
+      return null;
+
+    }
 
 
     currentUser =
@@ -828,13 +1227,8 @@ async function createConversation(
     data.conversation.session_id
   ) {
 
-    sessionId =
-      data.conversation.session_id;
-
-
-    localStorage.setItem(
-      "nkwasibwe_session_id",
-      sessionId
+    saveSessionId(
+      data.conversation.session_id
     );
 
   }
@@ -854,7 +1248,9 @@ async function loadConversation(
 ) {
 
   if (!requestedSessionId) {
+
     return null;
+
   }
 
 
@@ -872,15 +1268,287 @@ async function loadConversation(
 
 
 // ============================================================
-// DISPLAY CONVERSATION HISTORY
+// LOAD CONVERSATION LIST
+// ============================================================
+
+async function loadConversations() {
+
+  if (!authToken) {
+
+    return [];
+
+  }
+
+
+  try {
+
+    const data =
+      await apiRequest(
+        "/api/conversations"
+      );
+
+
+    const list =
+
+      data.conversations ||
+
+      data.items ||
+
+      [];
+
+
+    conversations =
+      Array.isArray(list)
+        ? list
+        : [];
+
+
+    renderConversationList();
+
+
+    return conversations;
+
+
+  } catch (error) {
+
+    console.log(
+      "Could not load conversations:",
+      error.message
+    );
+
+
+    return [];
+
+  }
+
+}
+
+
+// ============================================================
+// RENDER CONVERSATION LIST
+// ============================================================
+
+function renderConversationList() {
+
+  if (!conversationList) {
+
+    return;
+
+  }
+
+
+  conversationList.innerHTML =
+    "";
+
+
+  if (
+    !Array.isArray(
+      conversations
+    ) ||
+    conversations.length === 0
+  ) {
+
+    const empty =
+      document.createElement("div");
+
+
+    empty.className =
+      "conversation-empty";
+
+
+    empty.textContent =
+      "Nta conversations ziraboneka.";
+
+
+    conversationList.appendChild(
+      empty
+    );
+
+
+    return;
+
+  }
+
+
+  conversations.forEach(
+    conversation => {
+
+      const button =
+        document.createElement(
+          "button"
+        );
+
+
+      button.type =
+        "button";
+
+
+      button.className =
+        "conversation-item";
+
+
+      if (
+        conversation.session_id ===
+        sessionId
+      ) {
+
+        button.classList.add(
+          "active"
+        );
+
+      }
+
+
+      button.textContent =
+
+        conversation.title ||
+
+        "New conversation";
+
+
+      button.addEventListener(
+        "click",
+        async () => {
+
+          if (
+            conversation.session_id
+          ) {
+
+            await openConversation(
+              conversation.session_id
+            );
+
+          }
+
+        }
+      );
+
+
+      conversationList.appendChild(
+        button
+      );
+
+    }
+  );
+
+}
+
+
+// ============================================================
+// OPEN CONVERSATION
+// ============================================================
+
+async function openConversation(
+  requestedSessionId
+) {
+
+  if (!requestedSessionId) {
+
+    return;
+
+  }
+
+
+  try {
+
+    saveSessionId(
+      requestedSessionId
+    );
+
+
+    if (messages) {
+
+      messages.innerHTML =
+        "";
+
+    }
+
+
+    const data =
+      await loadConversation(
+        requestedSessionId
+      );
+
+
+    const history =
+
+      data.messages ||
+
+      [];
+
+
+    history.forEach(
+      message => {
+
+        if (!message.content) {
+
+          return;
+
+        }
+
+
+        addMessage(
+
+          message.content,
+
+          message.role === "user"
+            ? "user"
+            : "ai"
+
+        );
+
+      }
+    );
+
+
+    updateWelcomeVisibility();
+
+
+    renderConversationList();
+
+
+    setStatus(
+      "Conversation yafunguwe",
+      "online"
+    );
+
+
+    if (
+      window.innerWidth <=
+      768
+    ) {
+
+      closeMobileSidebar();
+
+    }
+
+
+  } catch (error) {
+
+    console.error(
+      "Could not open conversation:",
+      error
+    );
+
+
+    addSystemMessage(
+      "Ntibyashoboye gufungura conversation."
+    );
+
+  }
+
+}
+
+
+// ============================================================
+// DISPLAY CURRENT CONVERSATION HISTORY
 // ============================================================
 
 async function displayConversationHistory() {
 
   if (
     !authToken ||
-    !sessionId ||
-    !messages
+    !sessionId
   ) {
 
     return;
@@ -890,53 +1558,9 @@ async function displayConversationHistory() {
 
   try {
 
-    const data =
-      await loadConversation(
-        sessionId
-      );
-
-
-    if (
-      !data ||
-      !Array.isArray(
-        data.messages
-      )
-    ) {
-
-      return;
-
-    }
-
-
-    messages.innerHTML =
-      "";
-
-
-    data.messages.forEach(
-      message => {
-
-        if (!message.content) {
-          return;
-        }
-
-
-        const type =
-          message.role === "user"
-            ? "user"
-            : "ai";
-
-
-        addMessage(
-          message.content,
-          type
-        );
-
-      }
+    await openConversation(
+      sessionId
     );
-
-
-    updateWelcomeVisibility();
-
 
   } catch (error) {
 
@@ -954,17 +1578,24 @@ async function displayConversationHistory() {
 // START NEW CONVERSATION
 // ============================================================
 
-function startNewConversation() {
+async function startNewConversation() {
 
-  sessionId =
+  // ----------------------------------------------------------
+  // CREATE LOCAL SESSION FIRST
+  // ----------------------------------------------------------
+
+  const newSessionId =
     createLocalSessionId();
 
 
-  localStorage.setItem(
-    "nkwasibwe_session_id",
-    sessionId
+  saveSessionId(
+    newSessionId
   );
 
+
+  // ----------------------------------------------------------
+  // CLEAR SCREEN
+  // ----------------------------------------------------------
 
   if (messages) {
 
@@ -975,6 +1606,47 @@ function startNewConversation() {
 
 
   updateWelcomeVisibility();
+
+
+  // ----------------------------------------------------------
+  // CREATE BACKEND CONVERSATION IF AUTHENTICATED
+  // ----------------------------------------------------------
+
+  if (authToken) {
+
+    try {
+
+      const data =
+        await createConversation(
+          "New conversation"
+        );
+
+
+      if (
+        data.conversation &&
+        data.conversation.session_id
+      ) {
+
+        saveSessionId(
+          data.conversation.session_id
+        );
+
+      }
+
+
+      await loadConversations();
+
+
+    } catch (error) {
+
+      console.log(
+        "Backend conversation creation skipped:",
+        error.message
+      );
+
+    }
+
+  }
 
 
   setStatus(
@@ -989,17 +1661,29 @@ function startNewConversation() {
 
   }
 
+
+  if (
+    window.innerWidth <=
+    768
+  ) {
+
+    closeMobileSidebar();
+
+  }
+
 }
 
 
 // ============================================================
-// CLEAR CONVERSATION
+// CLEAR CHAT SCREEN
 // ============================================================
 
 function clearConversation() {
 
   if (!messages) {
+
     return;
+
   }
 
 
@@ -1011,33 +1695,114 @@ function clearConversation() {
 
 
   setStatus(
-    "Conversation yasibwe kuri screen",
+    "Chat yasibwe kuri screen",
     "normal"
+  );
+
+
+  if (userInput) {
+
+    userInput.focus();
+
+  }
+
+}
+
+
+// ============================================================
+// WORKFLOW MANAGEMENT
+// ============================================================
+
+function resetWorkflow() {
+
+  if (!agentWorkflow) {
+
+    return;
+
+  }
+
+
+  const steps =
+    agentWorkflow.querySelectorAll(
+      ".workflow-step"
+    );
+
+
+  steps.forEach(
+    step => {
+
+      step.classList.remove(
+        "active",
+        "completed",
+        "error"
+      );
+
+    }
   );
 
 }
 
 
 // ============================================================
-// DISABLE INPUT
+// SET WORKFLOW PHASE
 // ============================================================
 
-function setSendingState(
-  sending
+function setWorkflowPhase(
+  phase,
+  state = "active"
 ) {
 
-  if (sendButton) {
+  if (!agentWorkflow) {
 
-    sendButton.disabled =
-      sending;
+    return;
 
   }
 
 
-  if (userInput) {
+  const step =
+    agentWorkflow.querySelector(
+      `[data-phase="${phase}"]`
+    );
 
-    userInput.disabled =
-      sending;
+
+  if (!step) {
+
+    return;
+
+  }
+
+
+  if (state === "active") {
+
+    step.classList.add(
+      "active"
+    );
+
+  } else if (
+    state === "completed"
+  ) {
+
+    step.classList.remove(
+      "active"
+    );
+
+
+    step.classList.add(
+      "completed"
+    );
+
+  } else if (
+    state === "error"
+  ) {
+
+    step.classList.remove(
+      "active"
+    );
+
+
+    step.classList.add(
+      "error"
+    );
 
   }
 
@@ -1045,36 +1810,142 @@ function setSendingState(
 
 
 // ============================================================
-// AUTO RESIZE TEXTAREA
+// AGENT VISUAL WORKFLOW
 // ============================================================
 
-function autoResizeInput() {
+function startWorkflowAnimation() {
 
-  if (!userInput) {
-    return;
+  resetWorkflow();
+
+
+  const phases = [
+
+    "understand",
+
+    "plan",
+
+    "execute",
+
+    "test",
+
+    "repair",
+
+    "verify",
+
+    "deliver"
+
+  ];
+
+
+  let currentIndex =
+    0;
+
+
+  const interval =
+    setInterval(
+      () => {
+
+        if (
+          currentIndex > 0
+        ) {
+
+          setWorkflowPhase(
+
+            phases[
+              currentIndex - 1
+            ],
+
+            "completed"
+
+          );
+
+        }
+
+
+        if (
+          currentIndex >=
+          phases.length
+        ) {
+
+          clearInterval(
+            interval
+          );
+
+
+          return;
+
+        }
+
+
+        setWorkflowPhase(
+
+          phases[
+            currentIndex
+          ],
+
+          "active"
+
+        );
+
+
+        currentIndex++;
+
+      },
+      700
+    );
+
+
+  return interval;
+
+}
+
+
+// ============================================================
+// COMPLETE WORKFLOW
+// ============================================================
+
+function completeWorkflow(
+  intervalId = null
+) {
+
+  if (intervalId) {
+
+    clearInterval(
+      intervalId
+    );
+
   }
 
 
-  if (
-    userInput.tagName
-      .toLowerCase() !==
-    "textarea"
-  ) {
+  const phases = [
 
-    return;
+    "understand",
 
-  }
+    "plan",
+
+    "execute",
+
+    "test",
+
+    "repair",
+
+    "verify",
+
+    "deliver"
+
+  ];
 
 
-  userInput.style.height =
-    "auto";
+  phases.forEach(
+    phase => {
 
+      setWorkflowPhase(
+        phase,
+        "completed"
+      );
 
-  userInput.style.height =
-    Math.min(
-      userInput.scrollHeight,
-      180
-    ) + "px";
+    }
+  );
 
 }
 
@@ -1091,7 +1962,9 @@ async function sendMessage() {
   // ----------------------------------------------------------
 
   if (isSending) {
+
     return;
+
   }
 
 
@@ -1100,6 +1973,7 @@ async function sendMessage() {
     console.error(
       "Input element not found"
     );
+
 
     return;
 
@@ -1118,13 +1992,14 @@ async function sendMessage() {
 
     userInput.focus();
 
+
     return;
 
   }
 
 
   // ----------------------------------------------------------
-  // START SENDING
+  // START STATE
   // ----------------------------------------------------------
 
   isSending =
@@ -1137,7 +2012,7 @@ async function sendMessage() {
 
 
   // ----------------------------------------------------------
-  // SHOW USER MESSAGE
+  // DISPLAY USER MESSAGE
   // ----------------------------------------------------------
 
   addMessage(
@@ -1154,13 +2029,21 @@ async function sendMessage() {
 
 
   // ----------------------------------------------------------
-  // STATUS
+  // UPDATE STATUS
   // ----------------------------------------------------------
 
   setStatus(
     "Nkwasibwe IRHCF iri gutekereza...",
     "loading"
   );
+
+
+  // ----------------------------------------------------------
+  // WORKFLOW ANIMATION
+  // ----------------------------------------------------------
+
+  const workflowInterval =
+    startWorkflowAnimation();
 
 
   // ----------------------------------------------------------
@@ -1183,7 +2066,7 @@ async function sendMessage() {
 
 
     // --------------------------------------------------------
-    // SEND TO BACKEND
+    // SEND REQUEST
     // --------------------------------------------------------
 
     const data =
@@ -1219,7 +2102,7 @@ async function sendMessage() {
 
 
     // --------------------------------------------------------
-    // UPDATE SESSION ID
+    // UPDATE SESSION
     // --------------------------------------------------------
 
     if (
@@ -1227,13 +2110,8 @@ async function sendMessage() {
       data.conversation.session_id
     ) {
 
-      sessionId =
-        data.conversation.session_id;
-
-
-      localStorage.setItem(
-        "nkwasibwe_session_id",
-        sessionId
+      saveSessionId(
+        data.conversation.session_id
       );
 
     }
@@ -1241,8 +2119,6 @@ async function sendMessage() {
 
     // --------------------------------------------------------
     // GET AI RESPONSE
-    //
-    // Supports multiple backend response formats.
     // --------------------------------------------------------
 
     const aiResponse =
@@ -1252,8 +2128,6 @@ async function sendMessage() {
       data.reply ||
 
       data.message?.content ||
-
-      data.message ||
 
       data.result ||
 
@@ -1277,19 +2151,31 @@ async function sendMessage() {
     } else {
 
       addMessage(
+
         JSON.stringify(
           aiResponse,
           null,
           2
         ),
+
         "ai"
+
       );
 
     }
 
 
     // --------------------------------------------------------
-    // SUCCESS STATUS
+    // COMPLETE WORKFLOW
+    // --------------------------------------------------------
+
+    completeWorkflow(
+      workflowInterval
+    );
+
+
+    // --------------------------------------------------------
+    // BACKEND ONLINE
     // --------------------------------------------------------
 
     backendOnline =
@@ -1297,9 +2183,20 @@ async function sendMessage() {
 
 
     setStatus(
-      "Server iri online",
+      "Ready",
       "online"
     );
+
+
+    // --------------------------------------------------------
+    // REFRESH CONVERSATIONS
+    // --------------------------------------------------------
+
+    if (authToken) {
+
+      loadConversations();
+
+    }
 
 
   } catch (error) {
@@ -1320,6 +2217,19 @@ async function sendMessage() {
     );
 
 
+    // --------------------------------------------------------
+    // STOP WORKFLOW
+    // --------------------------------------------------------
+
+    clearInterval(
+      workflowInterval
+    );
+
+
+    // --------------------------------------------------------
+    // GET ERROR MESSAGE
+    // --------------------------------------------------------
+
     let errorMessage =
       error.message ||
       "Habaye ikibazo.";
@@ -1334,5 +2244,458 @@ async function sendMessage() {
     // --------------------------------------------------------
 
     if (
+
       lowerError.includes(
-        "faile
+        "failed to fetch"
+      ) ||
+
+      lowerError.includes(
+        "network"
+      ) ||
+
+      lowerError.includes(
+        "server"
+      )
+
+    ) {
+
+      errorMessage =
+        "Ntibyashoboye kuvugana na server. Niba ari ubwa mbere, Render free server ishobora kuba iri kubyuka. Tegereza gato wongere ugerageze.";
+
+    }
+
+
+    // --------------------------------------------------------
+    // SHOW ERROR
+    // --------------------------------------------------------
+
+    addSystemMessage(
+      `Habaye ikibazo: ${errorMessage}`
+    );
+
+
+    // --------------------------------------------------------
+    // WORKFLOW ERROR
+    // --------------------------------------------------------
+
+    setWorkflowPhase(
+      "execute",
+      "error"
+    );
+
+
+    backendOnline =
+      false;
+
+
+    setStatus(
+      "Hari ikibazo",
+      "error"
+    );
+
+
+  } finally {
+
+
+    // --------------------------------------------------------
+    // RESET STATE
+    // --------------------------------------------------------
+
+    isSending =
+      false;
+
+
+    setSendingState(
+      false
+    );
+
+
+    if (userInput) {
+
+      userInput.focus();
+
+    }
+
+  }
+
+}
+
+
+// ============================================================
+// SUGGESTION BUTTONS
+// ============================================================
+
+function initializeSuggestions() {
+
+  const suggestionButtons =
+    document.querySelectorAll(
+      ".suggestion"
+    );
+
+
+  suggestionButtons.forEach(
+    button => {
+
+      button.addEventListener(
+        "click",
+        () => {
+
+          const prompt =
+            button.dataset.prompt;
+
+
+          if (
+            prompt &&
+            userInput
+          ) {
+
+            userInput.value =
+              prompt;
+
+
+            autoResizeInput();
+
+
+            userInput.focus();
+
+          }
+
+        }
+      );
+
+    }
+  );
+
+}
+
+
+// ============================================================
+// MOBILE SIDEBAR
+// ============================================================
+
+function openMobileSidebar() {
+
+  if (!sidebar) {
+
+    return;
+
+  }
+
+
+  sidebar.classList.add(
+    "mobile-open"
+  );
+
+}
+
+
+// ============================================================
+// CLOSE MOBILE SIDEBAR
+// ============================================================
+
+function closeMobileSidebar() {
+
+  if (!sidebar) {
+
+    return;
+
+  }
+
+
+  sidebar.classList.remove(
+    "mobile-open"
+  );
+
+}
+
+
+// ============================================================
+// TOGGLE MOBILE SIDEBAR
+// ============================================================
+
+function toggleMobileSidebar() {
+
+  if (!sidebar) {
+
+    return;
+
+  }
+
+
+  sidebar.classList.toggle(
+    "mobile-open"
+  );
+
+}
+
+
+// ============================================================
+// EVENT LISTENERS
+// ============================================================
+
+function initializeEventListeners() {
+
+
+  // ----------------------------------------------------------
+  // SEND BUTTON
+  // ----------------------------------------------------------
+
+  if (sendButton) {
+
+    sendButton.addEventListener(
+      "click",
+      sendMessage
+    );
+
+  }
+
+
+  // ----------------------------------------------------------
+  // TEXT INPUT
+  // ----------------------------------------------------------
+
+  if (userInput) {
+
+    userInput.addEventListener(
+      "input",
+      autoResizeInput
+    );
+
+
+    userInput.addEventListener(
+      "keydown",
+      function(event) {
+
+
+        // Enter sends message.
+        // Shift + Enter creates a new line.
+
+        if (
+
+          event.key ===
+          "Enter" &&
+
+          !event.shiftKey
+
+        ) {
+
+          event.preventDefault();
+
+
+          sendMessage();
+
+        }
+
+      }
+    );
+
+  }
+
+
+  // ----------------------------------------------------------
+  // NEW CONVERSATION - SIDEBAR
+  // ----------------------------------------------------------
+
+  if (newChatButton) {
+
+    newChatButton.addEventListener(
+      "click",
+      startNewConversation
+    );
+
+  }
+
+
+  // ----------------------------------------------------------
+  // NEW CONVERSATION - HEADER
+  // ----------------------------------------------------------
+
+  if (headerNewChatButton) {
+
+    headerNewChatButton.addEventListener(
+      "click",
+      startNewConversation
+    );
+
+  }
+
+
+  // ----------------------------------------------------------
+  // CLEAR CHAT
+  // ----------------------------------------------------------
+
+  if (clearChatButton) {
+
+    clearChatButton.addEventListener(
+      "click",
+      clearConversation
+    );
+
+  }
+
+
+  // ----------------------------------------------------------
+  // MOBILE MENU
+  // ----------------------------------------------------------
+
+  if (mobileMenuButton) {
+
+    mobileMenuButton.addEventListener(
+      "click",
+      toggleMobileSidebar
+    );
+
+  }
+
+}
+
+
+// ============================================================
+// INITIALIZE APPLICATION
+// ============================================================
+
+async function initializeApp() {
+
+
+  console.log(
+    "================================"
+  );
+
+
+  console.log(
+    "Initializing Nkwasibwe IRHCF..."
+  );
+
+
+  console.log(
+    "================================"
+  );
+
+
+  // ----------------------------------------------------------
+  // LOAD USER
+  // ----------------------------------------------------------
+
+  loadSavedUser();
+
+
+  // ----------------------------------------------------------
+  // EVENT LISTENERS
+  // ----------------------------------------------------------
+
+  initializeEventListeners();
+
+
+  // ----------------------------------------------------------
+  // SUGGESTIONS
+  // ----------------------------------------------------------
+
+  initializeSuggestions();
+
+
+  // ----------------------------------------------------------
+  // AUTO RESIZE
+  // ----------------------------------------------------------
+
+  autoResizeInput();
+
+
+  // ----------------------------------------------------------
+  // WELCOME STATE
+  // ----------------------------------------------------------
+
+  updateWelcomeVisibility();
+
+
+  // ----------------------------------------------------------
+  // CHECK SERVER
+  // ----------------------------------------------------------
+
+  await checkBackendHealth();
+
+
+  // ----------------------------------------------------------
+  // CHECK AUTH USER
+  // ----------------------------------------------------------
+
+  if (authToken) {
+
+    await getCurrentUser();
+
+
+    // --------------------------------------------------------
+    // LOAD CONVERSATIONS
+    // --------------------------------------------------------
+
+    if (currentUser) {
+
+      await loadConversations();
+
+
+      if (sessionId) {
+
+        await displayConversationHistory();
+
+      }
+
+    }
+
+  }
+
+
+  // ----------------------------------------------------------
+  // INPUT FOCUS
+  // ----------------------------------------------------------
+
+  if (userInput) {
+
+    userInput.focus();
+
+  }
+
+
+  console.log(
+    "Nkwasibwe IRHCF initialized successfully."
+  );
+
+
+}
+
+
+// ============================================================
+// START APPLICATION
+// ============================================================
+
+initializeApp();
+
+
+// ============================================================
+// EXPOSE PUBLIC FUNCTIONS
+// ============================================================
+
+window.NkwasibweIRHCF = {
+
+  // Authentication
+  login,
+  register,
+  logout,
+  getCurrentUser,
+
+  // Chat
+  sendMessage,
+
+  // Conversation
+  startNewConversation,
+  clearConversation,
+  loadConversation,
+  loadConversations,
+  openConversation,
+
+  // Backend
+  checkBackendHealth,
+
+  // Utility
+  addMessage,
+  setStatus
+
+};
