@@ -504,6 +504,332 @@ async function createSchema() {
     ON user_memory(user_id, memory_key);
   `);
   // ============================================================
+  // FOREIGN KEY RELATIONSHIPS
+  // ============================================================
+
+  await pool.query(`
+    DO $$
+    BEGIN
+
+      -- conversations → users
+      IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname =
+          'fk_conversations_user'
+      ) THEN
+        ALTER TABLE conversations
+        ADD CONSTRAINT
+          fk_conversations_user
+        FOREIGN KEY (user_id)
+        REFERENCES users(id)
+        ON DELETE CASCADE;
+      END IF;
+
+
+      -- messages → conversations
+      IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname =
+          'fk_messages_conversation'
+      ) THEN
+        ALTER TABLE messages
+        ADD CONSTRAINT
+          fk_messages_conversation
+        FOREIGN KEY (conversation_id)
+        REFERENCES conversations(id)
+        ON DELETE CASCADE;
+      END IF;
+
+
+      -- user_memory → users
+      IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname =
+          'fk_user_memory_user'
+      ) THEN
+        ALTER TABLE user_memory
+        ADD CONSTRAINT
+          fk_user_memory_user
+        FOREIGN KEY (user_id)
+        REFERENCES users(id)
+        ON DELETE CASCADE;
+      END IF;
+
+
+      -- long_term_memory → users
+      IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname =
+          'fk_long_term_memory_user'
+      ) THEN
+        ALTER TABLE long_term_memory
+        ADD CONSTRAINT
+          fk_long_term_memory_user
+        FOREIGN KEY (user_id)
+        REFERENCES users(id)
+        ON DELETE CASCADE;
+      END IF;
+
+
+      -- knowledge → users
+      IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname =
+          'fk_knowledge_user'
+      ) THEN
+        ALTER TABLE knowledge
+        ADD CONSTRAINT
+          fk_knowledge_user
+        FOREIGN KEY (user_id)
+        REFERENCES users(id)
+        ON DELETE CASCADE;
+      END IF;
+
+
+      -- tasks → users
+      IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname =
+          'fk_tasks_user'
+      ) THEN
+        ALTER TABLE tasks
+        ADD CONSTRAINT
+          fk_tasks_user
+        FOREIGN KEY (user_id)
+        REFERENCES users(id)
+        ON DELETE CASCADE;
+      END IF;
+
+
+      -- task_runs → tasks
+      IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname =
+          'fk_task_runs_task'
+      ) THEN
+        ALTER TABLE task_runs
+        ADD CONSTRAINT
+          fk_task_runs_task
+        FOREIGN KEY (task_id)
+        REFERENCES tasks(id)
+        ON DELETE CASCADE;
+      END IF;
+
+
+      -- agent_runs → users
+      IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname =
+          'fk_agent_runs_user'
+      ) THEN
+        ALTER TABLE agent_runs
+        ADD CONSTRAINT
+          fk_agent_runs_user
+        FOREIGN KEY (user_id)
+        REFERENCES users(id)
+        ON DELETE CASCADE;
+      END IF;
+
+
+      -- agent_runs → conversations
+      IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname =
+          'fk_agent_runs_conversation'
+      ) THEN
+        ALTER TABLE agent_runs
+        ADD CONSTRAINT
+          fk_agent_runs_conversation
+        FOREIGN KEY (conversation_id)
+        REFERENCES conversations(id)
+        ON DELETE SET NULL;
+      END IF;
+
+
+      -- agent_runs → tasks
+      IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname =
+          'fk_agent_runs_task'
+      ) THEN
+        ALTER TABLE agent_runs
+        ADD CONSTRAINT
+          fk_agent_runs_task
+        FOREIGN KEY (task_id)
+        REFERENCES tasks(id)
+        ON DELETE SET NULL;
+      END IF;
+
+
+      -- agent_steps → agent_runs
+      IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname =
+          'fk_agent_steps_run'
+      ) THEN
+        ALTER TABLE agent_steps
+        ADD CONSTRAINT
+          fk_agent_steps_run
+        FOREIGN KEY (agent_run_id)
+        REFERENCES agent_runs(id)
+        ON DELETE CASCADE;
+      END IF;
+
+
+      -- tool_runs → tools
+      IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname =
+          'fk_tool_runs_tool'
+      ) THEN
+        ALTER TABLE tool_runs
+        ADD CONSTRAINT
+          fk_tool_runs_tool
+        FOREIGN KEY (tool_id)
+        REFERENCES tools(id)
+        ON DELETE SET NULL;
+      END IF;
+
+
+      -- tool_runs → agent_runs
+      IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname =
+          'fk_tool_runs_agent'
+      ) THEN
+        ALTER TABLE tool_runs
+        ADD CONSTRAINT
+          fk_tool_runs_agent
+        FOREIGN KEY (agent_run_id)
+        REFERENCES agent_runs(id)
+        ON DELETE CASCADE;
+      END IF;
+
+
+      -- tool_runs → users
+      IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname =
+          'fk_tool_runs_user'
+      ) THEN
+        ALTER TABLE tool_runs
+        ADD CONSTRAINT
+          fk_tool_runs_user
+        FOREIGN KEY (user_id)
+        REFERENCES users(id)
+        ON DELETE SET NULL;
+      END IF;
+
+
+      -- capability_requests → users
+      IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname =
+          'fk_capability_requests_user'
+      ) THEN
+        ALTER TABLE capability_requests
+        ADD CONSTRAINT
+          fk_capability_requests_user
+        FOREIGN KEY (user_id)
+        REFERENCES users(id)
+        ON DELETE CASCADE;
+      END IF;
+
+    END $$;
+  `);
+    // ============================================================
+  // STATUS VALIDATION CONSTRAINTS
+  // ============================================================
+
+  await pool.query(`
+    DO $$
+    BEGIN
+
+      IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname =
+          'chk_tasks_status'
+      ) THEN
+        ALTER TABLE tasks
+        ADD CONSTRAINT
+          chk_tasks_status
+        CHECK (
+          status IN (
+            'pending',
+            'planning',
+            'running',
+            'completed',
+            'failed',
+            'cancelled'
+          )
+        );
+      END IF;
+
+
+      IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname =
+          'chk_agent_runs_status'
+      ) THEN
+        ALTER TABLE agent_runs
+        ADD CONSTRAINT
+          chk_agent_runs_status
+        CHECK (
+          status IN (
+            'planning',
+            'running',
+            'testing',
+            'repairing',
+            'verifying',
+            'completed',
+            'failed',
+            'cancelled'
+          )
+        );
+      END IF;
+
+
+      IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname =
+          'chk_agent_steps_status'
+      ) THEN
+        ALTER TABLE agent_steps
+        ADD CONSTRAINT
+          chk_agent_steps_status
+        CHECK (
+          status IN (
+            'pending',
+            'running',
+            'completed',
+            'failed',
+            'skipped'
+          )
+        );
+      END IF;
+
+    END $$;
+  `);
+  
+  // ============================================================
   // INDEXES
   // ============================================================
 
