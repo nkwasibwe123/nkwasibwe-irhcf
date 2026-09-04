@@ -1,61 +1,598 @@
 <!DOCTYPE html>
 <html lang="rw">
 <head>
+
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-  <title>Nkwasibwe IRHCF</title>
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  >
 
-  <link rel="stylesheet" href="style.css">
+  <meta
+    name="description"
+    content="Nkwasibwe IRHCF - Autonomous AI Agent Platform"
+  >
+
+  <title>
+    Nkwasibwe IRHCF - AI Agent Platform
+  </title>
+
+  <link
+    rel="stylesheet"
+    href="style.css"
+  >
+
 </head>
 
 <body>
 
+  <!-- ================================================
+       MAIN APPLICATION
+       ================================================ -->
+
   <div class="app">
 
-    <header class="header">
-      <div class="logo">N</div>
 
-      <div>
-        <h1>Nkwasibwe IRHCF</h1>
-        <p>AI Agent</p>
+    <!-- ================================================
+         SIDEBAR
+         ================================================ -->
+
+    <aside
+      id="sidebar"
+      class="sidebar"
+    >
+
+      <div class="sidebar-header">
+
+        <button
+          id="newChatButton"
+          class="new-chat-button"
+          type="button"
+        >
+          <span>+</span>
+          New Conversation
+        </button>
+
       </div>
-    </header>
 
-    <main class="chat">
 
-      <div class="welcome">
-        <h2>Murakaza neza 👋</h2>
+      <!-- CONVERSATION HISTORY -->
 
-        <p>
-          Ndi <strong>Nkwasibwe IRHCF</strong>.
-          Mbwira icyo ushaka gukora.
-        </p>
-      </div>
-
-      <div id="messages" class="messages">
-      </div>
-
-    </main>
-
-    <div class="input-area">
-
-      <input
-        id="userInput"
-        type="text"
-        placeholder="Andika icyo ushaka gukora..."
-        autocomplete="off"
+      <div
+        id="conversationList"
+        class="conversation-list"
       >
 
-      <button id="sendButton">
-        Send
-      </button>
+        <!-- Conversations added by app.js -->
+
+      </div>
+
+
+      <!-- SIDEBAR FOOTER -->
+
+      <div class="sidebar-footer">
+
+        <div class="agent-info">
+
+          <div
+            id="agentStatusDot"
+            class="agent-status-dot"
+          ></div>
+
+
+          <div class="agent-info-text">
+
+            <div class="agent-info-title">
+              Nkwasibwe IRHCF
+            </div>
+
+            <div
+              id="agentStatusText"
+              class="agent-info-status"
+            >
+              Initializing...
+            </div>
+
+          </div>
+
+        </div>
+
+      </div>
+
+    </aside>
+
+
+    <!-- ================================================
+         MAIN AREA
+         ================================================ -->
+
+    <div class="main-area">
+
+
+      <!-- ==============================================
+           HEADER
+           ============================================== -->
+
+      <header class="header">
+
+
+        <!-- BRAND -->
+
+        <div class="brand">
+
+
+          <!-- MOBILE MENU -->
+
+          <button
+            id="mobileMenuButton"
+            class="icon-button mobile-menu-button"
+            type="button"
+            aria-label="Open menu"
+            title="Menu"
+          >
+            ☰
+          </button>
+
+
+          <!-- LOGO -->
+
+          <div
+            class="logo"
+            aria-label="Nkwasibwe IRHCF"
+          >
+            N
+          </div>
+
+
+          <!-- BRAND TEXT -->
+
+          <div class="brand-text">
+
+            <h1>
+              Nkwasibwe IRHCF
+            </h1>
+
+            <p>
+              Autonomous AI Agent Platform
+            </p>
+
+          </div>
+
+        </div>
+
+
+        <!-- HEADER ACTIONS -->
+
+        <div class="header-actions">
+
+
+          <!-- NEW CONVERSATION -->
+
+          <button
+            id="headerNewChatButton"
+            class="icon-button"
+            type="button"
+            aria-label="New conversation"
+            title="New conversation"
+          >
+            +
+          </button>
+
+
+          <!-- CLEAR -->
+
+          <button
+            id="clearChatButton"
+            class="icon-button"
+            type="button"
+            aria-label="Clear conversation"
+            title="Clear conversation"
+          >
+            🗑
+          </button>
+
+        </div>
+
+      </header>
+
+
+      <!-- ==============================================
+           CHAT
+           ============================================== -->
+
+      <main
+        id="chat"
+        class="chat"
+      >
+
+
+        <!-- ============================================
+             WELCOME
+             ============================================ -->
+
+        <section
+          id="welcome"
+          class="welcome"
+        >
+
+          <div class="welcome-logo">
+            N
+          </div>
+
+
+          <h2>
+            Murakaza neza 👋
+          </h2>
+
+
+          <p>
+
+            Ndi
+            <strong>
+              Nkwasibwe IRHCF
+            </strong>.
+
+            Ndi AI Agent Platform ishobora
+            kumva icyo ushaka,
+            kugitegura,
+            kugikora,
+            kugenzura ibisubizo,
+            gukosora ibibazo
+            no kukugezaho result.
+
+          </p>
+
+        </section>
+
+
+        <!-- ============================================
+             AGENT WORKFLOW
+             ============================================ -->
+
+        <section
+          id="agentWorkflow"
+          class="agent-workflow"
+          aria-label="AI Agent workflow"
+        >
+
+          <div
+            class="workflow-step"
+            data-phase="understand"
+          >
+            <span class="workflow-number">
+              1
+            </span>
+
+            <span>
+              Understand
+            </span>
+          </div>
+
+
+          <div
+            class="workflow-step"
+            data-phase="plan"
+          >
+            <span class="workflow-number">
+              2
+            </span>
+
+            <span>
+              Plan
+            </span>
+          </div>
+
+
+          <div
+            class="workflow-step"
+            data-phase="execute"
+          >
+            <span class="workflow-number">
+              3
+            </span>
+
+            <span>
+              Execute
+            </span>
+          </div>
+
+
+          <div
+            class="workflow-step"
+            data-phase="test"
+          >
+            <span class="workflow-number">
+              4
+            </span>
+
+            <span>
+              Test
+            </span>
+          </div>
+
+
+          <div
+            class="workflow-step"
+            data-phase="repair"
+          >
+            <span class="workflow-number">
+              5
+            </span>
+
+            <span>
+              Repair
+            </span>
+          </div>
+
+
+          <div
+            class="workflow-step"
+            data-phase="verify"
+          >
+            <span class="workflow-number">
+              6
+            </span>
+
+            <span>
+              Verify
+            </span>
+          </div>
+
+
+          <div
+            class="workflow-step"
+            data-phase="deliver"
+          >
+            <span class="workflow-number">
+              7
+            </span>
+
+            <span>
+              Deliver
+            </span>
+          </div>
+
+        </section>
+
+
+        <!-- ============================================
+             SUGGESTIONS
+             ============================================ -->
+
+        <section
+          id="suggestions"
+          class="suggestions"
+        >
+
+
+          <button
+            class="suggestion"
+            type="button"
+            data-prompt="Help me plan and execute a task step by step."
+          >
+
+            <div class="suggestion-icon">
+              📋
+            </div>
+
+            <div class="suggestion-content">
+
+              <div class="suggestion-title">
+                Plan a task
+              </div>
+
+              <div class="suggestion-text">
+                Tegura task kandi uyigabanye
+                mu ntambwe zoroshye.
+              </div>
+
+            </div>
+
+          </button>
+
+
+          <button
+            class="suggestion"
+            type="button"
+            data-prompt="Help me solve a problem and verify the result."
+          >
+
+            <div class="suggestion-icon">
+              🧠
+            </div>
+
+            <div class="suggestion-content">
+
+              <div class="suggestion-title">
+                Solve a problem
+              </div>
+
+              <div class="suggestion-text">
+                Sesengura ikibazo,
+                shakisha solution
+                kandi ugenzure result.
+              </div>
+
+            </div>
+
+          </button>
+
+
+          <button
+            class="suggestion"
+            type="button"
+            data-prompt="Help me organize and manage my tasks."
+          >
+
+            <div class="suggestion-icon">
+              ✅
+            </div>
+
+            <div class="suggestion-content">
+
+              <div class="suggestion-title">
+                Manage tasks
+              </div>
+
+              <div class="suggestion-text">
+                Tegura kandi ukurikirane
+                tasks zawe.
+              </div>
+
+            </div>
+
+          </button>
+
+
+          <button
+            class="suggestion"
+            type="button"
+            data-prompt="Help me learn something step by step."
+          >
+
+            <div class="suggestion-icon">
+              📚
+            </div>
+
+            <div class="suggestion-content">
+
+              <div class="suggestion-title">
+                Learn something
+              </div>
+
+              <div class="suggestion-text">
+                Sobanukirwa ikintu gishya
+                intambwe ku yindi.
+              </div>
+
+            </div>
+
+          </button>
+
+        </section>
+
+
+        <!-- ============================================
+             MESSAGES
+             ============================================ -->
+
+        <section
+          id="messages"
+          class="messages"
+          aria-live="polite"
+          aria-label="Conversation messages"
+        >
+
+          <!-- Messages added by app.js -->
+
+        </section>
+
+      </main>
+
+
+      <!-- ==============================================
+           INPUT
+           ============================================== -->
+
+      <div class="input-container">
+
+
+        <div class="input-area">
+
+
+          <textarea
+            id="userInput"
+            rows="1"
+            placeholder="Andika icyo ushaka gukora..."
+            autocomplete="off"
+            aria-label="Message"
+          ></textarea>
+
+
+          <button
+            id="sendButton"
+            type="button"
+            aria-label="Send message"
+            title="Send message"
+          >
+            <span class="send-text">
+              Send
+            </span>
+
+            <span class="send-icon">
+              ➤
+            </span>
+
+          </button>
+
+        </div>
+
+
+        <!-- ============================================
+             STATUS BAR
+             ============================================ -->
+
+        <div
+          id="statusBar"
+          class="status-bar"
+        >
+
+          <div class="status-left">
+
+
+            <div
+              id="statusIndicator"
+              class="status-indicator"
+            ></div>
+
+
+            <span
+              id="status"
+              class="status-text"
+            >
+              Ready
+            </span>
+
+
+            <!-- Compatibility with newer UI -->
+
+            <span
+              id="statusText"
+              class="status-text-alternative"
+            >
+              Ready
+            </span>
+
+          </div>
+
+
+          <div class="status-right">
+
+            <span
+              id="connectionStatus"
+            >
+              Checking connection...
+            </span>
+
+          </div>
+
+        </div>
+
+      </div>
 
     </div>
 
   </div>
 
-  <script src="app.js"></script>
+
+  <!-- ================================================
+       JAVASCRIPT
+       ================================================ -->
+
+  <script
+    src="app.js"
+  ></script>
 
 </body>
-</html>
+            </html>
