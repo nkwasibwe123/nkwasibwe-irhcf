@@ -7043,8 +7043,316 @@ async function initializeApp() {
   try {
 
     // --------------------------------------------------------
-    // SAVE VERSION
+    
+// SAVE VERSION
     // --------------------------------------------------------
 
+    saveAppVersion();
+
+
+    // --------------------------------------------------------
+    // LOAD LOCAL USER
+    // --------------------------------------------------------
+
+    loadSavedUser();
+
+
+    // --------------------------------------------------------
+    // LOAD LOCAL CONVERSATIONS
+    // --------------------------------------------------------
+
+    loadLocalConversations();
+
+
+    normalizeLocalConversations();
+
+
+    // --------------------------------------------------------
+    // ENSURE SESSION
+    // --------------------------------------------------------
+
+    ensureSessionId();
+
+
+    // --------------------------------------------------------
+    // ENSURE CURRENT CONVERSATION
+    // --------------------------------------------------------
+
+    const currentConversation =
+      getCurrentConversation();
+
+
+    if (!currentConversation) {
+
+      saveCurrentConversation(
+        "New conversation"
+      );
+
+    }
+
+
+    // --------------------------------------------------------
+    // RENDER CONVERSATIONS
+    // --------------------------------------------------------
+
+    renderConversationList();
+
+
+    // --------------------------------------------------------
+    // INITIAL UI
+    // --------------------------------------------------------
+
+    updateWelcomeVisibility();
+
+
+    resetWorkflow();
+
+
+    autoResizeInput();
+
+
+    // --------------------------------------------------------
+    // START HEALTH CHECK
+    // --------------------------------------------------------
+
+    await checkBackendHealth();
+
+
+    // --------------------------------------------------------
+    // LOAD AUTHENTICATED USER
+    // --------------------------------------------------------
+
+    if (authToken) {
+
+      await getCurrentUser();
+
+    }
+
+
+    // --------------------------------------------------------
+    // LOAD SERVER CONVERSATION
+    // --------------------------------------------------------
+
+    if (
+
+      authToken &&
+
+      currentUser &&
+
+      sessionId &&
+
+      backendOnline
+
+    ) {
+
+      await displayConversationHistory();
+
+    }
+
+
+    // --------------------------------------------------------
+    // FOCUS INPUT
+    // --------------------------------------------------------
+
+    if (userInput) {
+
+      userInput.focus();
+
+    }
+
+
+    console.log(
+
+      "Nkwasibwe IRHCF initialized successfully."
+
+    );
+
+
+    setStatus(
+
+      backendOnline
+
+        ? "AI Agent Ready"
+
+        : "Application Ready",
+
+      backendOnline
+
+        ? "online"
+
+        : "normal"
+
+    );
+
+  } catch (error) {
+
+    console.error(
+
+      "Initialization error:",
+
+      error
+
+    );
+
+
+    setStatus(
+
+      "Application yatangiye ariko hari service zimwe zitaraboneka.",
+
+      "error"
+
+    );
+
+  }
+
+}
+
+
+// ============================================================
+// START APPLICATION
+// ============================================================
+
+if (
+
+  document.readyState ===
+  "loading"
+
+) {
+
+  document.addEventListener(
+
+    "DOMContentLoaded",
+
+    initializeApp,
+
+    {
+
+      once:
+        true
+
+    }
+
+  );
+
+} else {
+
+  initializeApp();
+
+}
+
+
+// ============================================================
+// PUBLIC APPLICATION API
+// ============================================================
+
+window.NkwasibweIRHCF = {
+
+  // ----------------------------------------------------------
+  // APPLICATION
+  // ----------------------------------------------------------
+
+  version:
+    APP_VERSION,
+
+
+  initialize:
+    initializeApp,
+
+
+  // ----------------------------------------------------------
+  // AUTHENTICATION
+  // ----------------------------------------------------------
+
+  login,
+
+  register,
+
+  logout,
+
+  getCurrentUser,
+
+
+  // ----------------------------------------------------------
+  // CONVERSATIONS
+  // ----------------------------------------------------------
+
+  createConversation,
+
+  startNewConversation,
+
+  switchConversation,
+
+  loadConversation,
+
+  clearConversation,
+
+  saveCurrentConversation,
+
+  getCurrentConversation,
+
+
+  // ----------------------------------------------------------
+  // CHAT
+  // ----------------------------------------------------------
+
+  sendMessage,
+
+  sendSuggestion,
+
+
+  // ----------------------------------------------------------
+  // CONNECTION
+  // ----------------------------------------------------------
+
+  checkBackendHealth,
+
+  apiRequest,
+
+
+  // ----------------------------------------------------------
+  // WORKFLOW
+  // ----------------------------------------------------------
+
+  resetWorkflow,
+
+  activateWorkflowStep,
+
+  completeWorkflowStep,
+
+  errorWorkflowStep,
+
+  runWorkflowAnimation,
+
+
+  // ----------------------------------------------------------
+  // STATE
+  // ----------------------------------------------------------
+
+  getState: function () {
+
+    return {
+
+      sessionId,
+
+      currentUser,
+
+      isSending,
+
+      backendOnline,
+
+      conversationCount:
+        conversations.length
+
+    };
+
+  }
+
+
+};
+
+
+// ============================================================
+// END OF NKWASIBWE IRHCF FRONTEND APPLICATION
+// ============================================================
     
     
