@@ -15,7 +15,8 @@
 // ============================================================
 // CONFIGURATION
 // ============================================================
-
+const MAX_INPUT_HEIGHT = 180;
+const MAX_CONVERSATION_TITLE_LENGTH = 80;
 const APP_CONFIG = Object.freeze({
 
   appName:
