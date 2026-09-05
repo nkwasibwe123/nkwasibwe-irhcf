@@ -1730,153 +1730,103 @@ async function apiRequest(
 // ============================================================
 // CHECK BACKEND HEALTH
 // ============================================================
+function setStatus(message, type = "info") {
+  console.log(`[STATUS] ${message}`);
 
+  const statusElement =
+    document.getElementById("status") ||
+    document.getElementById("statusText") ||
+    document.getElementById("connectionStatus");
+
+  if (!statusElement) {
+    return;
+  }
+
+  statusElement.textContent = message;
+  statusElement.dataset.status = type;
+}
 async function checkBackendHealth() {
+  const controller = new AbortController();
 
-  const controller =
-    new AbortController();
-
-
-  const timeout =
-    setTimeout(
-
-      () => {
-
-        controller.abort();
-
-      },
-
-      APP_CONFIG.healthTimeout
-
-    );
-
+  const timeout = setTimeout(
+    () => {
+      controller.abort();
+    },
+    APP_CONFIG.healthTimeout
+  );
 
   try {
-
     setStatus(
       "Kugenzura server...",
       "loading"
     );
 
+    const response = await fetch(
+      `${API_BASE_URL}${API_ENDPOINTS.health}`,
+      {
+        method: "GET",
 
-    const response =
-      await fetch(
+        headers: {
+          Accept: "application/json"
+        },
 
-        `${API_BASE_URL}${API_ENDPOINTS.health}`,
+        signal: controller.signal
+      }
+    );
 
-        {
-
-          method:
-            "GET",
-
-          headers: {
-
-            Accept:
-              "application/json"
-
-          },
-
-          signal:
-            controller.signal
-
-        }
-
-      );
-
-
-    let data =
-      null;
-
+    let data = null;
 
     try {
-
-      data =
-        await response.json();
-
+      data = await response.json();
     } catch (error) {
-
-      data =
-        null;
-
+      data = null;
     }
 
-
     if (
-
       response.ok &&
-
       (
-
         !data ||
-
         data.success !== false
-
       )
-
     ) {
-
-      updateBackendState(
-        true
-      );
-
+      updateBackendState(true);
 
       setStatus(
         "Server iri online",
         "online"
       );
 
-
       return true;
-
     }
 
-
-    updateBackendState(
-      false
-    );
-
+    updateBackendState(false);
 
     setStatus(
       "Server ifite ikibazo",
       "error"
     );
 
-
     return false;
 
   } catch (error) {
-
     console.error(
       "Health check error:",
       error
     );
 
-
-    updateBackendState(
-      false
-    );
-
+    updateBackendState(false);
 
     setStatus(
       "Server ntiboneka cyangwa iri kubyuka",
       "error"
     );
 
-
     return false;
 
   } finally {
-
-    clearTimeout(
-      timeout
-    );
-
+    clearTimeout(timeout);
   }
-
 }
-
-
-
 // ============================================================
 // REGISTER
 // ============================================================
