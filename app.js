@@ -17,6 +17,7 @@
 // ============================================================
 const MAX_INPUT_HEIGHT = 180;
 const MAX_CONVERSATION_TITLE_LENGTH = 80;
+const MAX_LOCAL_CONVERSATIONS = 50;
 const APP_CONFIG = Object.freeze({
 
   appName:
@@ -6979,10 +6980,48 @@ document.addEventListener(
 
 
 // ============================================================
+function updateWelcomeVisibility() {
+  const welcomeElement =
+    document.getElementById("welcome") ||
+    document.querySelector(".welcome") ||
+    document.querySelector("#welcomeScreen");
+
+  if (!welcomeElement) {
+    return;
+  }
+
+  const conversation =
+    typeof getCurrentConversation === "function"
+      ? getCurrentConversation()
+      : null;
+
+  const hasMessages =
+    conversation &&
+    Array.isArray(conversation.messages) &&
+    conversation.messages.length > 0;
+
+  welcomeElement.style.display =
+    hasMessages ? "none" : "";
+}
+
+
 // INITIALIZE APPLICATION
 // ============================================================
 
 async function initializeApp() {
+
+  console.log(
+    `Initializing Nkwasibwe IRHCF ${APP_VERSION}...`
+  );
+
+  // ...
+}
+// INITIALIZE APPLICATION
+// ============================================================
+
+async function initializeApp()  {
+  // Tab to edit
+} {
 
   console.log(
 
@@ -7065,7 +7104,7 @@ async function initializeApp() {
     // --------------------------------------------------------
     // START HEALTH CHECK
     // --------------------------------------------------------
-
+.
     await checkBackendHealth();
 
 
@@ -7147,13 +7186,17 @@ async function initializeApp() {
 
 
     setStatus(
+  `Initialization error: ${
+    error?.message || String(error)
+  }`,
+  "error"
+);
 
-      "Application yatangiye ariko hari service zimwe zitaraboneka.",
-
-      "error"
-
-    );
-
+console.error(
+  "Initialization ReferenceError:",
+  error?.message,
+  error?.stack
+);
   }
 
 }
