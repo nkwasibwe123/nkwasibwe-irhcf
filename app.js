@@ -1418,18 +1418,14 @@ function clearRequestController(
 // ============================================================
 
 async function apiRequest(
-
   endpoint,
-
   options = {}
-
 ) {
 
   const headers = {
 
     Accept:
       "application/json",
-
 
     ...(options.headers || {})
 
@@ -1441,11 +1437,8 @@ async function apiRequest(
   // ----------------------------------------------------------
 
   if (
-
     options.body &&
-
     !headers["Content-Type"]
-
   ) {
 
     headers["Content-Type"] =
@@ -1473,22 +1466,15 @@ async function apiRequest(
   const externalSignal =
     options.signal;
 
-
   const controller =
     new AbortController();
 
-
   const timeout =
     setTimeout(
-
       () => {
-
         controller.abort();
-
       },
-
       APP_CONFIG.apiTimeout
-
     );
 
 
@@ -1510,25 +1496,16 @@ async function apiRequest(
 
       externalAbortHandler =
         () => {
-
           controller.abort();
-
         };
 
 
       externalSignal.addEventListener(
-
         "abort",
-
         externalAbortHandler,
-
         {
-
-          once:
-            true
-
+          once: true
         }
-
       );
 
     }
@@ -1547,29 +1524,20 @@ async function apiRequest(
 
     response =
       await fetch(
-
         `${API_BASE_URL}${endpoint}`,
-
         {
-
           ...options,
-
           headers,
-
           signal:
             controller.signal
-
         }
-
       );
 
   } catch (error) {
 
     if (
-
-      error.name ===
-        "AbortError"
-
+      error &&
+      error.name === "AbortError"
     ) {
 
       throw new Error(
@@ -1591,19 +1559,13 @@ async function apiRequest(
 
 
     if (
-
       externalSignal &&
-
       externalAbortHandler
-
     ) {
 
       externalSignal.removeEventListener(
-
         "abort",
-
         externalAbortHandler
-
       );
 
     }
@@ -1616,12 +1578,9 @@ async function apiRequest(
   // ----------------------------------------------------------
 
   const contentType =
-
     response.headers.get(
       "content-type"
-    ) ||
-
-    "";
+    ) || "";
 
 
   let data =
@@ -1629,11 +1588,9 @@ async function apiRequest(
 
 
   if (
-
     contentType.includes(
       "application/json"
     )
-
   ) {
 
     try {
@@ -1657,10 +1614,8 @@ async function apiRequest(
 
 
       data = {
-
         message:
           text
-
       };
 
     } catch (error) {
@@ -1678,15 +1633,9 @@ async function apiRequest(
   // ----------------------------------------------------------
 
   if (
-
     response.status === 401 &&
-
-    endpoint !==
-      API_ENDPOINTS.login &&
-
-    endpoint !==
-      API_ENDPOINTS.register
-
+    endpoint !== API_ENDPOINTS.login &&
+    endpoint !== API_ENDPOINTS.register
   ) {
 
     logout();
@@ -1702,11 +1651,11 @@ async function apiRequest(
 
     const errorMessage =
 
-      data?.error ||
+      data && data.error ||
 
-      data?.message ||
+      data && data.message ||
 
-      data?.detail ||
+      data && data.detail ||
 
       `Backend error (${response.status})`;
 
@@ -1718,17 +1667,15 @@ async function apiRequest(
   }
 
 
+  // ----------------------------------------------------------
+  // SUCCESS
+  // ----------------------------------------------------------
+
   return data || {
-
-    success:
-      true
-
+    success: true
   };
 
 }
-
-
-
 // ============================================================
 // CHECK BACKEND HEALTH
 // ============================================================
@@ -1867,7 +1814,7 @@ async function register(
     );
 
 
-  if (data?.token) {
+  if (data && data.token) {
 
     saveAuth(
 
@@ -5951,7 +5898,7 @@ function getFriendlyErrorMessage(
 
     String(
 
-      error?.message ||
+      error && erro||
 
       "Habaye ikibazo."
 
@@ -7104,7 +7051,6 @@ async function initializeApp()  {
     // --------------------------------------------------------
     // START HEALTH CHECK
     // --------------------------------------------------------
-.
     await checkBackendHealth();
 
 
@@ -7177,30 +7123,26 @@ async function initializeApp()  {
   } catch (error) {
 
     console.error(
-
       "Initialization error:",
-
       error
-
     );
 
-
     setStatus(
-  `Initialization error: ${
-    error?.message || String(error)
-  }`,
-  "error"
-);
+      "Initialization error: " +
+        (
+          error && error.message
+            ? error.message
+            : String(error)
+        ),
+      "error"
+    );
 
-console.error(
-  "Initialization ReferenceError:",
-  error?.message,
-  error?.stack
-);
+    console.error(
+      "Initialization details:",
+      error && error.message,
+      error && error.stack
+    );
   }
-
-}
-
 
 // ============================================================
 // START APPLICATION
