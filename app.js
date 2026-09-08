@@ -1680,19 +1680,29 @@ async function apiRequest(
 // CHECK BACKEND HEALTH
 // ============================================================
 function setStatus(message, type = "info") {
-  console.log(`[STATUS] ${message}`);
 
-  const statusElement =
-    document.getElementById("status") ||
-    document.getElementById("statusText") ||
-    document.getElementById("connectionStatus");
+  console.log(
+    `[STATUS] ${message}`
+  );
 
-  if (!statusElement) {
-    return;
-  }
+  const statusElements = [
+    document.getElementById("status"),
+    document.getElementById("statusText"),
+    document.getElementById("connectionStatus")
+  ].filter(Boolean);
 
-  statusElement.textContent = message;
-  statusElement.dataset.status = type;
+  statusElements.forEach(
+    element => {
+
+      element.textContent =
+        message;
+
+      element.dataset.status =
+        type;
+
+    }
+  );
+
 }
 async function checkBackendHealth() {
   const controller = new AbortController();
@@ -3828,14 +3838,12 @@ function getCurrentConversationTitle(
     );
 
 
-  if (
-
-    existingConversation?.title &&
+   existingConversation &&
 
     existingConversation.title !==
     "New conversation"
 
-  ) {
+  {
 
     return existingConversation.title;
 
@@ -5895,14 +5903,11 @@ function getFriendlyErrorMessage(
 ) {
 
   const originalMessage =
-
-    String(
-
-      error && erro||
-
-      "Habaye ikibazo."
-
-    );
+  String(
+    error && error.message
+      ? error.message
+      : "Habaye ikibazo."
+  );
 
 
   const lowerError =
@@ -6952,6 +6957,7 @@ function updateWelcomeVisibility() {
 }
 
 
+// ============================================================
 // INITIALIZE APPLICATION
 // ============================================================
 
@@ -6961,15 +6967,146 @@ async function initializeApp() {
     `Initializing Nkwasibwe IRHCF ${APP_VERSION}...`
   );
 
-  // ...
+  try {
+
+    // --------------------------------------------------------
+    // SAVE VERSION
+    // --------------------------------------------------------
+
+    saveAppVersion();
+
+    // --------------------------------------------------------
+    // LOAD LOCAL USER
+    // --------------------------------------------------------
+
+    loadSavedUser();
+
+    // --------------------------------------------------------
+    // LOAD LOCAL CONVERSATIONS
+    // --------------------------------------------------------
+
+    loadLocalConversations();
+
+    normalizeLocalConversations();
+
+    // --------------------------------------------------------
+    // ENSURE SESSION
+    // --------------------------------------------------------
+
+    ensureSessionId();
+
+    // --------------------------------------------------------
+    // ENSURE CURRENT CONVERSATION
+    // --------------------------------------------------------
+
+    const currentConversation =
+      getCurrentConversation();
+
+    if (!currentConversation) {
+
+      saveCurrentConversation(
+        "New conversation"
+      );
+
+    }
+
+    // --------------------------------------------------------
+    // RENDER CONVERSATIONS
+    // --------------------------------------------------------
+
+    renderConversationList();
+
+    // --------------------------------------------------------
+    // INITIAL UI
+    // --------------------------------------------------------
+
+    updateWelcomeVisibility();
+
+    resetWorkflow();
+
+    autoResizeInput();
+
+    // --------------------------------------------------------
+    // START HEALTH CHECK
+    // --------------------------------------------------------
+
+    await checkBackendHealth();
+
+    // --------------------------------------------------------
+    // LOAD AUTHENTICATED USER
+    // --------------------------------------------------------
+
+    if (authToken) {
+
+      await getCurrentUser();
+
+    }
+
+    // --------------------------------------------------------
+    // LOAD SERVER CONVERSATION
+    // --------------------------------------------------------
+
+    if (
+      authToken &&
+      currentUser &&
+      sessionId &&
+      backendOnline
+    ) {
+
+      await displayConversationHistory();
+
+    }
+
+    // --------------------------------------------------------
+    // FOCUS INPUT
+    // --------------------------------------------------------
+
+    if (userInput) {
+
+      userInput.focus();
+
+    }
+
+    console.log(
+      "Nkwasibwe IRHCF initialized successfully."
+    );
+
+    setStatus(
+      backendOnline
+        ? "AI Agent Ready"
+        : "Application Ready",
+
+      backendOnline
+        ? "online"
+        : "normal"
+    );
+
+  } catch (error) {
+
+    console.error(
+      "Initialization error:",
+      error
+    );
+
+    setStatus(
+      "Initialization error: " +
+        (
+          error && error.message
+            ? error.message
+            : String(error)
+        ),
+      "error"
+    );
+
+    console.error(
+      "Initialization details:",
+      error && error.message,
+      error && error.stack
+    );
+
+  }
+
 }
-// INITIALIZE APPLICATION
-// ============================================================
-
-async function initializeApp()  {
-  // Tab to edit
-} {
-
   console.log(
 
     `Initializing Nkwasibwe IRHCF ${APP_VERSION}...`
@@ -7285,10 +7422,3 @@ window.NkwasibweIRHCF = {
 
 
 };
-
-
-// ============================================================
-// END OF NKWASIBWE IRHCF FRONTEND APPLICATION
-// ============================================================
-    
-    
