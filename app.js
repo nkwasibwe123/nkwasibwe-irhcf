@@ -8264,9 +8264,7 @@ function showAuthenticationDialog() {
 
   form.addEventListener(
     "submit",
-    async function (
-      event
-    ) {
+    async function (event) {
 
       event.preventDefault();
 
@@ -8294,18 +8292,13 @@ function showAuthenticationDialog() {
       const password =
         passwordInput.value;
 
-
       errorBox.style.display =
         "none";
 
       errorBox.textContent =
         "";
 
-
-      if (
-        !email ||
-        !password
-      ) {
+      if (!email || !password) {
 
         errorBox.textContent =
           "Email na password birakenewe.";
@@ -8315,7 +8308,6 @@ function showAuthenticationDialog() {
 
         return;
       }
-
 
       if (
         mode === "register" &&
@@ -8331,10 +8323,7 @@ function showAuthenticationDialog() {
         return;
       }
 
-
-      if (
-        password.length < 6
-      ) {
+      if (password.length < 6) {
 
         errorBox.textContent =
           "Password igomba kuba nibura inyuguti 6.";
@@ -8345,7 +8334,6 @@ function showAuthenticationDialog() {
         return;
       }
 
-
       submitButton.disabled =
         true;
 
@@ -8354,14 +8342,11 @@ function showAuthenticationDialog() {
           ? "Turafungura konti..."
           : "Turinjiza...";
 
-
       try {
 
         let data;
 
-        if (
-          mode === "register"
-        ) {
+        if (mode === "register") {
 
           data =
             await register(
@@ -8379,7 +8364,6 @@ function showAuthenticationDialog() {
             );
         }
 
-
         if (
           !data ||
           !data.token
@@ -8392,15 +8376,11 @@ function showAuthenticationDialog() {
           );
         }
 
-
-        if (
-          !currentUser
-        ) {
+        if (!currentUser) {
 
           await getCurrentUser();
 
         }
-
 
         overlay.remove();
 
@@ -8416,35 +8396,32 @@ function showAuthenticationDialog() {
           "success"
         );
 
+      } catch (error) {
 
-      } 
+        console.error(
+          "Authentication error:",
+          error
+        );
 
-    } catch (error) {
+        const serverMessage =
+          error?.response?.error ||
+          error?.response?.message ||
+          error?.response?.detail ||
+          error?.message ||
+          "Authentication failed.";
 
-  console.error(
-    "Authentication error:",
-    error
-  );
+        console.error(
+          "AUTH ERROR DETAILS:",
+          {
+            status: error?.status,
+            code: error?.code,
+            message: error?.message,
+            response: error?.response
+          }
+        );
 
-  const serverMessage =
-    error?.response?.error ||
-    error?.response?.message ||
-    error?.response?.detail ||
-    error?.message ||
-    "Authentication failed.";
-
-  console.error(
-    "AUTH ERROR DETAILS:",
-    {
-      status: error?.status,
-      code: error?.code,
-      message: error?.message,
-      response: error?.response
-    }
-  );
-
-  errorBox.textContent =
-    serverMessage;
+        errorBox.textContent =
+          serverMessage;
 
         errorBox.style.display =
           "block";
@@ -8463,8 +8440,6 @@ function showAuthenticationDialog() {
     }
   );
 }
-
-
 // ============================================================
 // NKWASIBWE IRHCF - APPLICATION INITIALIZATION
 // ============================================================
