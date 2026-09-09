@@ -392,7 +392,7 @@ app.post(
           userId: user.id
         }
       );
-
+      
       res.status(201).json({
         success: true,
         message:
@@ -400,7 +400,8 @@ app.post(
         token,
         user
       });
-        } catch (error) {
+
+    } catch (error) {
 
       console.error(
         "================================"
@@ -455,6 +456,8 @@ app.post(
           "Could not create account"
       });
     }
+  }
+);
 
 // ============================================================
 // LOGIN
