@@ -1,3 +1,7 @@
+console.log(
+  "NKWASIBWE APP.JS LOADED SUCCESSFULLY"
+);
+
 // ============================================================
 // NKWASIBWE IRHCF
 // AI AGENT PLATFORM - FRONTEND APPLICATION
@@ -1300,7 +1304,69 @@ function loadSavedUser() {
   return null;
 
 }
+// ============================================================
+// RESTORE AUTHENTICATION
+// ============================================================
 
+async function restoreAuthentication() {
+  try {
+    const savedToken =
+      safeStorageGet(
+        STORAGE_KEYS.authToken
+      );
+
+    if (!savedToken) {
+      updateAuthState(null);
+      loadSavedUser();
+
+      console.log(
+        "No saved authentication token found."
+      );
+
+      return false;
+    }
+
+    updateAuthState(
+      String(savedToken).trim()
+    );
+
+    loadSavedUser();
+
+    console.log(
+      "Authentication token restored."
+    );
+
+    const user =
+      await getCurrentUser();
+
+    if (!user) {
+      console.warn(
+        "Saved authentication token is invalid or expired."
+      );
+
+      clearAuth();
+
+      return false;
+    }
+
+    console.log(
+      "Authentication restored for:",
+      user.email || user.name || "user"
+    );
+
+    return true;
+
+  } catch (error) {
+    console.error(
+      "restoreAuthentication error:",
+      error
+    );
+
+    clearAuth();
+
+    return false;
+  }
+}
 
 
 // ============================================================
@@ -1423,12 +1489,10 @@ async function apiRequest(
 ) {
 
   const headers = {
-
     Accept:
       "application/json",
 
     ...(options.headers || {})
-
   };
 
 
@@ -1471,16 +1535,14 @@ async function apiRequest(
 
   const timeout =
     setTimeout(
-      () => {
+      function () {
+
         controller.abort();
+
       },
       APP_CONFIG.apiTimeout
     );
 
-
-  // ----------------------------------------------------------
-  // HANDLE EXTERNAL ABORT
-  // ----------------------------------------------------------
 
   let externalAbortHandler =
     null;
@@ -1488,17 +1550,20 @@ async function apiRequest(
 
   if (externalSignal) {
 
-    if (externalSignal.aborted) {
+    if (
+      externalSignal.aborted
+    ) {
 
       controller.abort();
 
     } else {
 
       externalAbortHandler =
-        () => {
-          controller.abort();
-        };
+        function () {
 
+          controller.abort();
+
+        };
 
       externalSignal.addEventListener(
         "abort",
@@ -1533,11 +1598,13 @@ async function apiRequest(
         }
       );
 
+
   } catch (error) {
 
     if (
       error &&
-      error.name === "AbortError"
+      error.name ===
+        "AbortError"
     ) {
 
       throw new Error(
@@ -1548,7 +1615,7 @@ async function apiRequest(
 
 
     throw new Error(
-      "Ntibyashoboye kugera kuri server. Reba internet cyangwa utegereze server ibe imaze kubyuka."
+      "Ntibyashoboye kugera kuri server. Reba internet cyangwa server."
     );
 
   } finally {
@@ -1612,7 +1679,6 @@ async function apiRequest(
       const text =
         await response.text();
 
-
       data = {
         message:
           text
@@ -1629,6 +1695,18 @@ async function apiRequest(
 
 
   // ----------------------------------------------------------
+  // DEBUG SERVER RESPONSE
+  // ----------------------------------------------------------
+
+  console.log(
+    "API RESPONSE:",
+    endpoint,
+    response.status,
+    data
+  );
+
+
+  // ----------------------------------------------------------
   // UNAUTHORIZED
   // ----------------------------------------------------------
 
@@ -1638,31 +1716,78 @@ async function apiRequest(
     endpoint !== API_ENDPOINTS.register
   ) {
 
-    logout();
+    console.error(
+      "AUTH ERROR:",
+      endpoint,
+      data
+    );
+
+
+    const message =
+      data?.error ||
+      data?.message ||
+      "Session yawe ntabwo ikiri valid.";
+
+
+    const error =
+      new Error(
+        message
+      );
+
+
+    error.status =
+      401;
+
+    error.code =
+      "AUTHENTICATION_ERROR";
+
+    error.response =
+      data;
+
+
+    throw error;
 
   }
 
 
   // ----------------------------------------------------------
-  // ERROR
+  // OTHER SERVER ERRORS
   // ----------------------------------------------------------
 
   if (!response.ok) {
 
-    const errorMessage =
-
-      data && data.error ||
-
-      data && data.message ||
-
-      data && data.detail ||
-
+    const message =
+      data?.error ||
+      data?.message ||
+      data?.detail ||
       `Backend error (${response.status})`;
 
 
-    throw new Error(
-      errorMessage
+    const error =
+      new Error(
+        message
+      );
+
+
+    error.status =
+      response.status;
+
+    error.code =
+      "API_ERROR";
+
+    error.response =
+      data;
+
+
+    console.error(
+      "API ERROR:",
+      endpoint,
+      response.status,
+      data
     );
+
+
+    throw error;
 
   }
 
@@ -1671,9 +1796,11 @@ async function apiRequest(
   // SUCCESS
   // ----------------------------------------------------------
 
-  return data || {
-    success: true
-  };
+  return (
+    data || {
+      success: true
+    }
+  );
 
 }
 // ============================================================
@@ -1685,61 +1812,112 @@ function setStatus(message, type = "info") {
     `[STATUS] ${message}`
   );
 
-  const statusElements = [
-    document.getElementById("status"),
-    document.getElementById("statusText"),
-    document.getElementById("connectionStatus")
-  ].filter(Boolean);
+  const statusElement =
+    document.getElementById("status");
 
-  statusElements.forEach(
-    element => {
+  const statusTextElement =
+    document.getElementById("statusText");
 
-      element.textContent =
-        message;
+  const connectionElement =
+    document.getElementById("connectionStatus");
 
-      element.dataset.status =
-        type;
 
-    }
-  );
+  if (statusElement) {
+
+    statusElement.textContent =
+      message;
+
+    statusElement.dataset.status =
+      type;
+
+  }
+
+
+  if (statusTextElement) {
+
+    statusTextElement.textContent =
+      message;
+
+    statusTextElement.dataset.status =
+      type;
+
+  }
+
+
+  if (connectionElement) {
+
+    connectionElement.textContent =
+      message;
+
+    connectionElement.dataset.status =
+      type;
+
+  }
 
 }
-async function checkBackendHealth() {
-  const controller = new AbortController();
+// ============================================================
+// CHECK BACKEND HEALTH
+// ============================================================
 
-  const timeout = setTimeout(
-    () => {
-      controller.abort();
-    },
-    APP_CONFIG.healthTimeout
-  );
+async function checkBackendHealth() {
+
+  const controller =
+    new AbortController();
+
+
+  const timeout =
+    setTimeout(
+      function () {
+
+        controller.abort();
+
+      },
+      APP_CONFIG.healthTimeout
+    );
+
 
   try {
+
     setStatus(
       "Kugenzura server...",
       "loading"
     );
 
-    const response = await fetch(
-      `${API_BASE_URL}${API_ENDPOINTS.health}`,
-      {
-        method: "GET",
 
-        headers: {
-          Accept: "application/json"
-        },
+    const response =
+      await fetch(
+        `${API_BASE_URL}${API_ENDPOINTS.health}`,
+        {
+          method:
+            "GET",
 
-        signal: controller.signal
-      }
-    );
+          headers: {
+            Accept:
+              "application/json"
+          },
 
-    let data = null;
+          signal:
+            controller.signal
+        }
+      );
+
+
+    let data =
+      null;
+
 
     try {
-      data = await response.json();
+
+      data =
+        await response.json();
+
     } catch (error) {
-      data = null;
+
+      data =
+        null;
+
     }
+
 
     if (
       response.ok &&
@@ -1748,42 +1926,73 @@ async function checkBackendHealth() {
         data.success !== false
       )
     ) {
-      updateBackendState(true);
+
+      updateBackendState(
+        true
+      );
+
 
       setStatus(
         "Server iri online",
         "online"
       );
 
+
       return true;
     }
 
-    updateBackendState(false);
+
+    updateBackendState(
+      false
+    );
+
 
     setStatus(
       "Server ifite ikibazo",
       "error"
     );
 
+
     return false;
+
 
   } catch (error) {
-    console.error(
-      "Health check error:",
-      error
+
+    if (
+      error &&
+      error.name ===
+        "AbortError"
+    ) {
+
+      console.warn(
+        "Backend health check timed out."
+      );
+
+    } else {
+
+      console.warn(
+        "Backend health check failed:",
+        error?.message ||
+        error
+      );
+
+    }
+
+
+    updateBackendState(
+      false
     );
 
-    updateBackendState(false);
-
-    setStatus(
-      "Server ntiboneka cyangwa iri kubyuka",
-      "error"
-    );
 
     return false;
 
+
   } finally {
-    clearTimeout(timeout);
+
+    clearTimeout(
+      timeout
+    );
+
   }
 }
 // ============================================================
@@ -1791,111 +2000,280 @@ async function checkBackendHealth() {
 // ============================================================
 
 async function register(
-
   name,
-
   email,
-
   password
-
 ) {
 
-  const data =
-    await apiRequest(
+  const cleanName =
+    String(
+      name || ""
+    ).trim();
 
-      API_ENDPOINTS.register,
+  const cleanEmail =
+    String(
+      email || ""
+    ).trim()
+    .toLowerCase();
 
-      {
-
-        method:
-          "POST",
-
-        body:
-          JSON.stringify({
-
-            name,
-            email,
-            password
-
-          })
-
-      }
-
+  const cleanPassword =
+    String(
+      password || ""
     );
 
 
-  if (data && data.token) {
+  // ----------------------------------------------------------
+  // VALIDATION
+  // ----------------------------------------------------------
 
-    saveAuth(
+  if (!cleanName) {
 
-      data.token,
-
-      data.user || null
-
+    throw new Error(
+      "Andika amazina yawe."
     );
 
   }
 
 
+  if (!cleanEmail) {
+
+    throw new Error(
+      "Andika email yawe."
+    );
+
+  }
+
+
+  if (!cleanPassword) {
+
+    throw new Error(
+      "Andika password yawe."
+    );
+
+  }
+
+
+  if (
+    cleanPassword.length < 6
+  ) {
+
+    throw new Error(
+      "Password igomba kuba nibura inyuguti 6."
+    );
+
+  }
+
+
+  // ----------------------------------------------------------
+  // SEND REGISTER REQUEST
+  // ----------------------------------------------------------
+
+  console.log(
+    "Creating Nkwasibwe account..."
+  );
+
+
+  const data =
+    await apiRequest(
+      API_ENDPOINTS.register,
+      {
+        method:
+          "POST",
+
+        body:
+          JSON.stringify({
+            name:
+              cleanName,
+
+            email:
+              cleanEmail,
+
+            password:
+              cleanPassword
+          })
+      }
+    );
+
+
+  // ----------------------------------------------------------
+  // VALIDATE RESPONSE
+  // ----------------------------------------------------------
+
+  if (
+    !data
+  ) {
+
+    throw new Error(
+      "Server ntabwo yagaruye response."
+    );
+
+  }
+
+
+  if (
+    !data.token
+  ) {
+
+    throw new Error(
+      data.error ||
+      data.message ||
+      "Konti ntiyashoboye kuremwa: server ntabwo yagaruye authentication token."
+    );
+
+  }
+
+
+  // ----------------------------------------------------------
+  // SAVE AUTHENTICATION
+  // ----------------------------------------------------------
+
+  saveAuth(
+    data.token,
+    data.user || {
+      name:
+        cleanName,
+
+      email:
+        cleanEmail
+    }
+  );
+
+
+  console.log(
+    "Nkwasibwe account created successfully."
+  );
+
+
+  console.log(
+    "AUTH TOKEN SAVED:",
+    Boolean(authToken)
+  );
+
+
   return data;
-
 }
-
-
-
 // ============================================================
 // LOGIN
 // ============================================================
 
 async function login(
-
   email,
-
   password
-
 ) {
 
-  const data =
-    await apiRequest(
+  const cleanEmail =
+    String(
+      email || ""
+    ).trim()
+    .toLowerCase();
 
-      API_ENDPOINTS.login,
-
-      {
-
-        method:
-          "POST",
-
-        body:
-          JSON.stringify({
-
-            email,
-            password
-
-          })
-
-      }
-
+  const cleanPassword =
+    String(
+      password || ""
     );
 
 
-  if (data?.token) {
+  // ----------------------------------------------------------
+  // VALIDATION
+  // ----------------------------------------------------------
 
-    saveAuth(
+  if (!cleanEmail) {
 
-      data.token,
-
-      data.user || null
-
+    throw new Error(
+      "Andika email yawe."
     );
 
   }
 
 
+  if (!cleanPassword) {
+
+    throw new Error(
+      "Andika password yawe."
+    );
+
+  }
+
+
+  // ----------------------------------------------------------
+  // SEND LOGIN REQUEST
+  // ----------------------------------------------------------
+
+  console.log(
+    "Logging into Nkwasibwe..."
+  );
+
+
+  const data =
+    await apiRequest(
+      API_ENDPOINTS.login,
+      {
+        method:
+          "POST",
+
+        body:
+          JSON.stringify({
+            email:
+              cleanEmail,
+
+            password:
+              cleanPassword
+          })
+      }
+    );
+
+
+  // ----------------------------------------------------------
+  // VALIDATE RESPONSE
+  // ----------------------------------------------------------
+
+  if (
+    !data
+  ) {
+
+    throw new Error(
+      "Server ntabwo yagaruye response."
+    );
+
+  }
+
+
+  if (
+    !data.token
+  ) {
+
+    throw new Error(
+      data.error ||
+      data.message ||
+      "Login yanze: server ntabwo yagaruye authentication token."
+    );
+
+  }
+
+
+  // ----------------------------------------------------------
+  // SAVE AUTHENTICATION
+  // ----------------------------------------------------------
+
+  saveAuth(
+    data.token,
+    data.user || null
+  );
+
+
+  console.log(
+    "Nkwasibwe login successful."
+  );
+
+
+  console.log(
+    "AUTH TOKEN SAVED:",
+    Boolean(authToken)
+  );
+
+
   return data;
-
 }
-
-
 
 // ============================================================
 // GET CURRENT USER
@@ -5760,10 +6138,9 @@ async function runWorkflowAnimation() {
       phase
     );
 
-
-    await delay(
-      WORKFLOW_STEP_DELAY
-    );
+await delay(
+  APP_CONFIG.workflowStepDelay
+);
 
 
     if (!isSending) {
@@ -6023,7 +6400,206 @@ function getFriendlyErrorMessage(
   return originalMessage;
 
 }
+// ============================================================
+// SCROLL CHAT TO BOTTOM
+// ============================================================
 
+function scrollToBottom() {
+
+  if (!messages) {
+
+    return;
+
+  }
+
+  messages.scrollTop =
+    messages.scrollHeight;
+
+}
+
+
+// ============================================================
+// ADD SYSTEM MESSAGE
+// ============================================================
+
+function addSystemMessage(
+  content
+) {
+
+  if (!messages) {
+
+    console.error(
+      "Messages container not found."
+    );
+
+    return null;
+
+  }
+
+  const messageElement =
+    document.createElement(
+      "div"
+    );
+
+  messageElement.classList.add(
+    "message",
+    "system"
+  );
+
+  const contentElement =
+    document.createElement(
+      "div"
+    );
+
+  contentElement.classList.add(
+    "message-content"
+  );
+
+  contentElement.textContent =
+    content == null
+      ? ""
+      : String(content);
+
+  messageElement.appendChild(
+    contentElement
+  );
+
+  messages.appendChild(
+    messageElement
+  );
+
+  updateWelcomeVisibility();
+
+  scrollToBottom();
+
+  return messageElement;
+
+}
+// ============================================================
+// ADD CHAT MESSAGE
+// ============================================================
+
+function addMessage(
+  content,
+  type = "user"
+) {
+
+  if (!messages) {
+
+    console.error(
+      "Messages container not found."
+    );
+
+    return null;
+  }
+
+  const messageElement =
+    document.createElement("div");
+
+  messageElement.classList.add(
+    "message",
+    type
+  );
+
+  const contentElement =
+    document.createElement("div");
+
+  contentElement.classList.add(
+    "message-content"
+  );
+
+  contentElement.textContent =
+    content == null
+      ? ""
+      : String(content);
+
+  messageElement.appendChild(
+    contentElement
+  );
+
+  messages.appendChild(
+    messageElement
+  );
+
+  updateWelcomeVisibility();
+  scrollToBottom();
+
+  return messageElement;
+}
+
+
+// ============================================================
+// SCROLL CHAT TO BOTTOM
+// ============================================================
+
+function scrollToBottom() {
+
+  const container =
+    document.getElementById(
+      "messages"
+    );
+
+  if (!container) {
+    return;
+  }
+
+  container.scrollTop =
+    container.scrollHeight;
+}
+
+
+// ============================================================
+// TYPING INDICATOR
+// ============================================================
+
+function addTypingIndicator() {
+
+  if (!messages) {
+    return null;
+  }
+
+  const indicator =
+    document.createElement("div");
+
+  indicator.className =
+    "message ai typing-indicator";
+
+  indicator.innerHTML =
+    `
+      <div class="message-content">
+        <span>...</span>
+      </div>
+    `;
+
+  messages.appendChild(
+    indicator
+  );
+
+  scrollToBottom();
+
+  return indicator;
+}
+
+
+// ============================================================
+// REMOVE TYPING INDICATOR
+// ============================================================
+
+function removeTypingIndicator(
+  indicator
+) {
+
+  if (
+    indicator &&
+    indicator.parentNode
+  ) {
+
+    indicator.parentNode.removeChild(
+      indicator
+    );
+
+  }
+}
 
 // ============================================================
 // SEND MESSAGE
@@ -6043,6 +6619,27 @@ async function sendMessage() {
 
 
   // ----------------------------------------------------------
+  // REQUIRE AUTHENTICATION
+  // ----------------------------------------------------------
+
+  if (!authToken) {
+
+    console.warn(
+      "No authentication token available."
+    );
+
+    setStatus(
+      "Ugomba kubanza kwinjira muri konti.",
+      "normal"
+    );
+
+    showAuthenticationDialog();
+
+    return;
+  }
+
+
+  // ----------------------------------------------------------
   // VALIDATE INPUT
   // ----------------------------------------------------------
 
@@ -6052,21 +6649,18 @@ async function sendMessage() {
       "Input element not found."
     );
 
-
     return;
 
   }
 
 
   const text =
-    userInput.value
-      .trim();
+    userInput.value.trim();
 
 
   if (!text) {
 
     userInput.focus();
-
 
     return;
 
@@ -6080,15 +6674,10 @@ async function sendMessage() {
   isSending =
     true;
 
-
   setSendingState(
     true
   );
 
-
-  // ----------------------------------------------------------
-  // ENSURE SESSION
-  // ----------------------------------------------------------
 
   const activeSessionId =
     ensureSessionId();
@@ -6120,7 +6709,6 @@ async function sendMessage() {
   userInput.value =
     "";
 
-
   autoResizeInput();
 
 
@@ -6129,11 +6717,8 @@ async function sendMessage() {
   // ----------------------------------------------------------
 
   setStatus(
-
     "Nkwasibwe IRHCF iri gusesengura task...",
-
     "loading"
-
   );
 
 
@@ -6161,17 +6746,13 @@ async function sendMessage() {
 
     const data =
       await apiRequest(
-
         API_ENDPOINTS.chat,
-
         {
-
           method:
             "POST",
 
           body:
             JSON.stringify({
-
               message:
                 text,
 
@@ -6180,20 +6761,18 @@ async function sendMessage() {
 
               session_id:
                 activeSessionId
-
             })
-
         }
-
       );
 
 
     // --------------------------------------------------------
-    // UPDATE BACKEND STATE
+    // BACKEND IS ONLINE
     // --------------------------------------------------------
 
-    backendOnline =
-      true;
+    updateBackendState(
+      true
+    );
 
 
     // --------------------------------------------------------
@@ -6206,7 +6785,9 @@ async function sendMessage() {
       );
 
 
-    if (returnedSessionId) {
+    if (
+      returnedSessionId
+    ) {
 
       saveSessionId(
         returnedSessionId
@@ -6216,7 +6797,7 @@ async function sendMessage() {
 
 
     // --------------------------------------------------------
-    // GET RESPONSE
+    // GET AI RESPONSE
     // --------------------------------------------------------
 
     const aiResponse =
@@ -6248,9 +6829,7 @@ async function sendMessage() {
     if (!aiResponse) {
 
       throw new Error(
-
         "Server ntiyasubije igisubizo cya AI."
-
       );
 
     }
@@ -6261,11 +6840,8 @@ async function sendMessage() {
     // --------------------------------------------------------
 
     addMessage(
-
       aiResponse,
-
       "ai"
-
     );
 
 
@@ -6281,21 +6857,16 @@ async function sendMessage() {
     // --------------------------------------------------------
 
     setStatus(
-
       "AI Agent Ready",
-
       "online"
-
     );
+
 
   } catch (error) {
 
     console.error(
-
       "Chat error:",
-
       error
-
     );
 
 
@@ -6318,77 +6889,102 @@ async function sendMessage() {
 
 
     // --------------------------------------------------------
-    // ERROR MESSAGE
+    // HANDLE AUTHENTICATION ERROR
     // --------------------------------------------------------
 
-    const errorMessage =
-      getFriendlyErrorMessage(
-        error
+    const errorText =
+      String(
+        error?.message || ""
+      ).toLowerCase();
+
+
+    const authenticationError =
+      errorText.includes(
+        "authentication"
+      ) ||
+      errorText.includes(
+        "unauthorized"
+      ) ||
+      errorText.includes(
+        "401"
       );
 
 
-    // --------------------------------------------------------
-    // DISPLAY ERROR
-    // --------------------------------------------------------
+    if (
+      authenticationError
+    ) {
 
-    addSystemMessage(
-
-      `Habaye ikibazo: ${errorMessage}`
-
-    );
+      console.warn(
+        "Authentication expired or invalid."
+      );
 
 
-    // --------------------------------------------------------
-    // UPDATE STATUS
-    // --------------------------------------------------------
-
-    backendOnline =
-      false;
+      clearAuth();
 
 
-    setStatus(
-
-      "Hari ikibazo cya connection",
-
-      "error"
-
-    );
+      setStatus(
+        "Session yarangiye. Ongera winjire.",
+        "normal"
+      );
 
 
-    showToast(
+      showAuthenticationDialog();
 
-      errorMessage,
 
-      "error"
+    } else {
 
-    );
+      // ------------------------------------------------------
+      // NORMAL ERROR
+      // ------------------------------------------------------
+
+      const errorMessage =
+        getFriendlyErrorMessage(
+          error
+        );
+
+
+      addSystemMessage(
+        `Habaye ikibazo: ${errorMessage}`
+      );
+
+
+      setStatus(
+        "Habaye ikibazo mu gukora task.",
+        "error"
+      );
+
+
+      showToast(
+        errorMessage,
+        "error"
+      );
+
+    }
 
   } finally {
 
-    // --------------------------------------------------------
+    // ----------------------------------------------------------
     // FINISH REQUEST
-    // --------------------------------------------------------
+    // ----------------------------------------------------------
 
     isSending =
       false;
-
 
     setSendingState(
       false
     );
 
 
-    if (userInput) {
+    if (
+      userInput
+    ) {
 
       userInput.focus();
 
     }
 
   }
-
 }
-
-
 // ============================================================
 // SEND SUGGESTION
 // ============================================================
@@ -6955,279 +7551,1185 @@ function updateWelcomeVisibility() {
   welcomeElement.style.display =
     hasMessages ? "none" : "";
 }
+// ============================================================
+// NKWASIBWE IRHCF - TOAST NOTIFICATION SYSTEM
+// ============================================================
+
+function showToast(
+  message,
+  type = "info",
+  duration = 4000
+) {
+
+  try {
+
+    const text =
+      message == null
+        ? ""
+        : String(message);
+
+    // ----------------------------------------------------------
+    // FIND EXISTING TOAST CONTAINER
+    // ----------------------------------------------------------
+
+    let container =
+      document.getElementById(
+        "toast-container"
+      );
+
+    // ----------------------------------------------------------
+    // CREATE CONTAINER IF MISSING
+    // ----------------------------------------------------------
+
+    if (!container) {
+
+      container =
+        document.createElement(
+          "div"
+        );
+
+      container.id =
+        "toast-container";
+
+      container.setAttribute(
+        "aria-live",
+        "polite"
+      );
+
+      container.setAttribute(
+        "aria-atomic",
+        "true"
+      );
+
+      container.style.position =
+        "fixed";
+
+      container.style.right =
+        "20px";
+
+      container.style.bottom =
+        "20px";
+
+      container.style.zIndex =
+        "99999";
+
+      container.style.display =
+        "flex";
+
+      container.style.flexDirection =
+        "column";
+
+      container.style.gap =
+        "10px";
+
+      container.style.maxWidth =
+        "min(420px, calc(100vw - 40px))";
+
+      document.body.appendChild(
+        container
+      );
+
+    }
+
+    // ----------------------------------------------------------
+    // CREATE TOAST
+    // ----------------------------------------------------------
+
+    const toast =
+      document.createElement(
+        "div"
+      );
+
+    toast.className =
+      "nkwasibwe-toast";
+
+    toast.dataset.type =
+      String(type);
+
+    toast.setAttribute(
+      "role",
+      type === "error"
+        ? "alert"
+        : "status"
+    );
+
+    // ----------------------------------------------------------
+    // TOAST CONTENT
+    // ----------------------------------------------------------
+
+    const content =
+      document.createElement(
+        "div"
+      );
+
+    content.className =
+      "nkwasibwe-toast-content";
+
+    content.textContent =
+      text;
+
+    // ----------------------------------------------------------
+    // CLOSE BUTTON
+    // ----------------------------------------------------------
+
+    const closeButton =
+      document.createElement(
+        "button"
+      );
+
+    closeButton.type =
+      "button";
+
+    closeButton.textContent =
+      "×";
+
+    closeButton.setAttribute(
+      "aria-label",
+      "Close notification"
+    );
+
+    closeButton.style.marginLeft =
+      "12px";
+
+    closeButton.style.border =
+      "0";
+
+    closeButton.style.background =
+      "transparent";
+
+    closeButton.style.cursor =
+      "pointer";
+
+    closeButton.style.fontSize =
+      "20px";
+
+    closeButton.addEventListener(
+      "click",
+      function () {
+
+        removeToast(
+          toast
+        );
+
+      }
+    );
+
+    // ----------------------------------------------------------
+    // BUILD TOAST
+    // ----------------------------------------------------------
+
+    toast.style.display =
+      "flex";
+
+    toast.style.alignItems =
+      "center";
+
+    toast.style.justifyContent =
+      "space-between";
+
+    toast.style.padding =
+      "12px 14px";
+
+    toast.style.borderRadius =
+      "10px";
+
+    toast.style.background =
+      "rgba(20, 20, 20, 0.96)";
+
+    toast.style.color =
+      "#ffffff";
+
+    toast.style.boxShadow =
+      "0 8px 30px rgba(0,0,0,0.25)";
+
+    toast.style.fontSize =
+      "14px";
+
+    toast.style.lineHeight =
+      "1.4";
+
+    toast.style.opacity =
+      "0";
+
+    toast.style.transform =
+      "translateY(10px)";
+
+    toast.style.transition =
+      "opacity 180ms ease, transform 180ms ease";
+
+    toast.appendChild(
+      content
+    );
+
+    toast.appendChild(
+      closeButton
+    );
+
+    container.appendChild(
+      toast
+    );
+
+    // ----------------------------------------------------------
+    // SHOW
+    // ----------------------------------------------------------
+
+    requestAnimationFrame(
+      function () {
+
+        toast.style.opacity =
+          "1";
+
+        toast.style.transform =
+          "translateY(0)";
+
+      }
+    );
+
+    // ----------------------------------------------------------
+    // AUTO REMOVE
+    // ----------------------------------------------------------
+
+    const timeout =
+      Math.max(
+        1000,
+        Number(duration) || 4000
+      );
+
+    setTimeout(
+      function () {
+
+        removeToast(
+          toast
+        );
+
+      },
+      timeout
+    );
+
+    return toast;
+
+  } catch (error) {
+
+    console.error(
+      "showToast failed:",
+      error
+    );
+
+    return null;
+
+  }
+
+}
 
 
 // ============================================================
-// INITIALIZE APPLICATION
+// REMOVE TOAST
+// ============================================================
+
+function removeToast(
+  toast
+) {
+
+  if (
+    !toast ||
+    !toast.parentNode
+  ) {
+
+    return;
+
+  }
+
+  toast.style.opacity =
+    "0";
+
+  toast.style.transform =
+    "translateY(10px)";
+
+  setTimeout(
+    function () {
+
+      if (
+        toast &&
+        toast.parentNode
+      ) {
+
+        toast.parentNode.removeChild(
+          toast
+        );
+
+      }
+
+    },
+    200
+  );
+
+}
+
+
+// ============================================================
+// AUTHENTICATION RESTORE
+// ============================================================
+
+async function restoreAuthentication() {
+
+  console.log(
+    "Checking saved authentication..."
+  );
+
+  const savedToken =
+    safeStorageGet(
+      STORAGE_KEYS.authToken
+    );
+
+  if (!savedToken) {
+
+    console.log(
+      "No saved authentication token found."
+    );
+
+    updateAuthState(
+      null
+    );
+
+    loadSavedUser();
+
+    return false;
+  }
+
+  try {
+
+    updateAuthState(
+      savedToken
+    );
+
+    const savedUser =
+      loadSavedUser();
+
+    console.log(
+      "Saved authentication token found."
+    );
+
+    const user =
+      await getCurrentUser();
+
+    if (user) {
+
+      console.log(
+        "Authentication restored successfully."
+      );
+
+      setStatus(
+        "Konti yawe yagaruwe.",
+        "online"
+      );
+
+      return true;
+    }
+
+    console.warn(
+      "Saved token is no longer valid."
+    );
+
+    clearAuth();
+
+    return false;
+
+  } catch (error) {
+
+    console.warn(
+      "Authentication restore failed:",
+      error
+    );
+
+    clearAuth();
+
+    return false;
+  }
+}
+
+
+// ============================================================
+// AUTHENTICATION UI
+// ============================================================
+
+function showAuthenticationDialog() {
+
+  if (
+    document.getElementById(
+      "nkwasibweAuthModal"
+    )
+  ) {
+    return;
+  }
+
+  const overlay =
+    document.createElement(
+      "div"
+    );
+
+  overlay.id =
+    "nkwasibweAuthModal";
+
+  overlay.style.cssText = `
+    position: fixed;
+    inset: 0;
+    z-index: 99999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(0,0,0,0.72);
+    backdrop-filter: blur(8px);
+  `;
+
+  const box =
+    document.createElement(
+      "div"
+    );
+
+  box.style.cssText = `
+    width: min(420px, 100%);
+    max-height: 90vh;
+    overflow-y: auto;
+    padding: 28px;
+    border-radius: 20px;
+    background: #ffffff;
+    color: #111111;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.35);
+    font-family: system-ui, sans-serif;
+  `;
+
+  box.innerHTML = `
+    <div style="text-align:center;margin-bottom:22px;">
+      <h2 style="margin:0 0 8px;">
+        Nkwasibwe IRHCF
+      </h2>
+
+      <p style="margin:0;color:#666;">
+        Injira cyangwa ufungure konti nshya
+      </p>
+    </div>
+
+    <div style="
+      display:flex;
+      gap:8px;
+      margin-bottom:20px;
+    ">
+
+      <button
+        id="nkwasibweLoginTab"
+        type="button"
+        style="
+          flex:1;
+          padding:11px;
+          border:0;
+          border-radius:10px;
+          cursor:pointer;
+          font-weight:600;
+        "
+      >
+        Injira
+      </button>
+
+      <button
+        id="nkwasibweRegisterTab"
+        type="button"
+        style="
+          flex:1;
+          padding:11px;
+          border:0;
+          border-radius:10px;
+          cursor:pointer;
+          font-weight:600;
+          background:#eeeeee;
+        "
+      >
+        Iyandikishe
+      </button>
+
+    </div>
+
+    <form id="nkwasibweAuthForm">
+
+      <div
+        id="nkwasibweNameGroup"
+        style="display:none;margin-bottom:14px;"
+      >
+        <label
+          style="display:block;margin-bottom:6px;font-weight:600;"
+        >
+          Amazina
+        </label>
+
+        <input
+          id="nkwasibweAuthName"
+          type="text"
+          autocomplete="name"
+          placeholder="Amazina yawe"
+          style="
+            width:100%;
+            box-sizing:border-box;
+            padding:12px;
+            border:1px solid #ccc;
+            border-radius:10px;
+            font-size:16px;
+          "
+        />
+      </div>
+
+      <div style="margin-bottom:14px;">
+        <label
+          style="display:block;margin-bottom:6px;font-weight:600;"
+        >
+          Email
+        </label>
+
+        <input
+          id="nkwasibweAuthEmail"
+          type="email"
+          autocomplete="email"
+          required
+          placeholder="email@example.com"
+          style="
+            width:100%;
+            box-sizing:border-box;
+            padding:12px;
+            border:1px solid #ccc;
+            border-radius:10px;
+            font-size:16px;
+          "
+        />
+      </div>
+
+      <div style="margin-bottom:18px;">
+        <label
+          style="display:block;margin-bottom:6px;font-weight:600;"
+        >
+          Password
+        </label>
+
+        <input
+          id="nkwasibweAuthPassword"
+          type="password"
+          autocomplete="current-password"
+          required
+          minlength="6"
+          placeholder="Password"
+          style="
+            width:100%;
+            box-sizing:border-box;
+            padding:12px;
+            border:1px solid #ccc;
+            border-radius:10px;
+            font-size:16px;
+          "
+        />
+      </div>
+
+      <div
+        id="nkwasibweAuthError"
+        style="
+          display:none;
+          margin-bottom:14px;
+          padding:10px;
+          border-radius:10px;
+          background:#ffecec;
+          color:#b00020;
+          font-size:14px;
+        "
+      ></div>
+
+      <button
+        id="nkwasibweAuthSubmit"
+        type="submit"
+        style="
+          width:100%;
+          padding:13px;
+          border:0;
+          border-radius:10px;
+          cursor:pointer;
+          font-size:16px;
+          font-weight:700;
+        "
+      >
+        Injira
+      </button>
+
+    </form>
+  `;
+
+  overlay.appendChild(
+    box
+  );
+
+  document.body.appendChild(
+    overlay
+  );
+
+  const loginTab =
+    document.getElementById(
+      "nkwasibweLoginTab"
+    );
+
+  const registerTab =
+    document.getElementById(
+      "nkwasibweRegisterTab"
+    );
+
+  const nameGroup =
+    document.getElementById(
+      "nkwasibweNameGroup"
+    );
+
+  const form =
+    document.getElementById(
+      "nkwasibweAuthForm"
+    );
+
+  const submitButton =
+    document.getElementById(
+      "nkwasibweAuthSubmit"
+    );
+
+  const errorBox =
+    document.getElementById(
+      "nkwasibweAuthError"
+    );
+
+  let mode =
+    "login";
+
+
+  function setMode(
+    newMode
+  ) {
+
+    mode =
+      newMode;
+
+    const registerMode =
+      mode === "register";
+
+    nameGroup.style.display =
+      registerMode
+        ? "block"
+        : "none";
+
+    submitButton.textContent =
+      registerMode
+        ? "Fungura Konti"
+        : "Injira";
+
+    loginTab.style.background =
+      registerMode
+        ? "#eeeeee"
+        : "";
+
+    registerTab.style.background =
+      registerMode
+        ? ""
+        : "#eeeeee";
+
+    errorBox.style.display =
+      "none";
+
+    errorBox.textContent =
+      "";
+  }
+
+
+  loginTab.addEventListener(
+    "click",
+    function () {
+
+      setMode(
+        "login"
+      );
+
+    }
+  );
+
+
+  registerTab.addEventListener(
+    "click",
+    function () {
+
+      setMode(
+        "register"
+      );
+
+    }
+  );
+
+
+  form.addEventListener(
+    "submit",
+    async function (
+      event
+    ) {
+
+      event.preventDefault();
+
+      const nameInput =
+        document.getElementById(
+          "nkwasibweAuthName"
+        );
+
+      const emailInput =
+        document.getElementById(
+          "nkwasibweAuthEmail"
+        );
+
+      const passwordInput =
+        document.getElementById(
+          "nkwasibweAuthPassword"
+        );
+
+      const name =
+        nameInput.value.trim();
+
+      const email =
+        emailInput.value.trim();
+
+      const password =
+        passwordInput.value;
+
+
+      errorBox.style.display =
+        "none";
+
+      errorBox.textContent =
+        "";
+
+
+      if (
+        !email ||
+        !password
+      ) {
+
+        errorBox.textContent =
+          "Email na password birakenewe.";
+
+        errorBox.style.display =
+          "block";
+
+        return;
+      }
+
+
+      if (
+        mode === "register" &&
+        !name
+      ) {
+
+        errorBox.textContent =
+          "Andika amazina yawe.";
+
+        errorBox.style.display =
+          "block";
+
+        return;
+      }
+
+
+      if (
+        password.length < 6
+      ) {
+
+        errorBox.textContent =
+          "Password igomba kuba nibura inyuguti 6.";
+
+        errorBox.style.display =
+          "block";
+
+        return;
+      }
+
+
+      submitButton.disabled =
+        true;
+
+      submitButton.textContent =
+        mode === "register"
+          ? "Turafungura konti..."
+          : "Turinjiza...";
+
+
+      try {
+
+        let data;
+
+        if (
+          mode === "register"
+        ) {
+
+          data =
+            await register(
+              name,
+              email,
+              password
+            );
+
+        } else {
+
+          data =
+            await login(
+              email,
+              password
+            );
+        }
+
+
+        if (
+          !data ||
+          !data.token
+        ) {
+
+          throw new Error(
+            data?.message ||
+            data?.error ||
+            "Authentication failed."
+          );
+        }
+
+
+        if (
+          !currentUser
+        ) {
+
+          await getCurrentUser();
+
+        }
+
+
+        overlay.remove();
+
+        setStatus(
+          "AI Agent Ready",
+          "online"
+        );
+
+        showToast(
+          mode === "register"
+            ? "Konti yafunguwe neza."
+            : "Winjiye neza.",
+          "success"
+        );
+
+
+      } 
+
+    } catch (error) {
+
+  console.error(
+    "Authentication error:",
+    error
+  );
+
+  const serverMessage =
+    error?.response?.error ||
+    error?.response?.message ||
+    error?.response?.detail ||
+    error?.message ||
+    "Authentication failed.";
+
+  console.error(
+    "AUTH ERROR DETAILS:",
+    {
+      status: error?.status,
+      code: error?.code,
+      message: error?.message,
+      response: error?.response
+    }
+  );
+
+  errorBox.textContent =
+    serverMessage;
+
+        errorBox.style.display =
+          "block";
+
+      } finally {
+
+        submitButton.disabled =
+          false;
+
+        submitButton.textContent =
+          mode === "register"
+            ? "Fungura Konti"
+            : "Injira";
+      }
+
+    }
+  );
+}
+
+
+// ============================================================
+// NKWASIBWE IRHCF - APPLICATION INITIALIZATION
 // ============================================================
 
 async function initializeApp() {
 
-  console.log(
-    `Initializing Nkwasibwe IRHCF ${APP_VERSION}...`
-  );
-
-  try {
-
-    // --------------------------------------------------------
-    // SAVE VERSION
-    // --------------------------------------------------------
-
-    saveAppVersion();
-
-    // --------------------------------------------------------
-    // LOAD LOCAL USER
-    // --------------------------------------------------------
-
-    loadSavedUser();
-
-    // --------------------------------------------------------
-    // LOAD LOCAL CONVERSATIONS
-    // --------------------------------------------------------
-
-    loadLocalConversations();
-
-    normalizeLocalConversations();
-
-    // --------------------------------------------------------
-    // ENSURE SESSION
-    // --------------------------------------------------------
-
-    ensureSessionId();
-
-    // --------------------------------------------------------
-    // ENSURE CURRENT CONVERSATION
-    // --------------------------------------------------------
-
-    const currentConversation =
-      getCurrentConversation();
-
-    if (!currentConversation) {
-
-      saveCurrentConversation(
-        "New conversation"
-      );
-
-    }
-
-    // --------------------------------------------------------
-    // RENDER CONVERSATIONS
-    // --------------------------------------------------------
-
-    renderConversationList();
-
-    // --------------------------------------------------------
-    // INITIAL UI
-    // --------------------------------------------------------
-
-    updateWelcomeVisibility();
-
-    resetWorkflow();
-
-    autoResizeInput();
-
-    // --------------------------------------------------------
-    // START HEALTH CHECK
-    // --------------------------------------------------------
-
-    await checkBackendHealth();
-
-    // --------------------------------------------------------
-    // LOAD AUTHENTICATED USER
-    // --------------------------------------------------------
-
-    if (authToken) {
-
-      await getCurrentUser();
-
-    }
-
-    // --------------------------------------------------------
-    // LOAD SERVER CONVERSATION
-    // --------------------------------------------------------
-
-    if (
-      authToken &&
-      currentUser &&
-      sessionId &&
-      backendOnline
-    ) {
-
-      await displayConversationHistory();
-
-    }
-
-    // --------------------------------------------------------
-    // FOCUS INPUT
-    // --------------------------------------------------------
-
-    if (userInput) {
-
-      userInput.focus();
-
-    }
+  if (
+    appState.initialized
+  ) {
 
     console.log(
-      "Nkwasibwe IRHCF initialized successfully."
+      "Nkwasibwe IRHCF already initialized."
     );
 
-    setStatus(
-      backendOnline
-        ? "AI Agent Ready"
-        : "Application Ready",
-
-      backendOnline
-        ? "online"
-        : "normal"
-    );
-
-  } catch (error) {
-
-    console.error(
-      "Initialization error:",
-      error
-    );
-
-    setStatus(
-      "Initialization error: " +
-        (
-          error && error.message
-            ? error.message
-            : String(error)
-        ),
-      "error"
-    );
-
-    console.error(
-      "Initialization details:",
-      error && error.message,
-      error && error.stack
-    );
-
+    return true;
   }
 
-}
+
   console.log(
-
-    `Initializing Nkwasibwe IRHCF ${APP_VERSION}...`
-
+    "Initializing Nkwasibwe IRHCF..."
   );
 
 
   try {
 
-    // --------------------------------------------------------
-    
-// SAVE VERSION
-    // --------------------------------------------------------
+    // ----------------------------------------------------------
+    // MARK INITIALIZATION
+    // ----------------------------------------------------------
 
-    saveAppVersion();
-
-
-    // --------------------------------------------------------
-    // LOAD LOCAL USER
-    // --------------------------------------------------------
-
-    loadSavedUser();
+    appState.initialized =
+      true;
 
 
-    // --------------------------------------------------------
-    // LOAD LOCAL CONVERSATIONS
-    // --------------------------------------------------------
+    // ----------------------------------------------------------
+    // SAVE APPLICATION VERSION
+    // ----------------------------------------------------------
 
-    loadLocalConversations();
+    if (
+      typeof saveAppVersion ===
+      "function"
+    ) {
 
+      saveAppVersion();
 
-    normalizeLocalConversations();
-
-
-    // --------------------------------------------------------
-    // ENSURE SESSION
-    // --------------------------------------------------------
-
-    ensureSessionId();
+    }
 
 
-    // --------------------------------------------------------
-    // ENSURE CURRENT CONVERSATION
-    // --------------------------------------------------------
+    // ----------------------------------------------------------
+    // RESTORE SESSION
+    // ----------------------------------------------------------
 
-    const currentConversation =
-      getCurrentConversation();
+    if (
+      typeof ensureSessionId ===
+      "function"
+    ) {
+
+      ensureSessionId();
+
+    }
 
 
-    if (!currentConversation) {
+    // ----------------------------------------------------------
+    // RESTORE LOCAL STATE
+    // ----------------------------------------------------------
 
-      saveCurrentConversation(
-        "New conversation"
+    if (
+      typeof loadConversationsFromStorage ===
+      "function"
+    ) {
+
+      try {
+
+        loadConversationsFromStorage();
+
+      } catch (error) {
+
+        console.warn(
+          "Could not restore local conversations:",
+          error
+        );
+
+      }
+
+    }
+
+
+    // ----------------------------------------------------------
+    // RENDER CONVERSATIONS
+    // ----------------------------------------------------------
+
+    if (
+      typeof renderConversationList ===
+      "function"
+    ) {
+
+      try {
+
+        renderConversationList();
+
+      } catch (error) {
+
+        console.warn(
+          "Could not render conversation list:",
+          error
+        );
+
+      }
+
+    }
+
+
+    // ----------------------------------------------------------
+    // UPDATE WELCOME SCREEN
+    // ----------------------------------------------------------
+
+    if (
+      typeof updateWelcomeVisibility ===
+      "function"
+    ) {
+
+      updateWelcomeVisibility();
+
+    }
+
+
+    // ----------------------------------------------------------
+    // RESET WORKFLOW
+    // ----------------------------------------------------------
+
+    if (
+      typeof resetWorkflow ===
+      "function"
+    ) {
+
+      resetWorkflow();
+
+    }
+
+
+    // ----------------------------------------------------------
+    // AUTO RESIZE INPUT
+    // ----------------------------------------------------------
+
+    if (
+      typeof autoResizeInput ===
+      "function"
+    ) {
+
+      autoResizeInput();
+
+    }
+
+
+    // ----------------------------------------------------------
+    // CHECK BACKEND WITH RETRY
+    // ----------------------------------------------------------
+
+    let serverReady =
+      false;
+
+    for (
+      let attempt = 1;
+      attempt <= 3;
+      attempt++
+    ) {
+
+      try {
+
+        console.log(
+          `Backend health check ${attempt}/3...`
+        );
+
+        serverReady =
+          await checkBackendHealth();
+
+        if (
+          serverReady
+        ) {
+
+          break;
+
+        }
+
+      } catch (error) {
+
+        console.warn(
+          `Backend health check ${attempt} failed:`,
+          error
+        );
+
+      }
+
+
+      if (
+        attempt < 3
+      ) {
+
+        await sleep(
+          2500
+        );
+
+      }
+
+    }
+
+
+    // ----------------------------------------------------------
+    // RESTORE AUTHENTICATION
+    // ----------------------------------------------------------
+
+    const authenticated =
+      await restoreAuthentication();
+
+
+    // ----------------------------------------------------------
+    // SHOW LOGIN WHEN NECESSARY
+    // ----------------------------------------------------------
+
+    if (
+      !authenticated
+    ) {
+
+      if (
+        serverReady
+      ) {
+
+        setStatus(
+          "Injira muri konti kugira ngo utangire.",
+          "normal"
+        );
+
+        showAuthenticationDialog();
+
+      } else {
+
+        setStatus(
+          "Server ntiraboneka. Gerageza kongera gufungura app.",
+          "error"
+        );
+
+      }
+
+    } else {
+
+      setStatus(
+        serverReady
+          ? "AI Agent Ready"
+          : "Konti yagaruwe; server iracyategerejwe.",
+        serverReady
+          ? "online"
+          : "loading"
       );
 
     }
 
 
-    // --------------------------------------------------------
-    // RENDER CONVERSATIONS
-    // --------------------------------------------------------
-
-    renderConversationList();
-
-
-    // --------------------------------------------------------
-    // INITIAL UI
-    // --------------------------------------------------------
-
-    updateWelcomeVisibility();
-
-
-    resetWorkflow();
-
-
-    autoResizeInput();
-
-
-    // --------------------------------------------------------
-    // START HEALTH CHECK
-    // --------------------------------------------------------
-    await checkBackendHealth();
-
-
-    // --------------------------------------------------------
-    // LOAD AUTHENTICATED USER
-    // --------------------------------------------------------
-
-    if (authToken) {
-
-      await getCurrentUser();
-
-    }
-
-
-    // --------------------------------------------------------
-    // LOAD SERVER CONVERSATION
-    // --------------------------------------------------------
+    // ----------------------------------------------------------
+    // FOCUS INPUT
+    // ----------------------------------------------------------
 
     if (
-
-      authToken &&
-
-      currentUser &&
-
-      sessionId &&
-
-      backendOnline
-
+      userInput &&
+      !userInput.disabled &&
+      authenticated
     ) {
-
-      await displayConversationHistory();
-
-    }
-
-
-    // --------------------------------------------------------
-    // FOCUS INPUT
-    // --------------------------------------------------------
-
-    if (userInput) {
 
       userInput.focus();
 
@@ -7235,98 +8737,77 @@ async function initializeApp() {
 
 
     console.log(
-
       "Nkwasibwe IRHCF initialized successfully."
-
     );
 
+    return true;
 
-    setStatus(
-
-      backendOnline
-
-        ? "AI Agent Ready"
-
-        : "Application Ready",
-
-      backendOnline
-
-        ? "online"
-
-        : "normal"
-
-    );
 
   } catch (error) {
 
     console.error(
-      "Initialization error:",
+      "Nkwasibwe IRHCF initialization failed:",
       error
     );
 
     setStatus(
-      "Initialization error: " +
-        (
-          error && error.message
-            ? error.message
-            : String(error)
-        ),
+      "Initialization failed",
       "error"
     );
 
-    console.error(
-      "Initialization details:",
-      error && error.message,
-      error && error.stack
+    appState.initialized =
+      false;
+
+    return false;
+  }
+}
+
+
+// ============================================================
+// START APPLICATION SAFELY
+// ============================================================
+
+(function startNkwasibweApplication() {
+
+  const start =
+    function () {
+
+      initializeApp();
+
+    };
+
+  if (
+    document.readyState ===
+    "loading"
+  ) {
+
+    document.addEventListener(
+      "DOMContentLoaded",
+      start,
+      {
+        once: true
+      }
     );
+
+  } else {
+
+    start();
+
   }
 
-// ============================================================
-// START APPLICATION
-// ============================================================
-
-if (
-
-  document.readyState ===
-  "loading"
-
-) {
-
-  document.addEventListener(
-
-    "DOMContentLoaded",
-
-    initializeApp,
-
-    {
-
-      once:
-        true
-
-    }
-
-  );
-
-} else {
-
-  initializeApp();
-
-}
+})();
 
 
 // ============================================================
 // PUBLIC APPLICATION API
 // ============================================================
-
 window.NkwasibweIRHCF = {
-
   // ----------------------------------------------------------
   // APPLICATION
   // ----------------------------------------------------------
 
   version:
     APP_VERSION,
-
 
   initialize:
     initializeApp,
@@ -7419,6 +8900,5 @@ window.NkwasibweIRHCF = {
     };
 
   }
-
 
 };
