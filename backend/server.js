@@ -17,10 +17,6 @@ const app = express();
 
 const PORT = Number(config.port) || 3000;
 const JWT_SECRET = config.jwtSecret;
-// ============================================================
-// CONFIGURATION CHECK
-// ============================================================
-
 if (!config.databaseUrl) {
   console.error(
     "[CONFIG ERROR] DATABASE_URL is missing."
@@ -38,7 +34,6 @@ if (!config.openaiApiKey) {
     "[CONFIG WARNING] OPENAI_API_KEY is missing."
   );
 }
-
 app.disable("x-powered-by");
 
 app.use(cors());
