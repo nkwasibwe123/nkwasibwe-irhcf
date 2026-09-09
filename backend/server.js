@@ -384,10 +384,53 @@ app.post(
         token,
         user
       });
-    } catch (error) {
+        } catch (error) {
+
       console.error(
-        "Register error:",
+        "================================"
+      );
+
+      console.error(
+        "REGISTER ERROR"
+      );
+
+      console.error(
+        "message:",
+        error?.message
+      );
+
+      console.error(
+        "code:",
+        error?.code
+      );
+
+      console.error(
+        "detail:",
+        error?.detail
+      );
+
+      console.error(
+        "constraint:",
+        error?.constraint
+      );
+
+      console.error(
+        "table:",
+        error?.table
+      );
+
+      console.error(
+        "column:",
+        error?.column
+      );
+
+      console.error(
+        "Register full error:",
         error
+      );
+
+      console.error(
+        "================================"
       );
 
       res.status(500).json({
@@ -396,8 +439,6 @@ app.post(
           "Could not create account"
       });
     }
-  }
-);
 
 // ============================================================
 // LOGIN
