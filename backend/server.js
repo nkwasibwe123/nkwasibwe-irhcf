@@ -2385,24 +2385,121 @@ ${knowledgeText}
       ];
 
       // ======================================================
-      // CALL OPENAI
-      // ======================================================
+// CALL OPENAI
+// ======================================================
 
-      const completion =
-        await openai.chat.completions.create({
-          model:
-            config.openaiModel ||
-            "gpt-4o-mini",
-          messages:
-            aiMessages,
-          temperature: 0.7
-        });
+let completion;
 
-      const assistantMessage =
-        completion.choices?.[0]?.message
-          ?.content ||
-        "I could not generate a response.";
+try {
 
+  completion =
+    await openai.chat.completions.create({
+      model:
+        config.openaiModel ||
+        "gpt-4o-mini",
+
+      messages:
+        aiMessages,
+
+      temperature: 0.7
+    });
+
+} catch (error) {
+
+  console.error(
+    "OpenAI API ERROR:",
+    error
+  );
+
+  // ----------------------------------------------------
+  // NO API CREDITS
+  // ----------------------------------------------------
+
+  if (
+    error &&
+    (
+      error.code ===
+        "credit_balance_exhausted" ||
+      error.code ===
+        "insufficient_quota"
+    )
+  ) {
+
+    return res.status(429).json({
+      success: false,
+      error:
+        "OpenAI API credits zarangiye. Ongera credits kuri OpenAI kugira ngo Nkwasibwe IRHCF ikomeze gukoresha AI.",
+      code:
+        "CREDIT_BALANCE_EXHAUSTED"
+    });
+
+  }
+
+  // ----------------------------------------------------
+  // OTHER OPENAI RATE LIMIT
+  // ----------------------------------------------------
+
+  if (
+    error &&
+    error.status === 429
+  ) {
+
+    return res.status(429).json({
+      success: false,
+      error:
+        "OpenAI API iri kugabanya requests cyangwa quota ntihagije. Ongera ugerageze nyuma gato.",
+      code:
+        "OPENAI_RATE_LIMITED"
+    });
+
+  }
+
+  // ----------------------------------------------------
+  // OPENAI AUTHENTICATION ERROR
+  // ----------------------------------------------------
+
+  if (
+    error &&
+    error.status === 401
+  ) {
+
+    return res.status(500).json({
+      success: false,
+      error:
+        "OpenAI API key ntabwo yemerewe cyangwa ntabwo ikora.",
+      code:
+        "OPENAI_AUTH_ERROR"
+    });
+
+  }
+
+  // ----------------------------------------------------
+  // OTHER OPENAI ERROR
+  // ----------------------------------------------------
+
+  return res.status(500).json({
+    success: false,
+    error:
+      "Nkwasibwe IRHCF ntiyashoboye kuvugana na OpenAI.",
+    code:
+      "OPENAI_API_ERROR"
+  });
+
+}
+
+
+// ======================================================
+// READ ASSISTANT RESPONSE
+// ======================================================
+
+const assistantMessage =
+  completion &&
+  completion.choices &&
+  completion.choices[0] &&
+  completion.choices[0].message &&
+  completion.choices[0].message.content
+    ? completion.choices[0].message.content
+    : "I could not generate a response.";
       // ======================================================
       // SAVE ASSISTANT MESSAGE
       // ======================================================
