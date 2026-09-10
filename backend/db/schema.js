@@ -359,30 +359,36 @@ async function createSchema() {
       ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP
         DEFAULT CURRENT_TIMESTAMP;
   `);
+// ------------------------------------------------------------
+// CONVERSATIONS MIGRATION
+// ------------------------------------------------------------
 
-  // ------------------------------------------------------------
-  // CONVERSATIONS MIGRATION
-  // ------------------------------------------------------------
+await pool.query(`
+  ALTER TABLE conversations
+    ADD COLUMN IF NOT EXISTS user_id INTEGER;
 
-  await pool.query(`
-    ALTER TABLE conversations
-      ADD COLUMN IF NOT EXISTS user_id INTEGER;
+  ALTER TABLE conversations
+    ADD COLUMN IF NOT EXISTS session_id TEXT;
 
-    ALTER TABLE conversations
-      ADD COLUMN IF NOT EXISTS session_id TEXT;
+  ALTER TABLE conversations
+    ADD COLUMN IF NOT EXISTS title TEXT
+      DEFAULT 'New conversation';
 
-    ALTER TABLE conversations
-      ADD COLUMN IF NOT EXISTS title TEXT
-        DEFAULT 'New conversation';
+  ALTER TABLE conversations
+    ADD COLUMN IF NOT EXISTS created_at TIMESTAMP
+      DEFAULT CURRENT_TIMESTAMP;
 
-    ALTER TABLE conversations
-      ADD COLUMN IF NOT EXISTS created_at TIMESTAMP
-        DEFAULT CURRENT_TIMESTAMP;
+  ALTER TABLE conversations
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP
+      DEFAULT CURRENT_TIMESTAMP;
 
-    ALTER TABLE conversations
-      ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP
-        DEFAULT CURRENT_TIMESTAMP;
-  `);
+  ALTER TABLE conversations
+    DROP COLUMN IF EXISTS role;
+
+  ALTER TABLE conversations
+    DROP COLUMN IF EXISTS content;
+`);
+  
 
   // ------------------------------------------------------------
   // MESSAGES MIGRATION
