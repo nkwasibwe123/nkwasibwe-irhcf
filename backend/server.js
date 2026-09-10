@@ -39,16 +39,1294 @@ app.disable("x-powered-by");
 app.use(cors());
 app.use(express.json({ limit: "10mb" }));
 
+
 // ============================================================
-// OPENAI
+// AI PROVIDER ENGINE
+// NKWASIBWE IRHCF
+//
+// Architecture:
+//
+// Request
+//   ↓
+// Provider Router
+//   ↓
+// Gemini
+//   ↓
+// Groq
+//   ↓
+// OpenAI
+//   ↓
+// Normalized AI Result
+//
+// Important:
+// - API keys never leave backend.
+// - One provider failure must not automatically kill the task.
+// - Providers are isolated from the Agent Engine.
+// - New providers can be added without rewriting /api/chat.
 // ============================================================
 
-const openai = config.openaiApiKey
-  ? new OpenAI({
-      apiKey: config.openaiApiKey
-    })
-  : null;
+// ------------------------------------------------------------
+// PROVIDER ENVIRONMENT
+// ------------------------------------------------------------
 
+const AI_PROVIDER_CONFIG = Object.freeze({
+
+  gemini: {
+    name: "gemini",
+
+    apiKey:
+      process.env.GEMINI_API_KEY || "",
+
+    model:
+      process.env.GEMINI_MODEL ||
+      "gemini-3.7-flash",
+
+    endpoint:
+      "https://generativelanguage.googleapis.com/v1beta/models",
+
+    timeoutMs:
+      Number(
+        process.env.GEMINI_TIMEOUT_MS
+      ) || 45000
+  },
+
+  groq: {
+    name: "groq",
+
+    apiKey:
+      process.env.GROQ_API_KEY || "",
+
+    model:
+      process.env.GROQ_MODEL ||
+      "llama-3.3-70b-versatile",
+
+    endpoint:
+      "https://api.groq.com/openai/v1/chat/completions",
+
+    timeoutMs:
+      Number(
+        process.env.GROQ_TIMEOUT_MS
+      ) || 30000
+  },
+
+  openai: {
+    name: "openai",
+
+    apiKey:
+      config.openaiApiKey ||
+      process.env.OPENAI_API_KEY ||
+      "",
+
+    model:
+      process.env.OPENAI_MODEL ||
+      config.openaiModel ||
+      "gpt-4o-mini",
+
+    endpoint:
+      "https://api.openai.com/v1/chat/completions",
+
+    timeoutMs:
+      Number(
+        process.env.OPENAI_TIMEOUT_MS
+      ) || 30000
+  }
+
+});
+
+
+// ------------------------------------------------------------
+// PROVIDER ORDER
+//
+// The order matters.
+//
+// We deliberately put providers with available keys first.
+// OpenAI remains available as a fallback rather than being
+// hard-coded as the only intelligence source.
+// ------------------------------------------------------------
+
+const AI_PROVIDER_ORDER = [
+  "gemini",
+  "groq",
+  "openai"
+];
+
+
+// ------------------------------------------------------------
+// PROVIDER RUNTIME STATE
+//
+// This allows Nkwasibwe to remember provider failures during
+// the current server lifetime.
+//
+// Later this can be moved into PostgreSQL so provider health
+// survives server restarts.
+// ------------------------------------------------------------
+
+const providerRuntime = {
+
+  gemini: {
+    consecutiveFailures: 0,
+    lastFailureAt: null,
+    lastSuccessAt: null,
+    lastErrorCode: null,
+    disabledUntil: null
+  },
+
+  groq: {
+    consecutiveFailures: 0,
+    lastFailureAt: null,
+    lastSuccessAt: null,
+    lastErrorCode: null,
+    disabledUntil: null
+  },
+
+  openai: {
+    consecutiveFailures: 0,
+    lastFailureAt: null,
+    lastSuccessAt: null,
+    lastErrorCode: null,
+    disabledUntil: null
+  }
+
+};
+
+
+// ------------------------------------------------------------
+// PROVIDER POLICY
+//
+// This is intentionally centralized.
+//
+// Later we can make this configurable per task type.
+// ------------------------------------------------------------
+
+const AI_PROVIDER_POLICY = Object.freeze({
+
+  maxAttemptsPerRequest: 3,
+
+  providerCooldownMs:
+    30 * 1000,
+
+  requestTimeoutMs:
+    45000,
+
+  maxInputCharacters:
+    120000,
+
+  maxOutputTokens:
+    4096,
+
+  temperature:
+    0.7
+
+});
+
+
+// ============================================================
+// GENERIC HELPERS
+// ============================================================
+
+function providerHasKey(providerName) {
+
+  const provider =
+    AI_PROVIDER_CONFIG[
+      providerName
+    ];
+
+  return Boolean(
+    provider &&
+    provider.apiKey
+  );
+
+}
+
+
+function providerIsCoolingDown(
+  providerName
+) {
+
+  const state =
+    providerRuntime[
+      providerName
+    ];
+
+  if (!state) {
+    return false;
+  }
+
+  if (!state.disabledUntil) {
+    return false;
+  }
+
+  return (
+    Date.now() <
+    state.disabledUntil
+  );
+
+}
+
+
+function markProviderSuccess(
+  providerName
+) {
+
+  const state =
+    providerRuntime[
+      providerName
+    ];
+
+  if (!state) {
+    return;
+  }
+
+  state.consecutiveFailures = 0;
+  state.lastFailureAt = null;
+  state.lastErrorCode = null;
+  state.lastSuccessAt =
+    new Date().toISOString();
+  state.disabledUntil = null;
+
+}
+
+
+function markProviderFailure(
+  providerName,
+  error
+) {
+
+  const state =
+    providerRuntime[
+      providerName
+    ];
+
+  if (!state) {
+    return;
+  }
+
+  state.consecutiveFailures += 1;
+
+  state.lastFailureAt =
+    new Date().toISOString();
+
+  state.lastErrorCode =
+    error &&
+    error.code
+      ? String(error.code)
+      : "UNKNOWN_PROVIDER_ERROR";
+
+  /*
+   * We do not permanently disable a provider.
+   *
+   * A temporary cooldown lets the router recover automatically.
+   */
+
+  if (
+    state.consecutiveFailures >= 2
+  ) {
+
+    state.disabledUntil =
+      Date.now() +
+      AI_PROVIDER_POLICY.providerCooldownMs;
+
+  }
+
+}
+
+
+// ============================================================
+// ABORT / TIMEOUT
+// ============================================================
+
+function createTimeoutController(
+  timeoutMs
+) {
+
+  const controller =
+    new AbortController();
+
+  const timer =
+    setTimeout(
+      () => {
+        controller.abort();
+      },
+      timeoutMs
+    );
+
+  return {
+    controller,
+    timer
+  };
+
+}
+
+
+// ============================================================
+// NORMALIZED PROVIDER ERROR
+// ============================================================
+
+function createProviderError(
+  provider,
+  code,
+  message,
+  status = null,
+  originalError = null
+) {
+
+  const error =
+    new Error(message);
+
+  error.provider =
+    provider;
+
+  error.code =
+    code;
+
+  error.status =
+    status;
+
+  error.originalError =
+    originalError;
+
+  return error;
+
+}
+
+
+// ============================================================
+// GEMINI PROVIDER
+// ============================================================
+
+async function callGeminiProvider(
+  messages
+) {
+
+  const provider =
+    AI_PROVIDER_CONFIG.gemini;
+
+  if (!provider.apiKey) {
+
+    throw createProviderError(
+      "gemini",
+      "PROVIDER_NOT_CONFIGURED",
+      "Gemini API key is not configured."
+    );
+
+  }
+
+  /*
+   * Gemini expects system instructions separately from the
+   * conversational contents.
+   */
+
+  let systemInstruction = "";
+
+  const contents = [];
+
+  for (
+    const message
+    of messages
+  ) {
+
+    if (
+      message.role ===
+      "system"
+    ) {
+
+      systemInstruction +=
+        (
+          systemInstruction
+            ? "\n\n"
+            : ""
+        ) +
+        String(
+          message.content || ""
+        );
+
+      continue;
+    }
+
+    const role =
+      message.role ===
+      "assistant"
+        ? "model"
+        : "user";
+
+    contents.push({
+
+      role,
+
+      parts: [
+        {
+          text:
+            String(
+              message.content || ""
+            )
+        }
+      ]
+
+    });
+
+  }
+
+
+  const body = {
+
+    system_instruction:
+      systemInstruction
+        ? {
+            parts: [
+              {
+                text:
+                  systemInstruction
+              }
+            ]
+          }
+        : undefined,
+
+    contents,
+
+    generationConfig: {
+
+      temperature:
+        AI_PROVIDER_POLICY.temperature,
+
+      maxOutputTokens:
+        AI_PROVIDER_POLICY.maxOutputTokens
+
+    }
+
+  };
+
+
+  const timeout =
+    createTimeoutController(
+      provider.timeoutMs
+    );
+
+
+  try {
+
+    const response =
+      await fetch(
+        `${provider.endpoint}/${encodeURIComponent(
+          provider.model
+        )}:generateContent`,
+        {
+          method: "POST",
+
+          headers: {
+            "Content-Type":
+              "application/json",
+
+            "x-goog-api-key":
+              provider.apiKey
+          },
+
+          body:
+            JSON.stringify(body),
+
+          signal:
+            timeout.controller.signal
+        }
+      );
+
+
+    let data = null;
+
+    try {
+
+      data =
+        await response.json();
+
+    } catch (parseError) {
+
+      throw createProviderError(
+        "gemini",
+        "INVALID_PROVIDER_RESPONSE",
+        "Gemini returned an invalid JSON response.",
+        response.status,
+        parseError
+      );
+
+    }
+
+
+    if (!response.ok) {
+
+      const providerMessage =
+        data &&
+        data.error &&
+        data.error.message
+          ? data.error.message
+          : "Gemini request failed.";
+
+      throw createProviderError(
+        "gemini",
+        classifyProviderHttpError(
+          response.status,
+          data
+        ),
+        providerMessage,
+        response.status,
+        data
+      );
+
+    }
+
+
+    const candidates =
+      data &&
+      Array.isArray(
+        data.candidates
+      )
+        ? data.candidates
+        : [];
+
+
+    const firstCandidate =
+      candidates.length > 0
+        ? candidates[0]
+        : null;
+
+
+    const parts =
+      firstCandidate &&
+      firstCandidate.content &&
+      Array.isArray(
+        firstCandidate.content.parts
+      )
+        ? firstCandidate.content.parts
+        : [];
+
+
+    const text =
+      parts
+        .map(
+          part =>
+            part &&
+            typeof part.text ===
+              "string"
+              ? part.text
+              : ""
+        )
+        .filter(Boolean)
+        .join("\n");
+
+
+    if (!text.trim()) {
+
+      throw createProviderError(
+        "gemini",
+        "EMPTY_PROVIDER_RESPONSE",
+        "Gemini returned an empty response.",
+        response.status,
+        data
+      );
+
+    }
+
+
+    return {
+
+      provider:
+        "gemini",
+
+      model:
+        provider.model,
+
+      text:
+        text.trim(),
+
+      raw:
+        data,
+
+      usage:
+        data &&
+        data.usageMetadata
+          ? data.usageMetadata
+          : null
+
+    };
+
+  } catch (error) {
+
+    if (
+      error &&
+      error.name ===
+        "AbortError"
+    ) {
+
+      throw createProviderError(
+        "gemini",
+        "PROVIDER_TIMEOUT",
+        "Gemini request timed out."
+      );
+
+    }
+
+    throw error;
+
+  } finally {
+
+    clearTimeout(
+      timeout.timer
+    );
+
+  }
+
+}
+
+
+// ============================================================
+// GROQ PROVIDER
+// ============================================================
+
+async function callGroqProvider(
+  messages
+) {
+
+  const provider =
+    AI_PROVIDER_CONFIG.groq;
+
+  if (!provider.apiKey) {
+
+    throw createProviderError(
+      "groq",
+      "PROVIDER_NOT_CONFIGURED",
+      "Groq API key is not configured."
+    );
+
+  }
+
+
+  const timeout =
+    createTimeoutController(
+      provider.timeoutMs
+    );
+
+
+  try {
+
+    const response =
+      await fetch(
+        provider.endpoint,
+        {
+          method: "POST",
+
+          headers: {
+
+            "Content-Type":
+              "application/json",
+
+            "Authorization":
+              `Bearer ${provider.apiKey}`
+
+          },
+
+          body:
+            JSON.stringify({
+
+              model:
+                provider.model,
+
+              messages:
+
+                messages.map(
+                  item => ({
+
+                    role:
+                      item.role,
+
+                    content:
+                      String(
+                        item.content || ""
+                      )
+
+                  })
+                ),
+
+              temperature:
+                AI_PROVIDER_POLICY.temperature,
+
+              max_tokens:
+                AI_PROVIDER_POLICY.maxOutputTokens
+
+            }),
+
+          signal:
+            timeout.controller.signal
+
+        }
+      );
+
+
+    let data = null;
+
+    try {
+
+      data =
+        await response.json();
+
+    } catch (parseError) {
+
+      throw createProviderError(
+        "groq",
+        "INVALID_PROVIDER_RESPONSE",
+        "Groq returned an invalid JSON response.",
+        response.status,
+        parseError
+      );
+
+    }
+
+
+    if (!response.ok) {
+
+      const providerMessage =
+        data &&
+        data.error &&
+        data.error.message
+          ? data.error.message
+          : "Groq request failed.";
+
+      throw createProviderError(
+        "groq",
+        classifyProviderHttpError(
+          response.status,
+          data
+        ),
+        providerMessage,
+        response.status,
+        data
+      );
+
+    }
+
+
+    const choices =
+      data &&
+      Array.isArray(
+        data.choices
+      )
+        ? data.choices
+        : [];
+
+
+    const firstChoice =
+      choices.length > 0
+        ? choices[0]
+        : null;
+
+
+    const text =
+      firstChoice &&
+      firstChoice.message &&
+      typeof firstChoice.message.content ===
+        "string"
+        ? firstChoice.message.content
+        : "";
+
+
+    if (!text.trim()) {
+
+      throw createProviderError(
+        "groq",
+        "EMPTY_PROVIDER_RESPONSE",
+        "Groq returned an empty response.",
+        response.status,
+        data
+      );
+
+    }
+
+
+    return {
+
+      provider:
+        "groq",
+
+      model:
+        provider.model,
+
+      text:
+        text.trim(),
+
+      raw:
+        data,
+
+      usage:
+        data &&
+        data.usage
+          ? data.usage
+          : null
+
+    };
+
+  } catch (error) {
+
+    if (
+      error &&
+      error.name ===
+        "AbortError"
+    ) {
+
+      throw createProviderError(
+        "groq",
+        "PROVIDER_TIMEOUT",
+        "Groq request timed out."
+      );
+
+    }
+
+    throw error;
+
+  } finally {
+
+    clearTimeout(
+      timeout.timer
+    );
+
+  }
+
+}
+
+
+// ============================================================
+// OPENAI PROVIDER
+// ============================================================
+
+async function callOpenAIProvider(
+  messages
+) {
+
+  const provider =
+    AI_PROVIDER_CONFIG.openai;
+
+  if (!provider.apiKey) {
+
+    throw createProviderError(
+      "openai",
+      "PROVIDER_NOT_CONFIGURED",
+      "OpenAI API key is not configured."
+    );
+
+  }
+
+
+  const timeout =
+    createTimeoutController(
+      provider.timeoutMs
+    );
+
+
+  try {
+
+    const response =
+      await fetch(
+        provider.endpoint,
+        {
+          method: "POST",
+
+          headers: {
+
+            "Content-Type":
+              "application/json",
+
+            "Authorization":
+              `Bearer ${provider.apiKey}`
+
+          },
+
+          body:
+            JSON.stringify({
+
+              model:
+                provider.model,
+
+              messages:
+
+                messages.map(
+                  item => ({
+
+                    role:
+                      item.role,
+
+                    content:
+                      String(
+                        item.content || ""
+                      )
+
+                  })
+                ),
+
+              temperature:
+                AI_PROVIDER_POLICY.temperature,
+
+              max_tokens:
+                AI_PROVIDER_POLICY.maxOutputTokens
+
+            }),
+
+          signal:
+            timeout.controller.signal
+
+        }
+      );
+
+
+    let data = null;
+
+    try {
+
+      data =
+        await response.json();
+
+    } catch (parseError) {
+
+      throw createProviderError(
+        "openai",
+        "INVALID_PROVIDER_RESPONSE",
+        "OpenAI returned an invalid JSON response.",
+        response.status,
+        parseError
+      );
+
+    }
+
+
+    if (!response.ok) {
+
+      const providerMessage =
+        data &&
+        data.error &&
+        data.error.message
+          ? data.error.message
+          : "OpenAI request failed.";
+
+      throw createProviderError(
+        "openai",
+        classifyProviderHttpError(
+          response.status,
+          data
+        ),
+        providerMessage,
+        response.status,
+        data
+      );
+
+    }
+
+
+    const choices =
+      data &&
+      Array.isArray(
+        data.choices
+      )
+        ? data.choices
+        : [];
+
+
+    const firstChoice =
+      choices.length > 0
+        ? choices[0]
+        : null;
+
+
+    const text =
+      firstChoice &&
+      firstChoice.message &&
+      typeof firstChoice.message.content ===
+        "string"
+        ? firstChoice.message.content
+        : "";
+
+
+    if (!text.trim()) {
+
+      throw createProviderError(
+        "openai",
+        "EMPTY_PROVIDER_RESPONSE",
+        "OpenAI returned an empty response.",
+        response.status,
+        data
+      );
+
+    }
+
+
+    return {
+
+      provider:
+        "openai",
+
+      model:
+        provider.model,
+
+      text:
+        text.trim(),
+
+      raw:
+        data,
+
+      usage:
+        data &&
+        data.usage
+          ? data.usage
+          : null
+
+    };
+
+  } catch (error) {
+
+    if (
+      error &&
+      error.name ===
+        "AbortError"
+    ) {
+
+      throw createProviderError(
+        "openai",
+        "PROVIDER_TIMEOUT",
+        "OpenAI request timed out."
+      );
+
+    }
+
+    throw error;
+
+  } finally {
+
+    clearTimeout(
+      timeout.timer
+    );
+
+  }
+
+}
+
+
+// ============================================================
+// PROVIDER ERROR CLASSIFICATION
+// ============================================================
+
+function classifyProviderHttpError(
+  status,
+  data
+) {
+
+  const providerCode =
+    data &&
+    data.error &&
+    data.error.code
+      ? String(
+          data.error.code
+        ).toLowerCase()
+      : "";
+
+
+  if (
+    providerCode.includes(
+      "quota"
+    ) ||
+    providerCode.includes(
+      "credit"
+    ) ||
+    providerCode.includes(
+      "resource_exhausted"
+    )
+  ) {
+
+    return "QUOTA_EXHAUSTED";
+
+  }
+
+
+  if (status === 401) {
+    return "PROVIDER_AUTH_ERROR";
+  }
+
+
+  if (status === 403) {
+    return "PROVIDER_FORBIDDEN";
+  }
+
+
+  if (status === 404) {
+    return "PROVIDER_MODEL_NOT_FOUND";
+  }
+
+
+  if (status === 408) {
+    return "PROVIDER_TIMEOUT";
+  }
+
+
+  if (status === 429) {
+    return "PROVIDER_RATE_LIMITED";
+  }
+
+
+  if (
+    status >= 500 &&
+    status <= 599
+  ) {
+
+    return "PROVIDER_SERVER_ERROR";
+
+  }
+
+
+  return "PROVIDER_REQUEST_ERROR";
+
+}
+
+
+// ============================================================
+// PROVIDER ADAPTER
+// ============================================================
+
+async function callAIProvider(
+  providerName,
+  messages
+) {
+
+  switch (
+    providerName
+  ) {
+
+    case "gemini":
+
+      return callGeminiProvider(
+        messages
+      );
+
+    case "groq":
+
+      return callGroqProvider(
+        messages
+      );
+
+    case "openai":
+
+      return callOpenAIProvider(
+        messages
+      );
+
+    default:
+
+      throw createProviderError(
+        providerName,
+        "UNKNOWN_PROVIDER",
+        `Unknown AI provider: ${providerName}`
+      );
+
+  }
+
+}
+
+
+// ============================================================
+// PROVIDER ROUTER
+// ============================================================
+
+async function generateAIResponse(
+  messages,
+  options = {}
+) {
+
+  if (
+    !Array.isArray(messages) ||
+    messages.length === 0
+  ) {
+
+    throw createProviderError(
+      "router",
+      "INVALID_MESSAGES",
+      "AI messages are required."
+    );
+
+  }
+
+
+  const estimatedCharacters =
+    messages.reduce(
+      (
+        total,
+        message
+      ) => {
+
+        return (
+          total +
+          String(
+            message.content || ""
+          ).length
+        );
+
+      },
+      0
+    );
+
+
+  if (
+    estimatedCharacters >
+    AI_PROVIDER_POLICY.maxInputCharacters
+  ) {
+
+    throw createProviderError(
+      "router",
+      "INPUT_TOO_LARGE",
+      "AI input is too large."
+    );
+
+  }
+
+
+  let providerOrder =
+    Array.isArray(
+      options.providers
+    ) &&
+    options.providers.length > 0
+      ? options.providers
+      : AI_PROVIDER_ORDER;
+
+
+  /*
+   * Remove duplicate providers while preserving order.
+   */
+
+  providerOrder =
+    providerOrder.filter(
+      (
+        provider,
+        index,
+        array
+      ) =>
+        array.indexOf(
+          provider
+        ) === index
+    );
+
+
+  const attempts = [];
+
+  let attemptsCount = 0;
+
+
+  for (
+    const providerName
+    of providerOrder
+  ) {
+
+    if (
+      attemptsCount >=
+      AI_PROVIDER_POLICY.maxAttemptsPerRequest
+    ) {
+
+      break;
+
+    }
+
+
+    if (
+      !AI_PROV
 // ============================================================
 // HELPERS
 // ============================================================
@@ -2483,23 +3761,193 @@ try {
       "Nkwasibwe IRHCF ntiyashoboye kuvugana na OpenAI.",
     code:
       "OPENAI_API_ERROR"
+  });// ======================================================
+// NKWASIBWE AI ORCHESTRATION
+//
+// IMPORTANT:
+//
+// /api/chat does NOT know which AI provider is being used.
+//
+// It delegates provider selection to generateAIResponse().
+//
+// This separation is intentional:
+//
+// HTTP API
+//    ↓
+// Conversation Engine
+//    ↓
+// Memory Engine
+//    ↓
+// AI Provider Router
+//    ↓
+// Provider Adapter
+//
+// This allows us to add future providers without rewriting
+// the chat endpoint.
+// ======================================================
+
+let aiResult;
+
+try {
+
+  aiResult =
+    await generateAIResponse(
+      aiMessages,
+      {
+        providers:
+          AI_PROVIDER_ORDER
+      }
+    );
+
+} catch (error) {
+
+  console.error(
+    "NKWASIBWE AI ROUTER ERROR:",
+    {
+      code:
+        error &&
+        error.code,
+
+      message:
+        error &&
+        error.message,
+
+      attempts:
+        error &&
+        error.attempts
+          ? error.attempts
+          : []
+    }
+  );
+
+
+  /*
+   * Record the failure in the persistent system log.
+   *
+   * We deliberately do not store API keys, tokens, passwords,
+   * or full provider responses here.
+   */
+
+  await systemLog(
+    "error",
+    "ai-router",
+    "All AI providers failed",
+    {
+      userId:
+        req.user.id,
+
+      conversationId:
+        conversation.id,
+
+      code:
+        error &&
+        error.code
+          ? error.code
+          : "UNKNOWN",
+
+      attempts:
+        error &&
+        Array.isArray(
+          error.attempts
+        )
+          ? error.attempts
+          : []
+    }
+  );
+
+
+  if (
+    error &&
+    error.code ===
+      "INPUT_TOO_LARGE"
+  ) {
+
+    return res.status(413).json({
+      success: false,
+
+      error:
+        "Task nini ni ndende cyane. Gabanya ubwinshi bw'amakuru ugerageze kongera.",
+      
+      code:
+        "AI_INPUT_TOO_LARGE"
+    });
+
+  }
+
+
+  if (
+    error &&
+    error.code ===
+      "ALL_PROVIDERS_FAILED"
+  ) {
+
+    return res.status(503).json({
+
+      success: false,
+
+      error:
+        "Nkwasibwe IRHCF ntiyabonye AI provider iboneka ubu. Gemini, Groq na OpenAI byose byanze cyangwa ntibashyizweho.",
+
+      code:
+        "ALL_AI_PROVIDERS_FAILED",
+
+      providers:
+        error.attempts || []
+
+    });
+
+  }
+
+
+  return res.status(503).json({
+
+    success: false,
+
+    error:
+      "Nkwasibwe IRHCF ntiyashoboye kubona AI provider iboneka.",
+
+    code:
+      "AI_PROVIDER_ERROR"
+
   });
 
 }
 
 
 // ======================================================
-// READ ASSISTANT RESPONSE
+// NORMALIZED AI RESPONSE
 // ======================================================
 
 const assistantMessage =
-  completion &&
-  completion.choices &&
-  completion.choices[0] &&
-  completion.choices[0].message &&
-  completion.choices[0].message.content
-    ? completion.choices[0].message.content
-    : "I could not generate a response.";
+  aiResult &&
+  typeof aiResult.response ===
+    "string" &&
+  aiResult.response.trim()
+    ? aiResult.response.trim()
+    : "Nkwasibwe IRHCF ntiyabonye igisubizo cya AI.";
+
+const selectedProvider =
+  aiResult &&
+  aiResult.provider
+    ? aiResult.provider
+    : "unknown";
+
+const selectedModel =
+  aiResult &&
+  aiResult.model
+    ? aiResult.model
+    : "unknown";
+
+const providerDurationMs =
+  aiResult &&
+  Number.isFinite(
+    aiResult.durationMs
+  )
+    ? aiResult.durationMs
+    : null;
+
+
+
       // ======================================================
       // SAVE ASSISTANT MESSAGE
       // ======================================================
@@ -2535,13 +3983,137 @@ const assistantMessage =
       );
 
       // ======================================================
-      // CREATE AGENT RUN RECORD
-      // ======================================================
+// CREATE AGENT RUN RECORD
+// ======================================================
 
-      const durationMs =
-        Date.now() - startedAt;
+const durationMs =
+  Date.now() - startedAt;
 
-      const agentRunResult =
+
+// ------------------------------------------------------
+// BUILD AI EXECUTION METADATA
+// ------------------------------------------------------
+
+const aiExecutionMetadata = {
+  source: "chat",
+
+  conversationId:
+    conversation.id,
+
+  durationMs:
+
+    durationMs,
+
+  provider:
+    aiResult &&
+    aiResult.provider
+      ? aiResult.provider
+      : null,
+
+  model:
+    aiResult &&
+    aiResult.model
+      ? aiResult.model
+      : null,
+
+  latencyMs:
+    aiResult &&
+    typeof aiResult.latencyMs === "number"
+      ? aiResult.latencyMs
+      : null,
+
+  requestId:
+    aiResult &&
+    aiResult.requestId
+      ? aiResult.requestId
+      : null,
+
+  attempts:
+    aiResult &&
+    Array.isArray(aiResult.attempts)
+      ? aiResult.attempts
+      : [],
+
+  usage:
+    aiResult &&
+    aiResult.usage
+      ? aiResult.usage
+      : null,
+
+  providerOrder:
+    AI_CONFIG &&
+    Array.isArray(
+      AI_CONFIG.providerOrder
+    )
+      ? AI_CONFIG.providerOrder
+      : [],
+
+  executionMode:
+    "provider_router",
+
+  status:
+    "completed"
+};
+
+
+// ------------------------------------------------------
+// DETERMINE WHETHER FALLBACK WAS USED
+// ------------------------------------------------------
+
+const providerAttempts =
+  aiResult &&
+  Array.isArray(aiResult.attempts)
+    ? aiResult.attempts
+    : [];
+
+const failedProviderAttempts =
+  providerAttempts.filter(
+    function (attempt) {
+      return (
+        attempt &&
+        attempt.status === "failed"
+      );
+    }
+  );
+
+const fallbackUsed =
+  failedProviderAttempts.length > 0;
+
+
+// ------------------------------------------------------
+// ADD FALLBACK INFORMATION
+// ------------------------------------------------------
+
+aiExecutionMetadata.fallbackUsed =
+  fallbackUsed;
+
+aiExecutionMetadata.failedProviders =
+  failedProviderAttempts.map(
+    function (attempt) {
+      return {
+        provider:
+          attempt.provider || null,
+
+        attempt:
+          attempt.attempt || null,
+
+        code:
+          attempt.code || null,
+
+        latencyMs:
+          typeof attempt.latencyMs === "number"
+            ? attempt.latencyMs
+            : null
+      };
+    }
+  );
+
+
+// ------------------------------------------------------
+// CREATE AGENT RUN
+// ------------------------------------------------------
+
+const agentRunResult =
   await pool.query(
     `INSERT INTO agent_runs
      (
@@ -2564,17 +4136,60 @@ const assistantMessage =
      RETURNING *`,
     [
       req.user.id,
+
       message,
+
       assistantMessage,
-      JSON.stringify({
-        source: "chat",
-        conversationId:
-          conversation.id,
-        durationMs
-      })
+
+      JSON.stringify(
+        aiExecutionMetadata
+      )
     ]
   );
 
+
+// ------------------------------------------------------
+// EXTRACT CREATED AGENT RUN
+// ------------------------------------------------------
+
+const agentRun =
+  agentRunResult &&
+  agentRunResult.rows &&
+  agentRunResult.rows[0]
+    ? agentRunResult.rows[0]
+    : null;
+
+
+// ------------------------------------------------------
+// INTERNAL EXECUTION LOG
+// ------------------------------------------------------
+
+console.log(
+  "[AGENT RUN] Completed",
+  {
+    agentRunId:
+      agentRun &&
+      agentRun.id
+        ? agentRun.id
+        : null,
+
+    provider:
+      aiExecutionMetadata.provider,
+
+    model:
+      aiExecutionMetadata.model,
+
+    durationMs:
+      aiExecutionMetadata.durationMs,
+
+    latencyMs:
+      aiExecutionMetadata.latencyMs,
+
+    fallbackUsed:
+      aiExecutionMetadata.fallbackUsed
+  }
+);
+  
       // ======================================================
       // RESPONSE
       // ======================================================
