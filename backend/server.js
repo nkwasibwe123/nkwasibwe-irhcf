@@ -18097,47 +18097,67 @@ app.post(
 
       );
 
+      let status = 500;
 
-      const status =
+      if (
         error?.code ===
-          "AUTHENTICATION_REQUIRED"
-          ? 401
+        "AUTHENTICATION_REQUIRED"
+      ) {
 
-          : error?.code ===
-              "UNKNOWN_AGENT_ACTION"
-            ? 404
+        status = 401;
 
-            : error?.code ===
-                "ACTION_RATE_LIMIT_MINUTE" ||
-              error?.code ===
-                "ACTION_RATE_LIMIT_HOUR"
-              ? 429
+      } else if (
+        error?.code ===
+        "UNKNOWN_AGENT_ACTION"
+      ) {
 
-              : error?.code ===
-                  "INVALID_ACTION_INPUT" ||
-                error?.code ===
-                  "INVALID_ACTION_NAME"
-                ? 400
+        status = 404;
 
-                : error?.code ===
-                    "CONVERSATION_NOT_FOUND" ||
-                  error?.code ===
-                    "MEMORY_NOT_FOUND" ||
-                  error?.code ===
-                    "LONG_TERM_MEMORY_NOT_FOUND"
-                  ? 404
+      } else if (
+        error?.code ===
+          "ACTION_RATE_LIMIT_MINUTE" ||
+        error?.code ===
+          "ACTION_RATE_LIMIT_HOUR"
+      ) {
 
-                  : error?.code ===
-                      "DUPLICATE_ACTION"
-                    ? 409
+        status = 429;
 
-                    : error?.code ===
-                        "ACTION_TIMEOUT"
-                      ? 504
+      } else if (
+        error?.code ===
+          "INVALID_ACTION_INPUT" ||
+        error?.code ===
+          "INVALID_ACTION_NAME"
+      ) {
 
-                      : 500;
+        status = 400;
 
+      } else if (
+        error?.code ===
+          "CONVERSATION_NOT_FOUND" ||
+        error?.code ===
+          "MEMORY_NOT_FOUND" ||
+        error?.code ===
+          "LONG_TERM_MEMORY_NOT_FOUND"
+      ) {
 
+        status = 404;
+
+      } else if (
+        error?.code ===
+        "DUPLICATE_ACTION"
+      ) {
+
+        status = 409;
+
+      } else if (
+        error?.code ===
+        "ACTION_TIMEOUT"
+      ) {
+
+        status = 504;
+
+      }
+      
       return res.status(
         status
       ).json({
