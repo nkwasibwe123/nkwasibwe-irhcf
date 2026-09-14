@@ -1,3 +1,15 @@
+// ============================================================
+// NKWASIBWE IRHCF
+// CORE SERVER FOUNDATION
+// PART 1 / FINAL ARCHITECTURE
+// ============================================================
+
+"use strict";
+
+// ============================================================
+// CORE DEPENDENCIES
+// ============================================================
+
 const express = require("express");
 const cors = require("cors");
 const OpenAI = require("openai");
@@ -5,1556 +17,2495 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 
+// ============================================================
+// INTERNAL MODULES
+// ============================================================
+
 const config = require("./config");
 const pool = require("./db/pool");
 const createSchema = require("./db/schema");
 
 // ============================================================
-// APP
+// APPLICATION IDENTITY
+// ============================================================
+
+const APP_NAME = "Nkwasibwe IRHCF";
+
+const APP_VERSION = "2.0.0";
+
+const APP_DESCRIPTION =
+  "Autonomous AI Agent Platform";
+
+const NODE_ENV =
+  String(
+    config.environment ||
+      process.env.NODE_ENV ||
+      "development"
+  ).trim();
+
+const PORT =
+  Number(config.port) || 3000;
+
+// ============================================================
+// SECURITY CONFIGURATION
+// ============================================================
+
+const JWT_SECRET =
+  config.jwtSecret ||
+  process.env.JWT_SECRET ||
+  "";
+
+const JWT_EXPIRES_IN =
+  config.jwtExpiresIn ||
+  process.env.JWT_EXPIRES_IN ||
+  "7d";
+
+// ============================================================
+// AI CONFIGURATION
+// ============================================================
+
+const OPENAI_API_KEY =
+  config.openaiApiKey ||
+  process.env.OPENAI_API_KEY ||
+  "";
+
+const OPENAI_MODEL =
+  config.openaiModel ||
+  process.env.OPENAI_MODEL ||
+  "gpt-4o-mini";
+
+// ============================================================
+// DATABASE CONFIGURATION
+// ============================================================
+
+const DATABASE_URL =
+  config.databaseUrl ||
+  process.env.DATABASE_URL ||
+  "";
+
+// ============================================================
+// LIMITS
+// ============================================================
+
+const LIMITS = Object.freeze({
+
+  requestBodyBytes:
+    10 * 1024 * 1024,
+
+  maxMessageLength:
+    100000,
+
+  maxMemoryLength:
+    50000,
+
+  maxKnowledgeLength:
+    500000,
+
+  maxTaskLength:
+    100000,
+
+  maxConversationHistory:
+    50,
+
+  maxMemoryItems:
+    50,
+
+  maxLongTermMemoryItems:
+    50,
+
+  maxKnowledgeItems:
+    25,
+
+  maxTools:
+    100,
+
+  maxCapabilities:
+    100,
+
+  maxAgentSteps:
+    50
+
+});
+
+// ============================================================
+// APPLICATION
 // ============================================================
 
 const app = express();
 
-const PORT = Number(config.port) || 3000;
-const JWT_SECRET = config.jwtSecret;
-if (!config.databaseUrl) {
+app.disable("x-powered-by");
+
+// ============================================================
+// BASIC CONFIGURATION VALIDATION
+// ============================================================
+
+if (!DATABASE_URL) {
+
   console.error(
     "[CONFIG ERROR] DATABASE_URL is missing."
   );
+
 }
 
-if (!config.jwtSecret) {
+if (!JWT_SECRET) {
+
   console.error(
     "[CONFIG ERROR] JWT_SECRET is missing."
   );
+
 }
 
-if (!config.openaiApiKey) {
+if (!OPENAI_API_KEY) {
+
   console.warn(
     "[CONFIG WARNING] OPENAI_API_KEY is missing."
   );
+
 }
-app.disable("x-powered-by");
-
-app.use(cors());
-app.use(express.json({ limit: "10mb" }));
-
 
 // ============================================================
-// AI PROVIDER ENGINE
-// NKWASIBWE IRHCF
-//
-// Architecture:
-//
-// Request
-//   ↓
-// Provider Router
-//   ↓
-// Gemini
-//   ↓
-// Groq
-//   ↓
-// OpenAI
-//   ↓
-// Normalized AI Result
-//
-// Important:
-// - API keys never leave backend.
-// - One provider failure must not automatically kill the task.
-// - Providers are isolated from the Agent Engine.
-// - New providers can be added without rewriting /api/chat.
+// CORS
 // ============================================================
 
-// ------------------------------------------------------------
-// PROVIDER ENVIRONMENT
-// ------------------------------------------------------------
+app.use(
+  cors({
+    origin: true,
+    credentials: true,
+    methods: [
+      "GET",
+      "POST",
+      "PUT",
+      "PATCH",
+      "DELETE",
+      "OPTIONS"
+    ],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-Request-ID",
+      "X-Session-ID"
+    ]
+  })
+);
 
-const AI_PROVIDER_CONFIG = Object.freeze({
+// ============================================================
+// JSON BODY PARSER
+// ============================================================
 
-  gemini: {
-    name: "gemini",
+app.use(
+  express.json({
+    limit:
+      LIMITS.requestBodyBytes
+  })
+);
 
-    apiKey:
-      process.env.GEMINI_API_KEY || "",
+// ============================================================
+// REQUEST ID
+// ============================================================
 
-    model:
-      process.env.GEMINI_MODEL ||
-      "gemini-3.7-flash",
+app.use(
+  (req, res, next) => {
 
-    endpoint:
-      "https://generativelanguage.googleapis.com/v1beta/models",
+    const incomingId =
+      typeof req.headers[
+        "x-request-id"
+      ] === "string"
+        ? req.headers[
+            "x-request-id"
+          ].trim()
+        : "";
 
-    timeoutMs:
-      Number(
-        process.env.GEMINI_TIMEOUT_MS
-      ) || 45000
-  },
+    const requestId =
+      incomingId ||
+      crypto.randomUUID();
 
-  groq: {
-    name: "groq",
+    req.requestId =
+      requestId;
 
-    apiKey:
-      process.env.GROQ_API_KEY || "",
+    res.setHeader(
+      "X-Request-ID",
+      requestId
+    );
 
-    model:
-      process.env.GROQ_MODEL ||
-      "llama-3.3-70b-versatile",
+    next();
 
-    endpoint:
-      "https://api.groq.com/openai/v1/chat/completions",
-
-    timeoutMs:
-      Number(
-        process.env.GROQ_TIMEOUT_MS
-      ) || 30000
-  },
-
-  openai: {
-    name: "openai",
-
-    apiKey:
-      config.openaiApiKey ||
-      process.env.OPENAI_API_KEY ||
-      "",
-
-    model:
-      process.env.OPENAI_MODEL ||
-      config.openaiModel ||
-      "gpt-4o-mini",
-
-    endpoint:
-      "https://api.openai.com/v1/chat/completions",
-
-    timeoutMs:
-      Number(
-        process.env.OPENAI_TIMEOUT_MS
-      ) || 30000
   }
+);
 
-});
+// ============================================================
+// REQUEST TIMING
+// ============================================================
 
+app.use(
+  (req, res, next) => {
 
-// ------------------------------------------------------------
-// PROVIDER ORDER
+    req.startedAt =
+      Date.now();
+
+    res.on(
+      "finish",
+      () => {
+
+        const duration =
+          Date.now() -
+          req.startedAt;
+
+        console.log(
+          `[HTTP] ${req.method} ${req.originalUrl} ${res.statusCode} ${duration}ms [${req.requestId}]`
+        );
+
+      }
+    );
+
+    next();
+
+  }
+);
+
+// ============================================================
+// OPENAI PROVIDER
 //
-// The order matters.
-//
-// We deliberately put providers with available keys first.
-// OpenAI remains available as a fallback rather than being
-// hard-coded as the only intelligence source.
-// ------------------------------------------------------------
+// IMPORTANT:
+// OpenAI is ONLY ONE PROVIDER.
+// Nkwasibwe itself must not depend entirely on it.
+// ============================================================
 
-const AI_PROVIDER_ORDER = [
-  "gemini",
-  "groq",
-  "openai"
-];
+const openai =
+  OPENAI_API_KEY
+    ? new OpenAI({
+        apiKey:
+          OPENAI_API_KEY
+      })
+    : null;
 
+// ============================================================
+// PROVIDER STATE
+// ============================================================
 
-// ------------------------------------------------------------
-// PROVIDER RUNTIME STATE
-//
-// This allows Nkwasibwe to remember provider failures during
-// the current server lifetime.
-//
-// Later this can be moved into PostgreSQL so provider health
-// survives server restarts.
-// ------------------------------------------------------------
-
-const providerRuntime = {
-
-  gemini: {
-    consecutiveFailures: 0,
-    lastFailureAt: null,
-    lastSuccessAt: null,
-    lastErrorCode: null,
-    disabledUntil: null
-  },
-
-  groq: {
-    consecutiveFailures: 0,
-    lastFailureAt: null,
-    lastSuccessAt: null,
-    lastErrorCode: null,
-    disabledUntil: null
-  },
+const providerState = {
 
   openai: {
-    consecutiveFailures: 0,
-    lastFailureAt: null,
-    lastSuccessAt: null,
-    lastErrorCode: null,
-    disabledUntil: null
+    configured:
+      Boolean(openai),
+
+    available:
+      Boolean(openai),
+
+    failures:
+      0,
+
+    successes:
+      0,
+
+    lastError:
+      null,
+
+    lastSuccess:
+      null
+  },
+
+  local: {
+    configured:
+      true,
+
+    available:
+      true,
+
+    failures:
+      0,
+
+    successes:
+      0,
+
+    lastError:
+      null,
+
+    lastSuccess:
+      null
   }
 
 };
 
+// ============================================================
+// APPLICATION RUNTIME STATE
+// ============================================================
 
-// ------------------------------------------------------------
-// PROVIDER POLICY
-//
-// This is intentionally centralized.
-//
-// Later we can make this configurable per task type.
-// ------------------------------------------------------------
+const runtimeState = {
 
-const AI_PROVIDER_POLICY = Object.freeze({
+  startedAt:
+    new Date(),
 
-  maxAttemptsPerRequest: 3,
+  requests:
+    0,
 
-  providerCooldownMs:
-    30 * 1000,
+  successfulRequests:
+    0,
 
-  requestTimeoutMs:
-    45000,
+  failedRequests:
+    0,
 
-  maxInputCharacters:
+  activeRequests:
+    0,
+
+  lastError:
+    null
+
+};
+
+// ============================================================
+// FREEZE STATIC CONFIGURATION
+// ============================================================
+
+const APP_CONFIG =
+  Object.freeze({
+
+    name:
+      APP_NAME,
+
+    version:
+      APP_VERSION,
+
+    description:
+      APP_DESCRIPTION,
+
+    environment:
+      NODE_ENV,
+
+    port:
+      PORT,
+
+    jwtConfigured:
+      Boolean(JWT_SECRET),
+
+    openaiConfigured:
+      Boolean(OPENAI_API_KEY),
+
+    openaiModel:
+      OPENAI_MODEL,
+
+    limits:
+      LIMITS
+
+  });
+
+// ============================================================
+// STARTUP CONFIGURATION LOG
+// ============================================================
+
+console.log(
+  "=============================================="
+);
+
+console.log(
+  `${APP_NAME} v${APP_VERSION}`
+);
+
+console.log(
+  APP_DESCRIPTION
+);
+
+console.log(
+  "=============================================="
+);
+
+console.log(
+  `[CONFIG] Environment: ${NODE_ENV}`
+);
+
+console.log(
+  `[CONFIG] Port: ${PORT}`
+);
+
+console.log(
+  `[CONFIG] Database: ${
+    DATABASE_URL
+      ? "Configured"
+      : "Missing"
+  }`
+);
+
+console.log(
+  `[CONFIG] JWT: ${
+    JWT_SECRET
+      ? "Configured"
+      : "Missing"
+  }`
+);
+
+console.log(
+  `[CONFIG] OpenAI: ${
+    OPENAI_API_KEY
+      ? "Configured"
+      : "Unavailable"
+  }`
+);
+
+console.log(
+  `[CONFIG] Local intelligence: Available`
+);
+
+console.log(
+  "=============================================="
+);
+// ============================================================
+// NKWASIBWE IRHCF
+// PART 2 — SECURITY, REQUEST CONTEXT & CORE ENGINE
+// ============================================================
+
+
+// ============================================================
+// SECURITY CONSTANTS
+// ============================================================
+
+const SECURITY = Object.freeze({
+
+  MAX_BODY_SIZE:
+    10 * 1024 * 1024,
+
+  MAX_TEXT_LENGTH:
+    100000,
+
+  MAX_MESSAGE_LENGTH:
+    50000,
+
+  MAX_METADATA_KEYS:
+    100,
+
+  MAX_ARRAY_LENGTH:
+    1000,
+
+  MAX_JSON_DEPTH:
+    12,
+
+  MAX_REQUESTS_PER_WINDOW:
+    120,
+
+  RATE_WINDOW_MS:
+    60 * 1000,
+
+  AUTH_RATE_LIMIT:
+    20,
+
+  CHAT_RATE_LIMIT:
+    30,
+
+  MEMORY_RATE_LIMIT:
+    100,
+
+  REQUEST_TIMEOUT_MS:
     120000,
 
-  maxOutputTokens:
-    4096,
-
-  temperature:
-    0.7
+  MAX_ERROR_MESSAGE_LENGTH:
+    1000
 
 });
 
 
 // ============================================================
-// GENERIC HELPERS
+// INTERNAL SECURITY STATE
 // ============================================================
 
-function providerHasKey(providerName) {
+const securityState = {
 
-  const provider =
-    AI_PROVIDER_CONFIG[
-      providerName
-    ];
+  requestCounts:
+    new Map(),
 
-  return Boolean(
-    provider &&
-    provider.apiKey
-  );
+  blockedIPs:
+    new Map(),
 
-}
+  suspiciousRequests:
+    new Map(),
+
+  activeRequests:
+    new Map(),
+
+  failedAuthAttempts:
+    new Map(),
+
+  lastCleanup:
+    Date.now()
+
+};
 
 
-function providerIsCoolingDown(
-  providerName
+// ============================================================
+// SAFE STRING
+// ============================================================
+
+function safeString(
+  value,
+  maxLength =
+    SECURITY.MAX_TEXT_LENGTH
 ) {
-
-  const state =
-    providerRuntime[
-      providerName
-    ];
-
-  if (!state) {
-    return false;
-  }
-
-  if (!state.disabledUntil) {
-    return false;
-  }
-
-  return (
-    Date.now() <
-    state.disabledUntil
-  );
-
-}
-
-
-function markProviderSuccess(
-  providerName
-) {
-
-  const state =
-    providerRuntime[
-      providerName
-    ];
-
-  if (!state) {
-    return;
-  }
-
-  state.consecutiveFailures = 0;
-  state.lastFailureAt = null;
-  state.lastErrorCode = null;
-  state.lastSuccessAt =
-    new Date().toISOString();
-  state.disabledUntil = null;
-
-}
-
-
-function markProviderFailure(
-  providerName,
-  error
-) {
-
-  const state =
-    providerRuntime[
-      providerName
-    ];
-
-  if (!state) {
-    return;
-  }
-
-  state.consecutiveFailures += 1;
-
-  state.lastFailureAt =
-    new Date().toISOString();
-
-  state.lastErrorCode =
-    error &&
-    error.code
-      ? String(error.code)
-      : "UNKNOWN_PROVIDER_ERROR";
-
-  /*
-   * We do not permanently disable a provider.
-   *
-   * A temporary cooldown lets the router recover automatically.
-   */
 
   if (
-    state.consecutiveFailures >= 2
+    typeof value !==
+    "string"
   ) {
-
-    state.disabledUntil =
-      Date.now() +
-      AI_PROVIDER_POLICY.providerCooldownMs;
-
+    return "";
   }
+
+  return value
+    .replace(/\u0000/g, "")
+    .trim()
+    .slice(
+      0,
+      maxLength
+    );
 
 }
 
 
 // ============================================================
-// ABORT / TIMEOUT
+// SAFE INTEGER
 // ============================================================
 
-function createTimeoutController(
-  timeoutMs
+function safeInteger(
+  value,
+  fallback = 0,
+  min = Number.MIN_SAFE_INTEGER,
+  max = Number.MAX_SAFE_INTEGER
 ) {
 
-  const controller =
-    new AbortController();
-
-  const timer =
-    setTimeout(
-      () => {
-        controller.abort();
-      },
-      timeoutMs
-    );
-
-  return {
-    controller,
-    timer
-  };
-
-}
-
-
-// ============================================================
-// NORMALIZED PROVIDER ERROR
-// ============================================================
-
-function createProviderError(
-  provider,
-  code,
-  message,
-  status = null,
-  originalError = null
-) {
-
-  const error =
-    new Error(message);
-
-  error.provider =
-    provider;
-
-  error.code =
-    code;
-
-  error.status =
-    status;
-
-  error.originalError =
-    originalError;
-
-  return error;
-
-}
-
-
-// ============================================================
-// GEMINI PROVIDER
-// ============================================================
-
-async function callGeminiProvider(
-  messages
-) {
-
-  const provider =
-    AI_PROVIDER_CONFIG.gemini;
-
-  if (!provider.apiKey) {
-
-    throw createProviderError(
-      "gemini",
-      "PROVIDER_NOT_CONFIGURED",
-      "Gemini API key is not configured."
-    );
-
-  }
-
-  /*
-   * Gemini expects system instructions separately from the
-   * conversational contents.
-   */
-
-  let systemInstruction = "";
-
-  const contents = [];
-
-  for (
-    const message
-    of messages
-  ) {
-
-    if (
-      message.role ===
-      "system"
-    ) {
-
-      systemInstruction +=
-        (
-          systemInstruction
-            ? "\n\n"
-            : ""
-        ) +
-        String(
-          message.content || ""
-        );
-
-      continue;
-    }
-
-    const role =
-      message.role ===
-      "assistant"
-        ? "model"
-        : "user";
-
-    contents.push({
-
-      role,
-
-      parts: [
-        {
-          text:
-            String(
-              message.content || ""
-            )
-        }
-      ]
-
-    });
-
-  }
-
-
-  const body = {
-
-    system_instruction:
-      systemInstruction
-        ? {
-            parts: [
-              {
-                text:
-                  systemInstruction
-              }
-            ]
-          }
-        : undefined,
-
-    contents,
-
-    generationConfig: {
-
-      temperature:
-        AI_PROVIDER_POLICY.temperature,
-
-      maxOutputTokens:
-        AI_PROVIDER_POLICY.maxOutputTokens
-
-    }
-
-  };
-
-
-  const timeout =
-    createTimeoutController(
-      provider.timeoutMs
-    );
-
-
-  try {
-
-    const response =
-      await fetch(
-        `${provider.endpoint}/${encodeURIComponent(
-          provider.model
-        )}:generateContent`,
-        {
-          method: "POST",
-
-          headers: {
-            "Content-Type":
-              "application/json",
-
-            "x-goog-api-key":
-              provider.apiKey
-          },
-
-          body:
-            JSON.stringify(body),
-
-          signal:
-            timeout.controller.signal
-        }
-      );
-
-
-    let data = null;
-
-    try {
-
-      data =
-        await response.json();
-
-    } catch (parseError) {
-
-      throw createProviderError(
-        "gemini",
-        "INVALID_PROVIDER_RESPONSE",
-        "Gemini returned an invalid JSON response.",
-        response.status,
-        parseError
-      );
-
-    }
-
-
-    if (!response.ok) {
-
-      const providerMessage =
-        data &&
-        data.error &&
-        data.error.message
-          ? data.error.message
-          : "Gemini request failed.";
-
-      throw createProviderError(
-        "gemini",
-        classifyProviderHttpError(
-          response.status,
-          data
-        ),
-        providerMessage,
-        response.status,
-        data
-      );
-
-    }
-
-
-    const candidates =
-      data &&
-      Array.isArray(
-        data.candidates
-      )
-        ? data.candidates
-        : [];
-
-
-    const firstCandidate =
-      candidates.length > 0
-        ? candidates[0]
-        : null;
-
-
-    const parts =
-      firstCandidate &&
-      firstCandidate.content &&
-      Array.isArray(
-        firstCandidate.content.parts
-      )
-        ? firstCandidate.content.parts
-        : [];
-
-
-    const text =
-      parts
-        .map(
-          part =>
-            part &&
-            typeof part.text ===
-              "string"
-              ? part.text
-              : ""
-        )
-        .filter(Boolean)
-        .join("\n");
-
-
-    if (!text.trim()) {
-
-      throw createProviderError(
-        "gemini",
-        "EMPTY_PROVIDER_RESPONSE",
-        "Gemini returned an empty response.",
-        response.status,
-        data
-      );
-
-    }
-
-
-    return {
-
-      provider:
-        "gemini",
-
-      model:
-        provider.model,
-
-      text:
-        text.trim(),
-
-      raw:
-        data,
-
-      usage:
-        data &&
-        data.usageMetadata
-          ? data.usageMetadata
-          : null
-
-    };
-
-  } catch (error) {
-
-    if (
-      error &&
-      error.name ===
-        "AbortError"
-    ) {
-
-      throw createProviderError(
-        "gemini",
-        "PROVIDER_TIMEOUT",
-        "Gemini request timed out."
-      );
-
-    }
-
-    throw error;
-
-  } finally {
-
-    clearTimeout(
-      timeout.timer
-    );
-
-  }
-
-}
-
-
-// ============================================================
-// GROQ PROVIDER
-// ============================================================
-
-async function callGroqProvider(
-  messages
-) {
-
-  const provider =
-    AI_PROVIDER_CONFIG.groq;
-
-  if (!provider.apiKey) {
-
-    throw createProviderError(
-      "groq",
-      "PROVIDER_NOT_CONFIGURED",
-      "Groq API key is not configured."
-    );
-
-  }
-
-
-  const timeout =
-    createTimeoutController(
-      provider.timeoutMs
-    );
-
-
-  try {
-
-    const response =
-      await fetch(
-        provider.endpoint,
-        {
-          method: "POST",
-
-          headers: {
-
-            "Content-Type":
-              "application/json",
-
-            "Authorization":
-              `Bearer ${provider.apiKey}`
-
-          },
-
-          body:
-            JSON.stringify({
-
-              model:
-                provider.model,
-
-              messages:
-
-                messages.map(
-                  item => ({
-
-                    role:
-                      item.role,
-
-                    content:
-                      String(
-                        item.content || ""
-                      )
-
-                  })
-                ),
-
-              temperature:
-                AI_PROVIDER_POLICY.temperature,
-
-              max_tokens:
-                AI_PROVIDER_POLICY.maxOutputTokens
-
-            }),
-
-          signal:
-            timeout.controller.signal
-
-        }
-      );
-
-
-    let data = null;
-
-    try {
-
-      data =
-        await response.json();
-
-    } catch (parseError) {
-
-      throw createProviderError(
-        "groq",
-        "INVALID_PROVIDER_RESPONSE",
-        "Groq returned an invalid JSON response.",
-        response.status,
-        parseError
-      );
-
-    }
-
-
-    if (!response.ok) {
-
-      const providerMessage =
-        data &&
-        data.error &&
-        data.error.message
-          ? data.error.message
-          : "Groq request failed.";
-
-      throw createProviderError(
-        "groq",
-        classifyProviderHttpError(
-          response.status,
-          data
-        ),
-        providerMessage,
-        response.status,
-        data
-      );
-
-    }
-
-
-    const choices =
-      data &&
-      Array.isArray(
-        data.choices
-      )
-        ? data.choices
-        : [];
-
-
-    const firstChoice =
-      choices.length > 0
-        ? choices[0]
-        : null;
-
-
-    const text =
-      firstChoice &&
-      firstChoice.message &&
-      typeof firstChoice.message.content ===
-        "string"
-        ? firstChoice.message.content
-        : "";
-
-
-    if (!text.trim()) {
-
-      throw createProviderError(
-        "groq",
-        "EMPTY_PROVIDER_RESPONSE",
-        "Groq returned an empty response.",
-        response.status,
-        data
-      );
-
-    }
-
-
-    return {
-
-      provider:
-        "groq",
-
-      model:
-        provider.model,
-
-      text:
-        text.trim(),
-
-      raw:
-        data,
-
-      usage:
-        data &&
-        data.usage
-          ? data.usage
-          : null
-
-    };
-
-  } catch (error) {
-
-    if (
-      error &&
-      error.name ===
-        "AbortError"
-    ) {
-
-      throw createProviderError(
-        "groq",
-        "PROVIDER_TIMEOUT",
-        "Groq request timed out."
-      );
-
-    }
-
-    throw error;
-
-  } finally {
-
-    clearTimeout(
-      timeout.timer
-    );
-
-  }
-
-}
-
-
-// ============================================================
-// OPENAI PROVIDER
-// ============================================================
-
-async function callOpenAIProvider(
-  messages
-) {
-
-  const provider =
-    AI_PROVIDER_CONFIG.openai;
-
-  if (!provider.apiKey) {
-
-    throw createProviderError(
-      "openai",
-      "PROVIDER_NOT_CONFIGURED",
-      "OpenAI API key is not configured."
-    );
-
-  }
-
-
-  const timeout =
-    createTimeoutController(
-      provider.timeoutMs
-    );
-
-
-  try {
-
-    const response =
-      await fetch(
-        provider.endpoint,
-        {
-          method: "POST",
-
-          headers: {
-
-            "Content-Type":
-              "application/json",
-
-            "Authorization":
-              `Bearer ${provider.apiKey}`
-
-          },
-
-          body:
-            JSON.stringify({
-
-              model:
-                provider.model,
-
-              messages:
-
-                messages.map(
-                  item => ({
-
-                    role:
-                      item.role,
-
-                    content:
-                      String(
-                        item.content || ""
-                      )
-
-                  })
-                ),
-
-              temperature:
-                AI_PROVIDER_POLICY.temperature,
-
-              max_tokens:
-                AI_PROVIDER_POLICY.maxOutputTokens
-
-            }),
-
-          signal:
-            timeout.controller.signal
-
-        }
-      );
-
-
-    let data = null;
-
-    try {
-
-      data =
-        await response.json();
-
-    } catch (parseError) {
-
-      throw createProviderError(
-        "openai",
-        "INVALID_PROVIDER_RESPONSE",
-        "OpenAI returned an invalid JSON response.",
-        response.status,
-        parseError
-      );
-
-    }
-
-
-    if (!response.ok) {
-
-      const providerMessage =
-        data &&
-        data.error &&
-        data.error.message
-          ? data.error.message
-          : "OpenAI request failed.";
-
-      throw createProviderError(
-        "openai",
-        classifyProviderHttpError(
-          response.status,
-          data
-        ),
-        providerMessage,
-        response.status,
-        data
-      );
-
-    }
-
-
-    const choices =
-      data &&
-      Array.isArray(
-        data.choices
-      )
-        ? data.choices
-        : [];
-
-
-    const firstChoice =
-      choices.length > 0
-        ? choices[0]
-        : null;
-
-
-    const text =
-      firstChoice &&
-      firstChoice.message &&
-      typeof firstChoice.message.content ===
-        "string"
-        ? firstChoice.message.content
-        : "";
-
-
-    if (!text.trim()) {
-
-      throw createProviderError(
-        "openai",
-        "EMPTY_PROVIDER_RESPONSE",
-        "OpenAI returned an empty response.",
-        response.status,
-        data
-      );
-
-    }
-
-
-    return {
-
-      provider:
-        "openai",
-
-      model:
-        provider.model,
-
-      text:
-        text.trim(),
-
-      raw:
-        data,
-
-      usage:
-        data &&
-        data.usage
-          ? data.usage
-          : null
-
-    };
-
-  } catch (error) {
-
-    if (
-      error &&
-      error.name ===
-        "AbortError"
-    ) {
-
-      throw createProviderError(
-        "openai",
-        "PROVIDER_TIMEOUT",
-        "OpenAI request timed out."
-      );
-
-    }
-
-    throw error;
-
-  } finally {
-
-    clearTimeout(
-      timeout.timer
-    );
-
-  }
-
-}
-
-
-// ============================================================
-// PROVIDER ERROR CLASSIFICATION
-// ============================================================
-
-function classifyProviderHttpError(
-  status,
-  data
-) {
-
-  const providerCode =
-    data &&
-    data.error &&
-    data.error.code
-      ? String(
-          data.error.code
-        ).toLowerCase()
-      : "";
-
+  const number =
+    Number(value);
 
   if (
-    providerCode.includes(
-      "quota"
-    ) ||
-    providerCode.includes(
-      "credit"
-    ) ||
-    providerCode.includes(
-      "resource_exhausted"
+    !Number.isSafeInteger(
+      number
     )
   ) {
-
-    return "QUOTA_EXHAUSTED";
-
-  }
-
-
-  if (status === 401) {
-    return "PROVIDER_AUTH_ERROR";
-  }
-
-
-  if (status === 403) {
-    return "PROVIDER_FORBIDDEN";
-  }
-
-
-  if (status === 404) {
-    return "PROVIDER_MODEL_NOT_FOUND";
-  }
-
-
-  if (status === 408) {
-    return "PROVIDER_TIMEOUT";
-  }
-
-
-  if (status === 429) {
-    return "PROVIDER_RATE_LIMITED";
-  }
-
-
-  if (
-    status >= 500 &&
-    status <= 599
-  ) {
-
-    return "PROVIDER_SERVER_ERROR";
-
-  }
-
-
-  return "PROVIDER_REQUEST_ERROR";
-
-}
-
-
-// ============================================================
-// PROVIDER ADAPTER
-// ============================================================
-
-async function callAIProvider(
-  providerName,
-  messages
-) {
-
-  switch (
-    providerName
-  ) {
-
-    case "gemini":
-
-      return callGeminiProvider(
-        messages
-      );
-
-    case "groq":
-
-      return callGroqProvider(
-        messages
-      );
-
-    case "openai":
-
-      return callOpenAIProvider(
-        messages
-      );
-
-    default:
-
-      throw createProviderError(
-        providerName,
-        "UNKNOWN_PROVIDER",
-        `Unknown AI provider: ${providerName}`
-      );
-
-  }
-
-}
-
-
-// ============================================================
-// PROVIDER ROUTER
-// ============================================================
-
-async function generateAIResponse(
-  messages,
-  options = {}
-) {
-
-  if (
-    !Array.isArray(messages) ||
-    messages.length === 0
-  ) {
-
-    throw createProviderError(
-      "router",
-      "INVALID_MESSAGES",
-      "AI messages are required."
-    );
-
-  }
-
-
-  const estimatedCharacters =
-    messages.reduce(
-      (
-        total,
-        message
-      ) => {
-
-        return (
-          total +
-          String(
-            message.content || ""
-          ).length
-        );
-
-      },
-      0
-    );
-
-
-  if (
-    estimatedCharacters >
-    AI_PROVIDER_POLICY.maxInputCharacters
-  ) {
-
-    throw createProviderError(
-      "router",
-      "INPUT_TOO_LARGE",
-      "AI input is too large."
-    );
-
-  }
-
-
-  let providerOrder =
-    Array.isArray(
-      options.providers
-    ) &&
-    options.providers.length > 0
-      ? options.providers
-      : AI_PROVIDER_ORDER;
-
-
-  /*
-   * Remove duplicate providers while preserving order.
-   */
-
-  providerOrder =
-    providerOrder.filter(
-      (
-        provider,
-        index,
-        array
-      ) =>
-        array.indexOf(
-          provider
-        ) === index
-    );
-
-
-  const attempts = [];
-
-  let attemptsCount = 0;
-
-
-  for (
-    const providerName
-    of providerOrder
-  ) {
-
-    if (
-      attemptsCount >=
-      AI_PROVIDER_POLICY.maxAttemptsPerRequest
-    ) {
-
-      break;
-
-    }
-
-
-    if (
-      !AI_PROV
-// ============================================================
-// HELPERS
-// ============================================================
-
-function normalizeText(value) {
-  return typeof value === "string"
-    ? value.trim()
-    : "";
-}
-
-function normalizeImportance(value) {
-  const number = Number(value);
-
-  if (!Number.isFinite(number)) {
-    return 1;
+    return fallback;
   }
 
   return Math.min(
-    10,
-    Math.max(1, Math.round(number))
+    max,
+    Math.max(
+      min,
+      number
+    )
   );
+
 }
 
-function safeMetadata(value) {
+
+// ============================================================
+// SAFE BOOLEAN
+// ============================================================
+
+function safeBoolean(
+  value,
+  fallback = false
+) {
+
   if (
-    value &&
-    typeof value === "object" &&
-    !Array.isArray(value)
+    typeof value ===
+    "boolean"
   ) {
     return value;
   }
 
-  return {};
-}
-
-function createToken(user) {
-  if (!JWT_SECRET) {
-    throw new Error(
-      "JWT_SECRET is not configured"
-    );
+  if (
+    value === "true" ||
+    value === 1 ||
+    value === "1"
+  ) {
+    return true;
   }
-
-  return jwt.sign(
-    {
-      id: user.id,
-      email: user.email
-    },
-    JWT_SECRET,
-    {
-      expiresIn: "7d"
-    }
-  );
-}
-
-// ============================================================
-// LOGGING
-// ============================================================
-
-async function systemLog(
-  level,
-  component,
-  message,
-  metadata = {}
-) {
-  try {
-    await pool.query(
-      `INSERT INTO system_logs
-       (
-         level,
-         component,
-         message,
-         metadata
-       )
-       VALUES ($1, $2, $3, $4::jsonb)`,
-      [
-        String(level),
-        String(component),
-        String(message),
-        JSON.stringify(
-          safeMetadata(metadata)
-        )
-      ]
-    );
-  } catch (error) {
-    console.error(
-      "Logging error:",
-      error.message
-    );
-  }
-}
-
-// ============================================================
-// AUTHENTICATION
-// ============================================================
-
-function authenticateToken(req, res, next) {
-  if (!JWT_SECRET) {
-    return res.status(503).json({
-      success: false,
-      error:
-        "Authentication is not configured"
-    });
-  }
-
-  const authHeader =
-    req.headers.authorization;
 
   if (
-    !authHeader ||
-    !authHeader.startsWith("Bearer ")
+    value === "false" ||
+    value === 0 ||
+    value === "0"
   ) {
-    return res.status(401).json({
-      success: false,
-      error:
-        "Authentication required"
-    });
+    return false;
   }
 
-  const token =
-    authHeader.substring(7).trim();
+  return fallback;
 
-  if (!token) {
-    return res.status(401).json({
-      success: false,
-      error:
-        "Authentication required"
-    });
+}
+
+
+// ============================================================
+// SAFE JSON PARSE
+// ============================================================
+
+function safeJsonParse(
+  value,
+  fallback = null
+) {
+
+  if (
+    typeof value !==
+    "string"
+  ) {
+    return fallback;
   }
 
   try {
-    req.user = jwt.verify(
-      token,
-      JWT_SECRET
+
+    return JSON.parse(
+      value
+    );
+
+  } catch {
+
+    return fallback;
+
+  }
+
+}
+
+
+// ============================================================
+// SAFE JSON STRINGIFY
+// ============================================================
+
+function safeJsonStringify(
+  value,
+  fallback = "{}"
+) {
+
+  try {
+
+    const result =
+      JSON.stringify(
+        value
+      );
+
+    return typeof result ===
+      "string"
+      ? result
+      : fallback;
+
+  } catch {
+
+    return fallback;
+
+  }
+
+}
+
+
+// ============================================================
+// OBJECT CHECK
+// ============================================================
+
+function isPlainObject(
+  value
+) {
+
+  return (
+    value !== null &&
+    typeof value ===
+      "object" &&
+    !Array.isArray(
+      value
+    )
+  );
+
+}
+
+
+// ============================================================
+// OBJECT DEPTH
+// ============================================================
+
+function getObjectDepth(
+  value,
+  currentDepth = 0
+) {
+
+  if (
+    value === null ||
+    typeof value !==
+      "object"
+  ) {
+    return currentDepth;
+  }
+
+  if (
+    currentDepth >=
+    SECURITY.MAX_JSON_DEPTH
+  ) {
+    return currentDepth;
+  }
+
+  if (
+    Array.isArray(value)
+  ) {
+
+    let depth =
+      currentDepth;
+
+    for (
+      const item of value
+    ) {
+
+      depth =
+        Math.max(
+          depth,
+          getObjectDepth(
+            item,
+            currentDepth + 1
+          )
+        );
+
+    }
+
+    return depth;
+
+  }
+
+  let depth =
+    currentDepth;
+
+  for (
+    const key of Object.keys(
+      value
+    )
+  ) {
+
+    depth =
+      Math.max(
+        depth,
+        getObjectDepth(
+          value[key],
+          currentDepth + 1
+        )
+      );
+
+  }
+
+  return depth;
+
+}
+
+
+// ============================================================
+// SANITIZE JSON VALUE
+// ============================================================
+
+function sanitizeJsonValue(
+  value,
+  depth = 0
+) {
+
+  if (
+    depth >
+    SECURITY.MAX_JSON_DEPTH
+  ) {
+    return null;
+  }
+
+
+  if (
+    value === null ||
+    typeof value ===
+      "string" ||
+    typeof value ===
+      "boolean"
+  ) {
+
+    if (
+      typeof value ===
+      "string"
+    ) {
+
+      return safeString(
+        value
+      );
+
+    }
+
+    return value;
+
+  }
+
+
+  if (
+    typeof value ===
+    "number"
+  ) {
+
+    return Number.isFinite(
+      value
+    )
+      ? value
+      : null;
+
+  }
+
+
+  if (
+    Array.isArray(value)
+  ) {
+
+    return value
+      .slice(
+        0,
+        SECURITY.MAX_ARRAY_LENGTH
+      )
+      .map(
+        item =>
+          sanitizeJsonValue(
+            item,
+            depth + 1
+          )
+      );
+
+  }
+
+
+  if (
+    isPlainObject(value)
+  ) {
+
+    const result = {};
+
+    const keys =
+      Object.keys(
+        value
+      ).slice(
+        0,
+        SECURITY.MAX_METADATA_KEYS
+      );
+
+    for (
+      const key of keys
+    ) {
+
+      const cleanKey =
+        safeString(
+          key,
+          200
+        );
+
+      if (!cleanKey) {
+        continue;
+      }
+
+      result[cleanKey] =
+        sanitizeJsonValue(
+          value[key],
+          depth + 1
+        );
+
+    }
+
+    return result;
+
+  }
+
+  return null;
+
+}
+
+
+// ============================================================
+// SAFE METADATA
+// ============================================================
+
+function secureMetadata(
+  value
+) {
+
+  if (
+    !isPlainObject(
+      value
+    )
+  ) {
+    return {};
+  }
+
+  return sanitizeJsonValue(
+    value
+  );
+
+}
+
+
+// ============================================================
+// REQUEST ID
+// ============================================================
+
+function createRequestId() {
+
+  if (
+    typeof crypto?.randomUUID ===
+    "function"
+  ) {
+
+    return crypto.randomUUID();
+
+  }
+
+  return crypto
+    .randomBytes(24)
+    .toString("hex");
+
+}
+
+
+// ============================================================
+// CLIENT IP
+// ============================================================
+
+function getClientIP(
+  req
+) {
+
+  const forwarded =
+    req.headers[
+      "x-forwarded-for"
+    ];
+
+  if (
+    typeof forwarded ===
+      "string" &&
+    forwarded.length > 0
+  ) {
+
+    return forwarded
+      .split(",")[0]
+      .trim();
+
+  }
+
+  return (
+    req.ip ||
+    req.socket?.remoteAddress ||
+    "unknown"
+  );
+
+}
+
+
+// ============================================================
+// REQUEST CONTEXT MIDDLEWARE
+// ============================================================
+
+app.use(
+  (req, res, next) => {
+
+    const requestId =
+      createRequestId();
+
+    const startedAt =
+      Date.now();
+
+    const clientIP =
+      getClientIP(
+        req
+      );
+
+    req.requestId =
+      requestId;
+
+    req.startedAt =
+      startedAt;
+
+    req.clientIP =
+      clientIP;
+
+
+    res.setHeader(
+      "X-Request-ID",
+      requestId
+    );
+
+
+    securityState
+      .activeRequests
+      .set(
+        requestId,
+        {
+          requestId,
+          startedAt,
+          clientIP,
+          method:
+            req.method,
+          path:
+            req.path
+        }
+      );
+
+
+    res.on(
+      "finish",
+      () => {
+
+        securityState
+          .activeRequests
+          .delete(
+            requestId
+          );
+
+      }
+    );
+
+
+    next();
+
+  }
+);
+
+
+// ============================================================
+// SECURITY HEADERS
+// ============================================================
+
+app.use(
+  (req, res, next) => {
+
+    res.setHeader(
+      "X-Content-Type-Options",
+      "nosniff"
+    );
+
+    res.setHeader(
+      "X-Frame-Options",
+      "DENY"
+    );
+
+    res.setHeader(
+      "Referrer-Policy",
+      "no-referrer"
+    );
+
+    res.setHeader(
+      "Permissions-Policy",
+      "camera=(), microphone=(), geolocation=()"
+    );
+
+    res.setHeader(
+      "Cache-Control",
+      "no-store"
     );
 
     next();
-  } catch (error) {
-    return res.status(401).json({
-      success: false,
-      error:
-        "Invalid or expired token"
-    });
-  }
-}
 
-// ============================================================
-// DATABASE INITIALIZATION
-// ============================================================
-
-async function initializeDatabase() {
-  console.log(
-    "Initializing database..."
-  );
-
-  const client = await pool.connect();
-
-  try {
-    await client.query("SELECT 1");
-
-    console.log(
-      "PostgreSQL connection successful."
-    );
-  } finally {
-    client.release();
-  }
-
-  await createSchema();
-
-  console.log(
-    "Database schema initialization complete."
-  );
-}
-
-// ============================================================
-// HOME
-// ============================================================
-
-app.get("/", (req, res) => {
-  res.json({
-    success: true,
-    name: "Nkwasibwe IRHCF",
-    message:
-      "Nkwasibwe IRHCF AI Agent Platform backend is running!",
-    version: "1.0.0",
-    timestamp:
-      new Date().toISOString()
-  });
-});
-
-// ============================================================
-// HEALTH
-// ============================================================
-
-app.get(
-  "/api/health",
-  async (req, res) => {
-    try {
-      await pool.query("SELECT 1");
-
-      res.json({
-        success: true,
-        status: "ok",
-        database: "connected",
-        ai: openai
-          ? "configured"
-          : "not_configured",
-        authentication: JWT_SECRET
-          ? "configured"
-          : "not_configured",
-        environment:
-          config.environment,
-        timestamp:
-          new Date().toISOString()
-      });
-    } catch (error) {
-      console.error(
-        "Health check error:",
-        error.message
-      );
-
-      res.status(500).json({
-        success: false,
-        status: "error",
-        database: "disconnected"
-      });
-    }
   }
 );
+
+
+// ============================================================
+// REQUEST TIMEOUT
+// ============================================================
+
+app.use(
+  (req, res, next) => {
+
+    req.setTimeout(
+      SECURITY.REQUEST_TIMEOUT_MS
+    );
+
+    res.setTimeout(
+      SECURITY.REQUEST_TIMEOUT_MS
+    );
+
+    next();
+
+  }
+);
+
+
+// ============================================================
+// RATE LIMIT KEY
+// ============================================================
+
+function getRateLimitKey(
+  req,
+  namespace = "global"
+) {
+
+  const userId =
+    req.user?.id ||
+    "anonymous";
+
+  const ip =
+    req.clientIP ||
+    getClientIP(
+      req
+    );
+
+  return `${namespace}:${userId}:${ip}`;
+
+}
+
+
+// ============================================================
+// RATE LIMIT CHECK
+// ============================================================
+
+function checkRateLimit(
+  req,
+  namespace = "global",
+  limit =
+    SECURITY.MAX_REQUESTS_PER_WINDOW
+) {
+
+  const now =
+    Date.now();
+
+  const key =
+    getRateLimitKey(
+      req,
+      namespace
+    );
+
+  const current =
+    securityState
+      .requestCounts
+      .get(key);
+
+
+  if (
+    !current ||
+    now - current.startedAt >
+      SECURITY.RATE_WINDOW_MS
+  ) {
+
+    securityState
+      .requestCounts
+      .set(
+        key,
+        {
+          startedAt:
+            now,
+          count:
+            1
+        }
+      );
+
+    return {
+      allowed: true,
+      remaining:
+        Math.max(
+          0,
+          limit - 1
+        )
+    };
+
+  }
+
+
+  current.count += 1;
+
+
+  if (
+    current.count >
+    limit
+  ) {
+
+    return {
+      allowed: false,
+      remaining: 0,
+      retryAfter:
+        Math.ceil(
+          (
+            SECURITY.RATE_WINDOW_MS -
+            (
+              now -
+              current.startedAt
+            )
+          ) / 1000
+        )
+    };
+
+  }
+
+
+  return {
+    allowed: true,
+    remaining:
+      Math.max(
+        0,
+        limit -
+          current.count
+      )
+  };
+
+}
+
+
+// ============================================================
+// GLOBAL RATE LIMIT
+// ============================================================
+
+app.use(
+  (req, res, next) => {
+
+    const result =
+      checkRateLimit(
+        req,
+        "global"
+      );
+
+
+    if (
+      !result.allowed
+    ) {
+
+      res.setHeader(
+        "Retry-After",
+        String(
+          result.retryAfter ||
+          60
+        )
+      );
+
+      return res
+        .status(429)
+        .json({
+          success: false,
+          error:
+            "Too many requests. Please try again later.",
+          code:
+            "RATE_LIMITED",
+          requestId:
+            req.requestId
+        });
+
+    }
+
+
+    res.setHeader(
+      "X-RateLimit-Remaining",
+      String(
+        result.remaining
+      )
+    );
+
+
+    next();
+
+  }
+);
+
+
+// ============================================================
+// AUTHENTICATION RATE LIMIT
+// ============================================================
+
+function authenticationRateLimit(
+  req,
+  res,
+  next
+) {
+
+  const result =
+    checkRateLimit(
+      req,
+      "authentication",
+      SECURITY.AUTH_RATE_LIMIT
+    );
+
+
+  if (
+    !result.allowed
+  ) {
+
+    return res
+      .status(429)
+      .json({
+        success: false,
+        error:
+          "Too many authentication attempts. Please try again later.",
+        code:
+          "AUTH_RATE_LIMITED",
+        requestId:
+          req.requestId
+      });
+
+  }
+
+
+  next();
+
+}
+
+
+// ============================================================
+// CHAT RATE LIMIT
+// ============================================================
+
+function chatRateLimit(
+  req,
+  res,
+  next
+) {
+
+  const result =
+    checkRateLimit(
+      req,
+      "chat",
+      SECURITY.CHAT_RATE_LIMIT
+    );
+
+
+  if (
+    !result.allowed
+  ) {
+
+    return res
+      .status(429)
+      .json({
+        success: false,
+        error:
+          "Too many chat requests. Please wait before sending another message.",
+        code:
+          "CHAT_RATE_LIMITED",
+        requestId:
+          req.requestId
+      });
+
+  }
+
+
+  next();
+
+}
+
+
+// ============================================================
+// MEMORY RATE LIMIT
+// ============================================================
+
+function memoryRateLimit(
+  req,
+  res,
+  next
+) {
+
+  const result =
+    checkRateLimit(
+      req,
+      "memory",
+      SECURITY.MEMORY_RATE_LIMIT
+    );
+
+
+  if (
+    !result.allowed
+  ) {
+
+    return res
+      .status(429)
+      .json({
+        success: false,
+        error:
+          "Too many memory operations.",
+        code:
+          "MEMORY_RATE_LIMITED",
+        requestId:
+          req.requestId
+      });
+
+  }
+
+
+  next();
+
+}
+
+
+// ============================================================
+// AUTHENTICATION FAILURE TRACKING
+// ============================================================
+
+function recordFailedAuthentication(
+  req
+) {
+
+  const key =
+    req.clientIP ||
+    "unknown";
+
+  const existing =
+    securityState
+      .failedAuthAttempts
+      .get(key);
+
+
+  if (!existing) {
+
+    securityState
+      .failedAuthAttempts
+      .set(
+        key,
+        {
+          count: 1,
+          lastAttempt:
+            Date.now()
+        }
+      );
+
+    return;
+
+  }
+
+
+  existing.count += 1;
+
+  existing.lastAttempt =
+    Date.now();
+
+}
+
+
+// ============================================================
+// SECURITY EVENT
+// ============================================================
+
+async function securityEvent(
+  level,
+  event,
+  req,
+  metadata = {}
+) {
+
+  const payload = {
+
+    requestId:
+      req?.requestId ||
+      null,
+
+    ip:
+      req?.clientIP ||
+      null,
+
+    userId:
+      req?.user?.id ||
+      null,
+
+    method:
+      req?.method ||
+      null,
+
+    path:
+      req?.path ||
+      null,
+
+    ...secureMetadata(
+      metadata
+    )
+
+  };
+
+
+  console.warn(
+    `[SECURITY:${String(
+      level
+    ).toUpperCase()}] ${event}`,
+    payload
+  );
+
+
+  if (
+    typeof systemLog ===
+    "function"
+  ) {
+
+    await systemLog(
+      level,
+      "security",
+      event,
+      payload
+    );
+
+  }
+
+}
+
+
+// ============================================================
+// VALIDATE REQUEST BODY
+// ============================================================
+
+function validateRequestBody(
+  req,
+  res,
+  next
+) {
+
+  if (
+    req.body === undefined ||
+    req.body === null
+  ) {
+
+    req.body = {};
+
+  }
+
+
+  if (
+    !isPlainObject(
+      req.body
+    )
+  ) {
+
+    return res
+      .status(400)
+      .json({
+        success: false,
+        error:
+          "Request body must be a JSON object.",
+        code:
+          "INVALID_REQUEST_BODY",
+        requestId:
+          req.requestId
+      });
+
+  }
+
+
+  const depth =
+    getObjectDepth(
+      req.body
+    );
+
+
+  if (
+    depth >
+    SECURITY.MAX_JSON_DEPTH
+  ) {
+
+    return res
+      .status(400)
+      .json({
+        success: false,
+        error:
+          "Request data is too deeply nested.",
+        code:
+          "REQUEST_TOO_DEEP",
+        requestId:
+          req.requestId
+      });
+
+  }
+
+
+  next();
+
+}
+
+
+app.use(
+  validateRequestBody
+);
+
+
+// ============================================================
+// REQUEST LOGGER
+// ============================================================
+
+app.use(
+  (req, res, next) => {
+
+    const startedAt =
+      Date.now();
+
+
+    res.on(
+      "finish",
+      () => {
+
+        const duration =
+          Date.now() -
+          startedAt;
+
+
+        console.log(
+          JSON.stringify({
+            type:
+              "http_request",
+
+            requestId:
+              req.requestId,
+
+            method:
+              req.method,
+
+            path:
+              req.path,
+
+            status:
+              res.statusCode,
+
+            durationMs:
+              duration,
+
+            ip:
+              req.clientIP,
+
+            userId:
+              req.user?.id ||
+              null,
+
+            timestamp:
+              new Date()
+                .toISOString()
+          })
+        );
+
+      }
+    );
+
+
+    next();
+
+  }
+);
+
+
+// ============================================================
+// ERROR RESPONSE BUILDER
+// ============================================================
+
+function sendError(
+  res,
+  status,
+  message,
+  code,
+  requestId = null
+) {
+
+  const safeMessage =
+    safeString(
+      message,
+      SECURITY.MAX_ERROR_MESSAGE_LENGTH
+    );
+
+
+  return res
+    .status(
+      status
+    )
+    .json({
+
+      success: false,
+
+      error:
+        safeMessage ||
+        "An unexpected error occurred.",
+
+      code:
+        code ||
+        "INTERNAL_ERROR",
+
+      requestId
+
+    });
+
+}
+
+
+// ============================================================
+// ASYNC ROUTE WRAPPER
+// ============================================================
+
+function asyncHandler(
+  handler
+) {
+
+  return function wrappedHandler(
+    req,
+    res,
+    next
+  ) {
+
+    Promise
+      .resolve(
+        handler(
+          req,
+          res,
+          next
+        )
+      )
+      .catch(
+        next
+      );
+
+  };
+
+}
+
+
+// ============================================================
+// PROCESS CLEANUP
+// ============================================================
+
+function cleanupSecurityState() {
+
+  const now =
+    Date.now();
+
+
+  if (
+    now -
+      securityState.lastCleanup <
+    5 * 60 * 1000
+  ) {
+
+    return;
+
+  }
+
+
+  securityState.lastCleanup =
+    now;
+
+
+  const expiration =
+    SECURITY.RATE_WINDOW_MS *
+    2;
+
+
+  for (
+    const [
+      key,
+      value
+    ] of securityState
+      .requestCounts
+  ) {
+
+    if (
+      now -
+        value.startedAt >
+      expiration
+    ) {
+
+      securityState
+        .requestCounts
+        .delete(
+          key
+        );
+
+    }
+
+  }
+
+
+  for (
+    const [
+      key,
+      value
+    ] of securityState
+      .failedAuthAttempts
+  ) {
+
+    if (
+      now -
+        value.lastAttempt >
+      15 * 60 * 1000
+    ) {
+
+      securityState
+        .failedAuthAttempts
+        .delete(
+          key
+        );
+
+    }
+
+  }
+
+}
+
+
+setInterval(
+  cleanupSecurityState,
+  5 * 60 * 1000
+).unref();
+
+
+// ============================================================
+// UNHANDLED REQUEST ERROR
+// ============================================================
+
+app.use(
+  (
+    error,
+    req,
+    res,
+    next
+  ) => {
+
+    console.error(
+      "Unhandled request error:",
+      {
+        requestId:
+          req.requestId,
+        message:
+          error?.message,
+        stack:
+          error?.stack
+      }
+    );
+
+
+    if (
+      res.headersSent
+    ) {
+
+      return next(
+        error
+      );
+
+    }
+
+
+    return sendError(
+      res,
+      500,
+      "An internal server error occurred.",
+      "INTERNAL_SERVER_ERROR",
+      req.requestId
+    );
+
+  }
+);
+
+
+// ============================================================
+// END PART 2
+// ============================================================
+
+// ============================================================
+// PART 3/14
+// NKWSIBWE IRHCF — AUTHENTICATION & IDENTITY ENGINE
+// ============================================================
+//
+// Responsibilities:
+//
+// • User registration
+// • Secure password hashing
+// • Login
+// • JWT creation
+// • JWT verification
+// • Current-user resolution
+// • Authentication middleware
+// • Account isolation
+// • Authentication diagnostics
+// • Security logging
+//
+// IMPORTANT:
+// This section depends on the foundation/helpers from Part 1
+// and Part 2.
+// ============================================================
+
+
+// ============================================================
+// AUTH CONFIGURATION
+// ============================================================
+
+const AUTH_CONFIG = Object.freeze({
+
+  TOKEN_EXPIRES_IN:
+    config.jwtExpiresIn ||
+    "7d",
+
+  BCRYPT_ROUNDS:
+    Number(config.bcryptRounds) >= 10
+      ? Number(config.bcryptRounds)
+      : 12,
+
+  MAX_NAME_LENGTH:
+    100,
+
+  MAX_EMAIL_LENGTH:
+    255,
+
+  MIN_PASSWORD_LENGTH:
+    8,
+
+  MAX_PASSWORD_LENGTH:
+    256
+
+});
+
+
+// ============================================================
+// EMAIL NORMALIZATION
+// ============================================================
+
+function normalizeEmail(value) {
+
+  if (
+    typeof value !==
+    "string"
+  ) {
+    return "";
+  }
+
+  return value
+    .trim()
+    .toLowerCase();
+
+}
+
+
+// ============================================================
+// EMAIL VALIDATION
+// ============================================================
+
+function isValidEmail(email) {
+
+  if (
+    typeof email !==
+    "string"
+  ) {
+    return false;
+  }
+
+  if (
+    email.length < 3 ||
+    email.length >
+      AUTH_CONFIG.MAX_EMAIL_LENGTH
+  ) {
+    return false;
+  }
+
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    .test(email);
+
+}
+
+
+// ============================================================
+// PASSWORD VALIDATION
+// ============================================================
+
+function validatePassword(password) {
+
+  if (
+    typeof password !==
+    "string"
+  ) {
+    return {
+      valid: false,
+      error:
+        "Password is required"
+    };
+  }
+
+  if (
+    password.length <
+    AUTH_CONFIG.MIN_PASSWORD_LENGTH
+  ) {
+    return {
+      valid: false,
+      error:
+        `Password must contain at least ${AUTH_CONFIG.MIN_PASSWORD_LENGTH} characters`
+    };
+  }
+
+  if (
+    password.length >
+    AUTH_CONFIG.MAX_PASSWORD_LENGTH
+  ) {
+    return {
+      valid: false,
+      error:
+        "Password is too long"
+    };
+  }
+
+  return {
+    valid: true,
+    error: null
+  };
+
+}
+
+
+// ============================================================
+// SAFE USER OBJECT
+// ============================================================
+//
+// NEVER return password_hash to the frontend.
+// NEVER return JWT secrets.
+// NEVER return internal authentication data.
+//
+
+function safeUser(user) {
+
+  if (
+    !user ||
+    typeof user !==
+      "object"
+  ) {
+    return null;
+  }
+
+  return {
+
+    id:
+      user.id,
+
+    name:
+      user.name,
+
+    email:
+      user.email,
+
+    created_at:
+      user.created_at,
+
+    updated_at:
+      user.updated_at
+
+  };
+
+}
+
+
+// ============================================================
+// JWT CREATION
+// ============================================================
+
+function createToken(user) {
+
+  if (!JWT_SECRET) {
+
+    throw new Error(
+      "JWT_SECRET is not configured"
+    );
+
+  }
+
+  if (
+    !user ||
+    !user.id ||
+    !user.email
+  ) {
+
+    throw new Error(
+      "Cannot create authentication token for invalid user"
+    );
+
+  }
+
+  return jwt.sign(
+
+    {
+      id:
+        user.id,
+
+      email:
+        user.email
+
+    },
+
+    JWT_SECRET,
+
+    {
+      expiresIn:
+        AUTH_CONFIG.TOKEN_EXPIRES_IN,
+
+      issuer:
+        "nkwasibwe-irhcf",
+
+      audience:
+        "nkwasibwe-irhcf-client"
+
+    }
+
+  );
+
+}
+
+
+// ============================================================
+// JWT VERIFICATION
+// ============================================================
+
+function verifyToken(token) {
+
+  if (!JWT_SECRET) {
+
+    throw new Error(
+      "JWT_SECRET is not configured"
+    );
+
+  }
+
+  if (
+    typeof token !==
+    "string" ||
+    !token.trim()
+  ) {
+
+    throw new Error(
+      "Authentication token is missing"
+    );
+
+  }
+
+  return jwt.verify(
+
+    token.trim(),
+
+    JWT_SECRET,
+
+    {
+      issuer:
+        "nkwasibwe-irhcf",
+
+      audience:
+        "nkwasibwe-irhcf-client"
+
+    }
+
+  );
+
+}
+
+
+// ============================================================
+// EXTRACT BEARER TOKEN
+// ============================================================
+
+function extractBearerToken(req) {
+
+  const authorization =
+    req.headers?.authorization;
+
+  if (
+    typeof authorization !==
+    "string"
+  ) {
+
+    return null;
+
+  }
+
+  const parts =
+    authorization
+      .trim()
+      .split(/\s+/);
+
+  if (
+    parts.length !== 2 ||
+    parts[0].toLowerCase() !==
+      "bearer"
+  ) {
+
+    return null;
+
+  }
+
+  const token =
+    parts[1]?.trim();
+
+  return token || null;
+
+}
+
+
+// ============================================================
+// AUTHENTICATION MIDDLEWARE
+// ============================================================
+
+async function authenticateToken(
+  req,
+  res,
+  next
+) {
+
+  try {
+
+    if (!JWT_SECRET) {
+
+      await systemLog(
+        "error",
+        "authentication",
+        "Authentication attempted while JWT_SECRET is not configured"
+      );
+
+      return res.status(503).json({
+
+        success: false,
+
+        error:
+          "Authentication is not configured",
+
+        code:
+          "AUTH_NOT_CONFIGURED"
+
+      });
+
+    }
+
+
+    const token =
+      extractBearerToken(req);
+
+
+    if (!token) {
+
+      return res.status(401).json({
+
+        success: false,
+
+        error:
+          "Authentication required",
+
+        code:
+          "AUTH_TOKEN_MISSING"
+
+      });
+
+    }
+
+
+    let decoded;
+
+    try {
+
+      decoded =
+        verifyToken(token);
+
+    } catch (error) {
+
+      const jwtError =
+        error?.name;
+
+      if (
+        jwtError ===
+        "TokenExpiredError"
+      ) {
+
+        return res.status(401).json({
+
+          success: false,
+
+          error:
+            "Session expired. Please login again.",
+
+          code:
+            "AUTH_TOKEN_EXPIRED"
+
+        });
+
+      }
+
+      if (
+        jwtError ===
+        "JsonWebTokenError"
+      ) {
+
+        return res.status(401).json({
+
+          success: false,
+
+          error:
+            "Invalid authentication token",
+
+          code:
+            "AUTH_TOKEN_INVALID"
+
+        });
+
+      }
+
+      return res.status(401).json({
+
+        success: false,
+
+        error:
+          "Authentication failed",
+
+        code:
+          "AUTH_FAILED"
+
+      });
+
+    }
+
+
+    if (
+      !decoded ||
+      !decoded.id ||
+      !decoded.email
+    ) {
+
+      return res.status(401).json({
+
+        success: false,
+
+        error:
+          "Invalid authentication identity",
+
+        code:
+          "AUTH_IDENTITY_INVALID"
+
+      });
+
+    }
+
+
+    // --------------------------------------------------------
+    // Resolve authenticated identity.
+    //
+    // We intentionally query the database instead of trusting
+    // every user property contained inside the JWT.
+    // --------------------------------------------------------
+
+    const result =
+      await pool.query(
+
+        `SELECT
+           id,
+           name,
+           email,
+           created_at,
+           updated_at
+         FROM users
+         WHERE id = $1
+         LIMIT 1`,
+
+        [
+          decoded.id
+        ]
+
+      );
+
+
+    if (
+      result.rows.length ===
+      0
+    ) {
+
+      return res.status(401).json({
+
+        success: false,
+
+        error:
+          "User account no longer exists",
+
+        code:
+          "AUTH_USER_NOT_FOUND"
+
+      });
+
+    }
+
+
+    const user =
+      result.rows[0];
+
+
+    // --------------------------------------------------------
+    // Identity protection.
+    //
+    // The email in the JWT must still belong to the same user.
+    // --------------------------------------------------------
+
+    if (
+      normalizeEmail(
+        user.email
+      ) !==
+      normalizeEmail(
+        decoded.email
+      )
+    ) {
+
+      await systemLog(
+        "warn",
+        "authentication",
+        "JWT identity mismatch detected",
+        {
+          userId:
+            user.id
+        }
+      );
+
+      return res.status(401).json({
+
+        success: false,
+
+        error:
+          "Authentication identity mismatch",
+
+        code:
+          "AUTH_IDENTITY_MISMATCH"
+
+      });
+
+    }
+
+
+    // --------------------------------------------------------
+    // Attach trusted identity to request.
+    // --------------------------------------------------------
+
+    req.user =
+      safeUser(user);
+
+
+    req.auth =
+      Object.freeze({
+
+        userId:
+          user.id,
+
+        email:
+          user.email,
+
+        tokenIssuedAt:
+          decoded.iat
+            ? new Date(
+                decoded.iat * 1000
+              ).toISOString()
+            : null,
+
+        tokenExpiresAt:
+          decoded.exp
+            ? new Date(
+                decoded.exp * 1000
+              ).toISOString()
+            : null
+
+      });
+
+
+    return next();
+
+  } catch (error) {
+
+    console.error(
+      "Authentication middleware error:",
+      error
+    );
+
+    await systemLog(
+      "error",
+      "authentication",
+      "Authentication middleware failure",
+      {
+        message:
+          error?.message
+      }
+    );
+
+    return res.status(500).json({
+
+      success: false,
+
+      error:
+        "Authentication service error",
+
+      code:
+        "AUTH_INTERNAL_ERROR"
+
+    });
+
+  }
+
+}
+
 
 // ============================================================
 // REGISTER
@@ -1563,14 +2514,18 @@ app.get(
 app.post(
   "/api/register",
   async (req, res) => {
+
     try {
+
       const name =
-        normalizeText(req.body?.name);
+        normalizeText(
+          req.body?.name
+        );
 
       const email =
-        normalizeText(
+        normalizeEmail(
           req.body?.email
-        ).toLowerCase();
+        );
 
       const password =
         typeof req.body?.password ===
@@ -1578,105 +2533,239 @@ app.post(
           ? req.body.password
           : "";
 
-      if (!name || !email || !password) {
+
+      // ------------------------------------------------------
+      // BASIC VALIDATION
+      // ------------------------------------------------------
+
+      if (!name) {
+
         return res.status(400).json({
+
           success: false,
+
           error:
-            "Name, email and password are required"
+            "Name is required",
+
+          code:
+            "NAME_REQUIRED"
+
         });
+
       }
 
-      if (name.length > 100) {
+
+      if (
+        name.length >
+        AUTH_CONFIG.MAX_NAME_LENGTH
+      ) {
+
         return res.status(400).json({
+
           success: false,
+
           error:
-            "Name is too long"
+            "Name is too long",
+
+          code:
+            "NAME_TOO_LONG"
+
         });
+
       }
 
-      if (email.length > 255) {
+
+      if (!isValidEmail(email)) {
+
         return res.status(400).json({
+
           success: false,
+
           error:
-            "Email is too long"
+            "Please provide a valid email address",
+
+          code:
+            "INVALID_EMAIL"
+
         });
+
       }
 
-      if (password.length < 8) {
+
+      const passwordValidation =
+        validatePassword(
+          password
+        );
+
+
+      if (
+        !passwordValidation.valid
+      ) {
+
         return res.status(400).json({
+
           success: false,
+
           error:
-            "Password must be at least 8 characters"
+            passwordValidation.error,
+
+          code:
+            "INVALID_PASSWORD"
+
         });
+
       }
+
+
+      // ------------------------------------------------------
+      // CHECK EXISTING ACCOUNT
+      // ------------------------------------------------------
 
       const existing =
         await pool.query(
-          `SELECT id
+
+          `SELECT
+             id
            FROM users
-           WHERE email = $1`,
-          [email]
+           WHERE LOWER(email) = LOWER($1)
+           LIMIT 1`,
+
+          [
+            email
+          ]
+
         );
 
+
       if (
-        existing.rows.length > 0
+        existing.rows.length >
+        0
       ) {
+
         return res.status(409).json({
+
           success: false,
+
           error:
-            "Email is already registered"
+            "Email is already registered",
+
+          code:
+            "EMAIL_ALREADY_REGISTERED"
+
         });
+
       }
+
+
+      // ------------------------------------------------------
+      // HASH PASSWORD
+      // ------------------------------------------------------
 
       const passwordHash =
         await bcrypt.hash(
+
           password,
-          12
+
+          AUTH_CONFIG.BCRYPT_ROUNDS
+
         );
+
+
+      // ------------------------------------------------------
+      // CREATE USER
+      // ------------------------------------------------------
 
       const result =
         await pool.query(
+
           `INSERT INTO users
            (
              name,
              email,
              password_hash
            )
-           VALUES ($1, $2, $3)
+           VALUES
+           (
+             $1,
+             $2,
+             $3
+           )
            RETURNING
              id,
              name,
              email,
              created_at,
              updated_at`,
+
           [
             name,
             email,
             passwordHash
           ]
+
         );
+
+
+      if (
+        result.rows.length ===
+        0
+      ) {
+
+        throw new Error(
+          "User creation returned no record"
+        );
+
+      }
+
 
       const user =
         result.rows[0];
 
+
+      // ------------------------------------------------------
+      // CREATE SESSION TOKEN
+      // ------------------------------------------------------
+
       const token =
         createToken(user);
 
+
+      // ------------------------------------------------------
+      // SECURITY LOG
+      // ------------------------------------------------------
+
       await systemLog(
+
         "info",
+
         "authentication",
+
         "New user registered",
+
         {
-          userId: user.id
+          userId:
+            user.id
         }
+
       );
-      
-      res.status(201).json({
+
+
+      // ------------------------------------------------------
+      // RESPONSE
+      // ------------------------------------------------------
+
+      return res.status(201).json({
+
         success: true,
+
         message:
           "Account created successfully",
+
         token,
-        user
+
+        user:
+          safeUser(user)
+
       });
 
     } catch (error) {
@@ -1710,32 +2799,67 @@ app.post(
       );
 
       console.error(
-        "table:",
-        error?.table
-      );
-
-      console.error(
-        "column:",
-        error?.column
-      );
-
-      console.error(
-        "Register full error:",
-        error
-      );
-
-      console.error(
         "================================"
       );
 
-      res.status(500).json({
+
+      await systemLog(
+
+        "error",
+
+        "authentication",
+
+        "User registration failed",
+
+        {
+          message:
+            error?.message,
+
+          code:
+            error?.code
+        }
+
+      );
+
+
+      // PostgreSQL unique constraint protection
+      if (
+        error?.code ===
+        "23505"
+      ) {
+
+        return res.status(409).json({
+
+          success: false,
+
+          error:
+            "Email is already registered",
+
+          code:
+            "EMAIL_ALREADY_REGISTERED"
+
+        });
+
+      }
+
+
+      return res.status(500).json({
+
         success: false,
+
         error:
-          "Could not create account"
+          "Could not create account",
+
+        code:
+          "REGISTRATION_FAILED"
+
       });
+
     }
+
   }
 );
+
 
 // ============================================================
 // LOGIN
@@ -1744,11 +2868,13 @@ app.post(
 app.post(
   "/api/login",
   async (req, res) => {
+
     try {
+
       const email =
-        normalizeText(
+        normalizeEmail(
           req.body?.email
-        ).toLowerCase();
+        );
 
       const password =
         typeof req.body?.password ===
@@ -1756,16 +2882,48 @@ app.post(
           ? req.body.password
           : "";
 
-      if (!email || !password) {
-        return res.status(400).json({
+
+      if (!isValidEmail(email)) {
+
+        return res.status(401).json({
+
           success: false,
+
           error:
-            "Email and password are required"
+            "Invalid email or password",
+
+          code:
+            "INVALID_CREDENTIALS"
+
         });
+
       }
+
+
+      if (!password) {
+
+        return res.status(401).json({
+
+          success: false,
+
+          error:
+            "Invalid email or password",
+
+          code:
+            "INVALID_CREDENTIALS"
+
+        });
+
+      }
+
+
+      // ------------------------------------------------------
+      // FETCH USER
+      // ------------------------------------------------------
 
       const result =
         await pool.query(
+
           `SELECT
              id,
              name,
@@ -1774,80 +2932,206 @@ app.post(
              created_at,
              updated_at
            FROM users
-           WHERE email = $1`,
-          [email]
+           WHERE LOWER(email) = LOWER($1)
+           LIMIT 1`,
+
+          [
+            email
+          ]
+
         );
 
+
+      // ------------------------------------------------------
+      // IMPORTANT:
+      // Keep the external response identical whether the email
+      // exists or not.
+      // ------------------------------------------------------
+
       if (
-        result.rows.length === 0
+        result.rows.length ===
+        0
       ) {
+
+        await systemLog(
+
+          "warn",
+
+          "authentication",
+
+          "Login attempt for unknown account",
+
+          {
+            email
+          }
+
+        );
+
         return res.status(401).json({
+
           success: false,
+
           error:
-            "Invalid email or password"
+            "Invalid email or password",
+
+          code:
+            "INVALID_CREDENTIALS"
+
         });
+
       }
+
 
       const user =
         result.rows[0];
 
-      const valid =
+
+      // ------------------------------------------------------
+      // PASSWORD VERIFICATION
+      // ------------------------------------------------------
+
+      const validPassword =
         await bcrypt.compare(
+
           password,
+
           user.password_hash
+
         );
 
-      if (!valid) {
+
+      if (!validPassword) {
+
+        await systemLog(
+
+          "warn",
+
+          "authentication",
+
+          "Invalid password during login",
+
+          {
+            userId:
+              user.id
+          }
+
+        );
+
         return res.status(401).json({
+
           success: false,
+
           error:
-            "Invalid email or password"
+            "Invalid email or password",
+
+          code:
+            "INVALID_CREDENTIALS"
+
         });
+
       }
 
-      const safeUser = {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        created_at:
-          user.created_at,
-        updated_at:
-          user.updated_at
-      };
+
+      // ------------------------------------------------------
+      // SAFE USER
+      // ------------------------------------------------------
+
+      const userSafe =
+        safeUser(user);
+
+
+      // ------------------------------------------------------
+      // CREATE JWT
+      // ------------------------------------------------------
 
       const token =
-        createToken(safeUser);
+        createToken(
+          userSafe
+        );
+
+
+      // ------------------------------------------------------
+      // SECURITY LOG
+      // ------------------------------------------------------
 
       await systemLog(
+
         "info",
+
         "authentication",
-        "User logged in",
+
+        "User logged in successfully",
+
         {
-          userId: safeUser.id
+          userId:
+            userSafe.id
         }
+
       );
 
-      res.json({
+
+      // ------------------------------------------------------
+      // RESPONSE
+      // ------------------------------------------------------
+
+      return res.json({
+
         success: true,
+
         message:
           "Login successful",
+
         token,
-        user: safeUser
+
+        user:
+          userSafe
+
       });
+
     } catch (error) {
+
       console.error(
-        "Login error:",
+        "LOGIN ERROR:",
         error
       );
 
-      res.status(500).json({
+
+      await systemLog(
+
+        "error",
+
+        "authentication",
+
+        "Login request failed",
+
+        {
+          message:
+            error?.message,
+
+          code:
+            error?.code
+        }
+
+      );
+
+
+      return res.status(500).json({
+
         success: false,
+
         error:
-          "Could not login"
+          "Could not login",
+
+        code:
+          "LOGIN_FAILED"
+
       });
+
     }
+
   }
 );
+
 
 // ============================================================
 // CURRENT USER
@@ -1857,9 +3141,12 @@ app.get(
   "/api/me",
   authenticateToken,
   async (req, res) => {
+
     try {
+
       const result =
         await pool.query(
+
           `SELECT
              id,
              name,
@@ -1867,39 +3154,592 @@ app.get(
              created_at,
              updated_at
            FROM users
-           WHERE id = $1`,
-          [req.user.id]
+           WHERE id = $1
+           LIMIT 1`,
+
+          [
+            req.user.id
+          ]
+
         );
 
+
       if (
-        result.rows.length === 0
+        result.rows.length ===
+        0
       ) {
+
         return res.status(404).json({
+
           success: false,
+
           error:
-            "User not found"
+            "User not found",
+
+          code:
+            "USER_NOT_FOUND"
+
         });
+
       }
 
-      res.json({
+
+      return res.json({
+
         success: true,
+
         user:
-          result.rows[0]
+          safeUser(
+            result.rows[0]
+          )
+
       });
+
     } catch (error) {
+
       console.error(
-        "Current user error:",
+        "CURRENT USER ERROR:",
         error
       );
 
-      res.status(500).json({
+
+      await systemLog(
+
+        "error",
+
+        "authentication",
+
+        "Could not resolve current user",
+
+        {
+          message:
+            error?.message,
+
+          userId:
+            req.user?.id
+        }
+
+      );
+
+
+      return res.status(500).json({
+
         success: false,
+
         error:
-          "Could not get user"
+          "Could not get user",
+
+        code:
+          "CURRENT_USER_FAILED"
+
       });
+
     }
+
   }
 );
+
+
+// ============================================================
+// AUTHENTICATION STATUS
+// ============================================================
+//
+// Useful for frontend diagnostics.
+// Does not expose the token itself.
+//
+
+app.get(
+  "/api/auth/status",
+  authenticateToken,
+  async (req, res) => {
+
+    return res.json({
+
+      success: true,
+
+      authenticated:
+        true,
+
+      user: {
+        id:
+          req.user.id,
+
+        name:
+          req.user.name,
+
+        email:
+          req.user.email
+      },
+
+      session: {
+
+        tokenIssuedAt:
+          req.auth?.tokenIssuedAt ||
+          null,
+
+        tokenExpiresAt:
+          req.auth?.tokenExpiresAt ||
+          null
+
+      }
+
+    });
+
+  }
+);
+
+
+// ============================================================
+// AUTHENTICATION DIAGNOSTIC
+// ============================================================
+//
+// This endpoint intentionally NEVER returns:
+//
+// • JWT token
+// • password
+// • password_hash
+// • JWT_SECRET
+// • OPENAI_API_KEY
+//
+// It only helps the frontend understand whether its session
+// is valid.
+//
+
+app.get(
+  "/api/auth/check",
+  async (req, res) => {
+
+    try {
+
+      if (!JWT_SECRET) {
+
+        return res.status(503).json({
+
+          success: false,
+
+          authenticated:
+            false,
+
+          configured:
+            false,
+
+          code:
+            "AUTH_NOT_CONFIGURED"
+
+        });
+
+      }
+
+
+      const token =
+        extractBearerToken(req);
+
+
+      if (!token) {
+
+        return res.status(401).json({
+
+          success: false,
+
+          authenticated:
+            false,
+
+          configured:
+            true,
+
+          code:
+            "AUTH_TOKEN_MISSING"
+
+        });
+
+      }
+
+
+      let decoded;
+
+      try {
+
+        decoded =
+          verifyToken(token);
+
+      } catch (error) {
+
+        return res.status(401).json({
+
+          success: false,
+
+          authenticated:
+            false,
+
+          configured:
+            true,
+
+          code:
+            error?.name ===
+            "TokenExpiredError"
+              ? "AUTH_TOKEN_EXPIRED"
+              : "AUTH_TOKEN_INVALID"
+
+        });
+
+      }
+
+
+      return res.json({
+
+        success: true,
+
+        authenticated:
+          true,
+
+        configured:
+          true,
+
+        identity: {
+
+          id:
+            decoded.id,
+
+          email:
+            decoded.email
+
+        },
+
+        expiresAt:
+          decoded.exp
+            ? new Date(
+                decoded.exp * 1000
+              ).toISOString()
+            : null
+
+      });
+
+    } catch (error) {
+
+      console.error(
+        "AUTH CHECK ERROR:",
+        error
+      );
+
+      return res.status(500).json({
+
+        success: false,
+
+        authenticated:
+          false,
+
+        code:
+          "AUTH_CHECK_FAILED"
+
+      });
+
+    }
+
+  }
+);
+
+
+// ============================================================
+// AUTHENTICATION FAILURE HANDLER
+// ============================================================
+//
+// This is intentionally placed after authentication routes.
+// Future protected routes will use authenticateToken directly.
+//
+// ============================================================
+
+
+// ============================================================
+// PART 3 COMPLETE
+// ============================================================
+
+// ============================================================
+// PART 4/14
+// NKWSIBWE IRHCF — CONVERSATION & SESSION ENGINE
+// ============================================================
+//
+// Responsibilities:
+//
+// • Create conversations
+// • Resolve conversations
+// • Enforce user ownership
+// • Load conversation history
+// • Paginate messages
+// • Rename conversations
+// • Delete conversations
+// • Maintain timestamps
+// • Protect session integrity
+// • Prepare conversation layer for Agent/MEMORY systems
+//
+// SECURITY PRINCIPLE:
+//
+// A conversation MUST belong to the authenticated user.
+// A user must NEVER be able to read, modify or delete another
+// user's conversation by knowing its session ID.
+// ============================================================
+
+
+// ============================================================
+// CONVERSATION CONFIGURATION
+// ============================================================
+
+const CONVERSATION_CONFIG = Object.freeze({
+
+  MAX_TITLE_LENGTH:
+    200,
+
+  MAX_MESSAGE_LENGTH:
+    50000,
+
+  DEFAULT_HISTORY_LIMIT:
+    50,
+
+  MAX_HISTORY_LIMIT:
+    200,
+
+  DEFAULT_CONVERSATION_TITLE:
+    "New conversation"
+
+});
+
+
+// ============================================================
+// SESSION ID VALIDATION
+// ============================================================
+//
+// We normally generate UUIDs with crypto.randomUUID().
+// Validation prevents arbitrary/invalid values from reaching
+// database queries.
+//
+
+function isValidSessionId(
+  sessionId
+) {
+
+  if (
+    typeof sessionId !==
+    "string"
+  ) {
+    return false;
+  }
+
+  const value =
+    sessionId.trim();
+
+  if (!value) {
+    return false;
+  }
+
+  // UUID v1-v5 compatible validation.
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+    .test(value);
+
+}
+
+
+// ============================================================
+// CONVERSATION TITLE
+// ============================================================
+
+function buildConversationTitle(
+  message
+) {
+
+  const normalized =
+    normalizeText(
+      message
+    );
+
+  if (!normalized) {
+
+    return CONVERSATION_CONFIG
+      .DEFAULT_CONVERSATION_TITLE;
+
+  }
+
+  if (
+    normalized.length <=
+    CONVERSATION_CONFIG.MAX_TITLE_LENGTH
+  ) {
+
+    return normalized;
+
+  }
+
+  return (
+    normalized.slice(
+      0,
+      CONVERSATION_CONFIG.MAX_TITLE_LENGTH - 3
+    ) +
+    "..."
+  );
+
+}
+
+
+// ============================================================
+// HISTORY LIMIT
+// ============================================================
+
+function normalizeHistoryLimit(
+  value
+) {
+
+  const number =
+    Number(value);
+
+  if (
+    !Number.isInteger(number)
+  ) {
+
+    return CONVERSATION_CONFIG
+      .DEFAULT_HISTORY_LIMIT;
+
+  }
+
+  return Math.min(
+
+    Math.max(
+      number,
+      1
+    ),
+
+    CONVERSATION_CONFIG
+      .MAX_HISTORY_LIMIT
+
+  );
+
+}
+
+
+// ============================================================
+// MESSAGE CONTENT VALIDATION
+// ============================================================
+
+function validateMessageContent(
+  content
+) {
+
+  const value =
+    normalizeText(
+      content
+    );
+
+  if (!value) {
+
+    return {
+
+      valid:
+        false,
+
+      error:
+        "Message content is required"
+
+    };
+
+  }
+
+  if (
+    value.length >
+    CONVERSATION_CONFIG.MAX_MESSAGE_LENGTH
+  ) {
+
+    return {
+
+      valid:
+        false,
+
+      error:
+        "Message is too long"
+
+    };
+
+  }
+
+  return {
+
+    valid:
+      true,
+
+    value
+
+  };
+
+}
+
+
+// ============================================================
+// RESOLVE USER CONVERSATION
+// ============================================================
+//
+// Centralized ownership check.
+//
+// NEVER query a conversation only by session_id.
+// Always include user_id.
+//
+
+async function resolveUserConversation(
+  userId,
+  sessionId
+) {
+
+  if (!userId) {
+
+    throw new Error(
+      "User ID is required"
+    );
+
+  }
+
+  const normalizedSessionId =
+    normalizeText(
+      sessionId
+    );
+
+
+  if (
+    !isValidSessionId(
+      normalizedSessionId
+    )
+  ) {
+
+    return null;
+
+  }
+
+
+  const result =
+    await pool.query(
+
+      `SELECT
+         *
+       FROM conversations
+       WHERE user_id = $1
+       AND session_id = $2
+       LIMIT 1`,
+
+      [
+        userId,
+        normalizedSessionId
+      ]
+
+    );
+
+
+  if (
+    result.rows.length ===
+    0
+  ) {
+
+    return null;
+
+  }
+
+
+  return result.rows[0];
+
+}
+
 
 // ============================================================
 // CREATE CONVERSATION
@@ -1909,64 +3749,192 @@ app.post(
   "/api/conversations",
   authenticateToken,
   async (req, res) => {
+
     try {
-      const title =
+
+      const requestedTitle =
         normalizeText(
           req.body?.title
-        ).slice(0, 200) ||
-        "New conversation";
+        );
+
+
+      const title =
+        requestedTitle
+          ? requestedTitle.slice(
+              0,
+              CONVERSATION_CONFIG.MAX_TITLE_LENGTH
+            )
+          : CONVERSATION_CONFIG
+              .DEFAULT_CONVERSATION_TITLE;
+
 
       const sessionId =
         crypto.randomUUID();
 
+
       const result =
         await pool.query(
+
           `INSERT INTO conversations
            (
              user_id,
              session_id,
              title
            )
-           VALUES ($1, $2, $3)
-           RETURNING *`,
+           VALUES
+           (
+             $1,
+             $2,
+             $3
+           )
+           RETURNING
+             id,
+             user_id,
+             session_id,
+             title,
+             created_at,
+             updated_at`,
+
           [
             req.user.id,
             sessionId,
             title
           ]
+
         );
 
-      res.status(201).json({
-        success: true,
-        conversation:
-          result.rows[0]
+
+      if (
+        result.rows.length ===
+        0
+      ) {
+
+        throw new Error(
+          "Conversation creation returned no record"
+        );
+
+      }
+
+
+      const conversation =
+        result.rows[0];
+
+
+      await systemLog(
+
+        "info",
+
+        "conversations",
+
+        "Conversation created",
+
+        {
+
+          userId:
+            req.user.id,
+
+          conversationId:
+            conversation.id,
+
+          sessionId:
+            conversation.session_id
+
+        }
+
+      );
+
+
+      return res.status(201).json({
+
+        success:
+          true,
+
+        conversation
+
       });
+
     } catch (error) {
+
       console.error(
         "Create conversation error:",
         error
       );
 
-      res.status(500).json({
-        success: false,
+
+      await systemLog(
+
+        "error",
+
+        "conversations",
+
+        "Conversation creation failed",
+
+        {
+
+          userId:
+            req.user?.id,
+
+          message:
+            error?.message
+
+        }
+
+      );
+
+
+      return res.status(500).json({
+
+        success:
+          false,
+
         error:
-          "Could not create conversation"
+          "Could not create conversation",
+
+        code:
+          "CONVERSATION_CREATE_FAILED"
+
       });
+
     }
+
   }
 );
 
+
 // ============================================================
-// LIST CONVERSATIONS
+// LIST USER CONVERSATIONS
 // ============================================================
 
 app.get(
   "/api/conversations",
   authenticateToken,
   async (req, res) => {
+
     try {
+
+      const limitValue =
+        Number(
+          req.query?.limit
+        );
+
+
+      const limit =
+        Number.isInteger(
+          limitValue
+        )
+          ? Math.min(
+              Math.max(
+                limitValue,
+                1
+              ),
+              100
+            )
+          : 50;
+
+
       const result =
         await pool.query(
+
           `SELECT
              id,
              session_id,
@@ -1975,72 +3943,126 @@ app.get(
              updated_at
            FROM conversations
            WHERE user_id = $1
-           ORDER BY updated_at DESC`,
-          [req.user.id]
+           ORDER BY
+             updated_at DESC,
+             id DESC
+           LIMIT $2`,
+
+          [
+            req.user.id,
+            limit
+          ]
+
         );
 
-      res.json({
-        success: true,
+
+      return res.json({
+
+        success:
+          true,
+
         conversations:
           result.rows
+
       });
+
     } catch (error) {
+
       console.error(
         "List conversations error:",
         error
       );
 
-      res.status(500).json({
-        success: false,
+
+      return res.status(500).json({
+
+        success:
+          false,
+
         error:
-          "Could not load conversation history"
+          "Could not load conversation history",
+
+        code:
+          "CONVERSATION_LIST_FAILED"
+
       });
+
     }
+
   }
 );
 
+
 // ============================================================
-// GET CONVERSATION
+// GET COMPLETE CONVERSATION
 // ============================================================
 
 app.get(
   "/api/conversations/:sessionId",
   authenticateToken,
   async (req, res) => {
+
     try {
+
       const sessionId =
         normalizeText(
           req.params.sessionId
         );
 
-      const conversationResult =
-        await pool.query(
-          `SELECT *
-           FROM conversations
-           WHERE user_id = $1
-           AND session_id = $2`,
-          [
-            req.user.id,
-            sessionId
-          ]
-        );
 
       if (
-        conversationResult.rows.length ===
-        0
+        !isValidSessionId(
+          sessionId
+        )
       ) {
-        return res.status(404).json({
-          success: false,
+
+        return res.status(400).json({
+
+          success:
+            false,
+
           error:
-            "Conversation not found"
+            "Invalid session ID",
+
+          code:
+            "INVALID_SESSION_ID"
+
         });
+
       }
 
-      const conversation =
-        conversationResult.rows[0];
 
-      const messagesResult =
+      const conversation =
+        await resolveUserConversation(
+
+          req.user.id,
+
+          sessionId
+
+        );
+
+
+      if (!conversation) {
+
+        return res.status(404).json({
+
+          success:
+            false,
+
+          error:
+            "Conversation not found",
+
+          code:
+            "CONVERSATION_NOT_FOUND"
+
+        });
+
+      }
+
+
+      const historyResult =
         await pool.query(
+
           `SELECT
              id,
              role,
@@ -2048,30 +4070,494 @@ app.get(
              created_at
            FROM messages
            WHERE conversation_id = $1
-           ORDER BY created_at ASC`,
-          [conversation.id]
+           ORDER BY
+             created_at ASC,
+             id ASC
+           LIMIT $2`,
+
+          [
+
+            conversation.id,
+
+            CONVERSATION_CONFIG
+              .MAX_HISTORY_LIMIT
+
+          ]
+
         );
 
-      res.json({
-        success: true,
-        conversation,
+
+      return res.json({
+
+        success:
+          true,
+
+        conversation: {
+
+          id:
+            conversation.id,
+
+          session_id:
+            conversation.session_id,
+
+          title:
+            conversation.title,
+
+          created_at:
+            conversation.created_at,
+
+          updated_at:
+            conversation.updated_at
+
+        },
+
         messages:
-          messagesResult.rows
+          historyResult.rows
+
       });
+
     } catch (error) {
+
       console.error(
         "Get conversation error:",
         error
       );
 
-      res.status(500).json({
-        success: false,
+
+      await systemLog(
+
+        "error",
+
+        "conversations",
+
+        "Conversation retrieval failed",
+
+        {
+
+          userId:
+            req.user?.id,
+
+          sessionId:
+            req.params?.sessionId,
+
+          message:
+            error?.message
+
+        }
+
+      );
+
+
+      return res.status(500).json({
+
+        success:
+          false,
+
         error:
-          "Could not load conversation"
+          "Could not load conversation",
+
+        code:
+          "CONVERSATION_GET_FAILED"
+
       });
+
     }
+
   }
 );
+
+
+// ============================================================
+// GET PAGINATED MESSAGES
+// ============================================================
+//
+// This endpoint is important for large conversations.
+//
+// The frontend does not need to download every historical
+// message every time a conversation is opened.
+//
+
+app.get(
+  "/api/conversations/:sessionId/messages",
+  authenticateToken,
+  async (req, res) => {
+
+    try {
+
+      const sessionId =
+        normalizeText(
+          req.params.sessionId
+        );
+
+
+      if (
+        !isValidSessionId(
+          sessionId
+        )
+      ) {
+
+        return res.status(400).json({
+
+          success:
+            false,
+
+          error:
+            "Invalid session ID",
+
+          code:
+            "INVALID_SESSION_ID"
+
+        });
+
+      }
+
+
+      const conversation =
+        await resolveUserConversation(
+
+          req.user.id,
+
+          sessionId
+
+        );
+
+
+      if (!conversation) {
+
+        return res.status(404).json({
+
+          success:
+            false,
+
+          error:
+            "Conversation not found",
+
+          code:
+            "CONVERSATION_NOT_FOUND"
+
+        });
+
+      }
+
+
+      const limit =
+        normalizeHistoryLimit(
+          req.query?.limit
+        );
+
+
+      const offsetValue =
+        Number(
+          req.query?.offset
+        );
+
+
+      const offset =
+        Number.isInteger(
+          offsetValue
+        ) &&
+        offsetValue >= 0
+          ? offsetValue
+          : 0;
+
+
+      const result =
+        await pool.query(
+
+          `SELECT
+             id,
+             role,
+             content,
+             created_at
+           FROM messages
+           WHERE conversation_id = $1
+           ORDER BY
+             created_at ASC,
+             id ASC
+           LIMIT $2
+           OFFSET $3`,
+
+          [
+
+            conversation.id,
+
+            limit,
+
+            offset
+
+          ]
+
+        );
+
+
+      const countResult =
+        await pool.query(
+
+          `SELECT
+             COUNT(*)::integer AS total
+           FROM messages
+           WHERE conversation_id = $1`,
+
+          [
+            conversation.id
+          ]
+
+        );
+
+
+      const total =
+        Number(
+          countResult.rows[0]?.total ||
+          0
+        );
+
+
+      return res.json({
+
+        success:
+          true,
+
+        sessionId:
+          conversation.session_id,
+
+        messages:
+          result.rows,
+
+        pagination: {
+
+          limit,
+
+          offset,
+
+          total,
+
+          hasMore:
+            offset +
+              result.rows.length <
+            total
+
+        }
+
+      });
+
+    } catch (error) {
+
+      console.error(
+        "Load conversation messages error:",
+        error
+      );
+
+
+      return res.status(500).json({
+
+        success:
+          false,
+
+        error:
+          "Could not load conversation messages",
+
+        code:
+          "MESSAGES_LOAD_FAILED"
+
+      });
+
+    }
+
+  }
+);
+
+
+// ============================================================
+// RENAME CONVERSATION
+// ============================================================
+
+app.patch(
+  "/api/conversations/:sessionId",
+  authenticateToken,
+  async (req, res) => {
+
+    try {
+
+      const sessionId =
+        normalizeText(
+          req.params.sessionId
+        );
+
+
+      if (
+        !isValidSessionId(
+          sessionId
+        )
+      ) {
+
+        return res.status(400).json({
+
+          success:
+            false,
+
+          error:
+            "Invalid session ID",
+
+          code:
+            "INVALID_SESSION_ID"
+
+        });
+
+      }
+
+
+      const title =
+        normalizeText(
+          req.body?.title
+        );
+
+
+      if (!title) {
+
+        return res.status(400).json({
+
+          success:
+            false,
+
+          error:
+            "Conversation title is required",
+
+          code:
+            "TITLE_REQUIRED"
+
+        });
+
+      }
+
+
+      if (
+        title.length >
+        CONVERSATION_CONFIG.MAX_TITLE_LENGTH
+      ) {
+
+        return res.status(400).json({
+
+          success:
+            false,
+
+          error:
+            "Conversation title is too long",
+
+          code:
+            "TITLE_TOO_LONG"
+
+        });
+
+      }
+
+
+      const result =
+        await pool.query(
+
+          `UPDATE conversations
+           SET
+             title = $1,
+             updated_at = CURRENT_TIMESTAMP
+           WHERE user_id = $2
+           AND session_id = $3
+           RETURNING
+             id,
+             session_id,
+             title,
+             created_at,
+             updated_at`,
+
+          [
+
+            title,
+
+            req.user.id,
+
+            sessionId
+
+          ]
+
+        );
+
+
+      if (
+        result.rows.length ===
+        0
+      ) {
+
+        return res.status(404).json({
+
+          success:
+            false,
+
+          error:
+            "Conversation not found",
+
+          code:
+            "CONVERSATION_NOT_FOUND"
+
+        });
+
+      }
+
+
+      await systemLog(
+
+        "info",
+
+        "conversations",
+
+        "Conversation renamed",
+
+        {
+
+          userId:
+            req.user.id,
+
+          conversationId:
+            result.rows[0].id
+
+        }
+
+      );
+
+
+      return res.json({
+
+        success:
+          true,
+
+        conversation:
+          result.rows[0]
+
+      });
+
+    } catch (error) {
+
+      console.error(
+        "Rename conversation error:",
+        error
+      );
+
+
+      return res.status(500).json({
+
+        success:
+          false,
+
+        error:
+          "Could not rename conversation",
+
+        code:
+          "CONVERSATION_RENAME_FAILED"
+
+      });
+
+    }
+
+  }
+);
+
 
 // ============================================================
 // DELETE CONVERSATION
@@ -2081,86 +4567,1035 @@ app.delete(
   "/api/conversations/:sessionId",
   authenticateToken,
   async (req, res) => {
+
     try {
+
+      const sessionId =
+        normalizeText(
+          req.params.sessionId
+        );
+
+
+      if (
+        !isValidSessionId(
+          sessionId
+        )
+      ) {
+
+        return res.status(400).json({
+
+          success:
+            false,
+
+          error:
+            "Invalid session ID",
+
+          code:
+            "INVALID_SESSION_ID"
+
+        });
+
+      }
+
+
       const result =
         await pool.query(
+
           `DELETE FROM conversations
            WHERE user_id = $1
            AND session_id = $2
-           RETURNING id`,
+           RETURNING
+             id,
+             session_id`,
+
           [
+
             req.user.id,
-            req.params.sessionId
+
+            sessionId
+
           ]
+
         );
 
+
       if (
-        result.rows.length === 0
+        result.rows.length ===
+        0
       ) {
+
         return res.status(404).json({
-          success: false,
+
+          success:
+            false,
+
           error:
-            "Conversation not found"
+            "Conversation not found",
+
+          code:
+            "CONVERSATION_NOT_FOUND"
+
         });
+
       }
 
-      res.json({
-        success: true,
+
+      await systemLog(
+
+        "info",
+
+        "conversations",
+
+        "Conversation deleted",
+
+        {
+
+          userId:
+            req.user.id,
+
+          conversationId:
+            result.rows[0].id,
+
+          sessionId:
+            result.rows[0].session_id
+
+        }
+
+      );
+
+
+      return res.json({
+
+        success:
+          true,
+
         message:
-          "Conversation deleted"
+          "Conversation deleted",
+
+        sessionId
+
       });
+
     } catch (error) {
+
       console.error(
         "Delete conversation error:",
         error
       );
 
-      res.status(500).json({
-        success: false,
+
+      await systemLog(
+
+        "error",
+
+        "conversations",
+
+        "Conversation deletion failed",
+
+        {
+
+          userId:
+            req.user?.id,
+
+          sessionId:
+            req.params?.sessionId,
+
+          message:
+            error?.message
+
+        }
+
+      );
+
+
+      return res.status(500).json({
+
+        success:
+          false,
+
         error:
-          "Could not delete conversation"
+          "Could not delete conversation",
+
+        code:
+          "CONVERSATION_DELETE_FAILED"
+
       });
+
     }
+
   }
+);
+// ============================================================
+// ADD MESSAGE TO EXISTING CONVERSATION
+// ============================================================
+//
+// This is deliberately a low-level persistence endpoint.
+//
+// The actual AI orchestration will be handled later.
+// This endpoint is useful for internal agent modules,
+// recovery systems and future providers.
+//
+
+app.post(
+"/api/conversations/:sessionId/messages",
+authenticateToken,
+async (req, res) => {
+
+try {  
+
+  const sessionId =  
+    normalizeText(  
+      req.params.sessionId  
+    );  
+
+
+  if (  
+    !isValidSessionId(  
+      sessionId  
+    )  
+  ) {  
+
+    return res.status(400).json({  
+
+      success:  
+        false,  
+
+      error:  
+        "Invalid session ID",  
+
+      code:  
+        "INVALID_SESSION_ID"  
+
+    });  
+
+  }  
+
+
+  const conversation =  
+    await resolveUserConversation(  
+
+      req.user.id,  
+
+      sessionId  
+
+    );  
+
+
+  if (!conversation) {  
+
+    return res.status(404).json({  
+
+      success:  
+        false,  
+
+      error:  
+        "Conversation not found",  
+
+      code:  
+        "CONVERSATION_NOT_FOUND"  
+
+    });  
+
+  }  
+
+
+  const role =  
+    normalizeText(  
+      req.body?.role  
+    ).toLowerCase();  
+
+
+  const allowedRoles = [  
+
+    "user",  
+
+    "assistant",  
+
+    "system"  
+
+  ];
+
+if (
+!allowedRoles.includes(
+role
+)
+) {
+
+return res.status(400).json({  
+
+      success:  
+        false,  
+
+      error:  
+        "Invalid message role",  
+
+      code:  
+        "INVALID_MESSAGE_ROLE"  
+
+    });  
+
+  }  
+
+
+  const validation =  
+    validateMessageContent(  
+      req.body?.content  
+    );  
+
+
+  if (  
+    !validation.valid  
+  ) {  
+
+    return res.status(400).json({  
+
+      success:  
+        false,  
+
+      error:  
+        validation.error,  
+
+      code:  
+        "INVALID_MESSAGE"  
+
+    });  
+
+  }  
+
+
+  const result =  
+    await pool.query(  
+
+      `INSERT INTO messages  
+       (  
+         conversation_id,  
+         role,  
+         content  
+       )  
+       VALUES  
+       (  
+         $1,  
+         $2,  
+         $3  
+       )  
+       RETURNING  
+         id,  
+         role,  
+         content,  
+         created_at`,  
+
+      [  
+
+        conversation.id,  
+
+        role,  
+
+        validation.value  
+
+      ]  
+
+    );  
+
+
+  await pool.query(  
+
+    `UPDATE conversations  
+     SET updated_at =  
+       CURRENT_TIMESTAMP  
+     WHERE id = $1`,  
+
+    [  
+      conversation.id  
+    ]  
+
+  );  
+
+
+  return res.status(201).json({  
+
+    success:  
+      true,  
+
+    message:  
+      result.rows[0]  
+
+  });  
+
+} catch (error) {  
+
+  console.error(  
+    "Add conversation message error:",  
+    error  
+  );  
+
+
+  return res.status(500).json({  
+
+    success:  
+      false,  
+
+    error:  
+      "Could not save message",  
+
+    code:  
+      "MESSAGE_SAVE_FAILED"  
+
+  });  
+
+}
+
+}
 );
 
 // ============================================================
-// PERSISTENT MEMORY
+// CONVERSATION SUMMARY
+// ============================================================
+//
+// Lightweight endpoint for the UI/agent dashboard.
+//
+
+app.get(
+"/api/conversations/:sessionId/summary",
+authenticateToken,
+async (req, res) => {
+
+try {  
+
+  const sessionId =  
+    normalizeText(  
+      req.params.sessionId  
+    );  
+
+
+  if (  
+    !isValidSessionId(  
+      sessionId  
+    )  
+  ) {  
+
+    return res.status(400).json({  
+
+      success:  
+        false,  
+
+      error:  
+        "Invalid session ID",  
+
+      code:  
+        "INVALID_SESSION_ID"  
+
+    });  
+
+  }  
+
+
+  const conversation =  
+    await resolveUserConversation(  
+
+      req.user.id,  
+
+      sessionId  
+
+    );  
+
+
+  if (!conversation) {  
+
+    return res.status(404).json({  
+
+      success:  
+        false,  
+
+      error:  
+        "Conversation not found",  
+
+      code:  
+        "CONVERSATION_NOT_FOUND"  
+
+    });  
+
+  }  
+
+
+  const result =  
+    await pool.query(  
+
+      `SELECT  
+         COUNT(*)::integer AS message_count,  
+         MIN(created_at) AS first_message_at,  
+         MAX(created_at) AS last_message_at  
+       FROM messages  
+       WHERE conversation_id = $1`,  
+
+      [  
+        conversation.id  
+      ]  
+
+    );  
+
+
+  const statistics =  
+    result.rows[0] || {};  
+
+
+  return res.json({  
+
+    success:  
+      true,  
+
+    conversation: {  
+
+      id:  
+        conversation.id,  
+
+      session_id:  
+        conversation.session_id,  
+
+      title:  
+        conversation.title,  
+
+      created_at:  
+        conversation.created_at,  
+
+      updated_at:  
+        conversation.updated_at  
+
+    },  
+
+    statistics: {  
+
+      messageCount:  
+        Number(  
+          statistics.message_count ||  
+          0  
+        ),  
+
+      firstMessageAt:  
+        statistics.first_message_at ||  
+        null,  
+
+      lastMessageAt:  
+        statistics.last_message_at ||  
+        null  
+
+    }  
+
+  });  
+
+} catch (error) {  
+
+  console.error(  
+    "Conversation summary error:",  
+    error  
+  );  
+
+
+  return res.status(500).json({  
+
+    success:  
+      false,  
+
+    error:  
+      "Could not load conversation summary",  
+
+    code:  
+      "CONVERSATION_SUMMARY_FAILED"  
+
+  });  
+
+}
+
+}
+);
+
+// ============================================================
+// PART 4 COMPLETE
+// ============================================================
+
+// ============================================================
+// PART 5/14
+// NKWASIBWE IRHCF — ADVANCED MEMORY ENGINE
+// ============================================================
+//
+// Responsibilities:
+//
+// • Persistent user memory
+// • Long-term memory
+// • Memory categories
+// • Importance ranking
+// • Memory search
+// • Memory update
+// • Memory deletion
+// • Memory statistics
+// • Strict user ownership
+// • Input validation
+// • Memory size protection
+// • Duplicate prevention
+// • Agent-ready memory retrieval
+//
+// DESIGN PRINCIPLE:
+//
+// Memory is not just storage.
+//
+// Nkwasibwe must be able to:
+//
+// STORE → CLASSIFY → RANK → SEARCH → RETRIEVE → UPDATE → FORGET
+//
+// No user's private memory may be exposed to another user.
+// ============================================================
+
+
+// ============================================================
+// MEMORY CONFIGURATION
+// ============================================================
+
+const MEMORY_CONFIG = Object.freeze({
+
+  MAX_KEY_LENGTH:
+    200,
+
+  MAX_VALUE_LENGTH:
+    20000,
+
+  MAX_CONTENT_LENGTH:
+    50000,
+
+  MAX_TYPE_LENGTH:
+    100,
+
+  MAX_SOURCE_LENGTH:
+    100,
+
+  DEFAULT_LIMIT:
+    50,
+
+  MAX_LIMIT:
+    200,
+
+  MAX_SEARCH_LENGTH:
+    200,
+
+  MAX_IMPORTANCE:
+    10,
+
+  MIN_IMPORTANCE:
+    1
+
+});
+
+
+// ============================================================
+// MEMORY TYPE NORMALIZATION
+// ============================================================
+
+function normalizeMemoryType(
+  value
+) {
+
+  const type =
+    normalizeText(
+      value
+    );
+
+  if (!type) {
+    return "general";
+  }
+
+  return type
+    .slice(
+      0,
+      MEMORY_CONFIG.MAX_TYPE_LENGTH
+    )
+    .toLowerCase();
+
+}
+
+
+// ============================================================
+// MEMORY SOURCE NORMALIZATION
+// ============================================================
+
+function normalizeMemorySource(
+  value
+) {
+
+  const source =
+    normalizeText(
+      value
+    );
+
+  if (!source) {
+    return "user";
+  }
+
+  return source
+    .slice(
+      0,
+      MEMORY_CONFIG.MAX_SOURCE_LENGTH
+    );
+
+}
+
+
+// ============================================================
+// MEMORY IMPORTANCE
+// ============================================================
+
+function normalizeMemoryImportance(
+  value
+) {
+
+  const number =
+    Number(value);
+
+  if (
+    !Number.isFinite(number)
+  ) {
+
+    return 1;
+
+  }
+
+  return Math.min(
+
+    MEMORY_CONFIG.MAX_IMPORTANCE,
+
+    Math.max(
+
+      MEMORY_CONFIG.MIN_IMPORTANCE,
+
+      Math.round(number)
+
+    )
+
+  );
+
+}
+
+
+// ============================================================
+// MEMORY KEY VALIDATION
+// ============================================================
+
+function validateMemoryKey(
+  key
+) {
+
+  const value =
+    normalizeText(
+      key
+    );
+
+  if (!value) {
+
+    return {
+
+      valid:
+        false,
+
+      error:
+        "Memory key is required",
+
+      code:
+        "MEMORY_KEY_REQUIRED"
+
+    };
+
+  }
+
+  if (
+    value.length >
+    MEMORY_CONFIG.MAX_KEY_LENGTH
+  ) {
+
+    return {
+
+      valid:
+        false,
+
+      error:
+        "Memory key is too long",
+
+      code:
+        "MEMORY_KEY_TOO_LONG"
+
+    };
+
+  }
+
+  return {
+
+    valid:
+      true,
+
+    value
+
+  };
+
+}
+
+
+// ============================================================
+// MEMORY VALUE VALIDATION
+// ============================================================
+
+function validateMemoryValue(
+  value
+) {
+
+  const normalized =
+    normalizeText(
+      value
+    );
+
+  if (!normalized) {
+
+    return {
+
+      valid:
+        false,
+
+      error:
+        "Memory value is required",
+
+      code:
+        "MEMORY_VALUE_REQUIRED"
+
+    };
+
+  }
+
+  if (
+    normalized.length >
+    MEMORY_CONFIG.MAX_VALUE_LENGTH
+  ) {
+
+    return {
+
+      valid:
+        false,
+
+      error:
+        "Memory value is too long",
+
+      code:
+        "MEMORY_VALUE_TOO_LONG"
+
+    };
+
+  }
+
+  return {
+
+    valid:
+      true,
+
+    value:
+      normalized
+
+  };
+
+}
+
+
+// ============================================================
+// LONG-TERM MEMORY VALIDATION
+// ============================================================
+
+function validateLongTermMemoryContent(
+  content
+) {
+
+  const value =
+    normalizeText(
+      content
+    );
+
+  if (!value) {
+
+    return {
+
+      valid:
+        false,
+
+      error:
+        "Memory content is required",
+
+      code:
+        "MEMORY_CONTENT_REQUIRED"
+
+    };
+
+  }
+
+  if (
+    value.length >
+    MEMORY_CONFIG.MAX_CONTENT_LENGTH
+  ) {
+
+    return {
+
+      valid:
+        false,
+
+      error:
+        "Memory content is too long",
+
+      code:
+        "MEMORY_CONTENT_TOO_LONG"
+
+    };
+
+  }
+
+  return {
+
+    valid:
+      true,
+
+    value
+
+  };
+
+}
+
+
+// ============================================================
+// MEMORY LIMIT
+// ============================================================
+
+function normalizeMemoryLimit(
+  value
+) {
+
+  const number =
+    Number(value);
+
+  if (
+    !Number.isInteger(number)
+  ) {
+
+    return MEMORY_CONFIG.DEFAULT_LIMIT;
+
+  }
+
+  return Math.min(
+
+    Math.max(
+      number,
+      1
+    ),
+
+    MEMORY_CONFIG.MAX_LIMIT
+
+  );
+
+}
+
+
+// ============================================================
+// MEMORY SEARCH QUERY
+// ============================================================
+
+function normalizeMemorySearch(
+  value
+) {
+
+  const query =
+    normalizeText(
+      value
+    );
+
+  if (!query) {
+    return "";
+  }
+
+  return query.slice(
+    0,
+    MEMORY_CONFIG.MAX_SEARCH_LENGTH
+  );
+
+}
+
+
+// ============================================================
+// SAVE / UPDATE PERSISTENT MEMORY
 // ============================================================
 
 app.post(
   "/api/memory",
   authenticateToken,
   async (req, res) => {
-    try {
-      const key =
-        normalizeText(req.body?.key);
 
-      const value =
-        normalizeText(
+    try {
+
+      const keyValidation =
+        validateMemoryKey(
+          req.body?.key
+        );
+
+
+      if (
+        !keyValidation.valid
+      ) {
+
+        return res.status(400).json({
+
+          success:
+            false,
+
+          error:
+            keyValidation.error,
+
+          code:
+            keyValidation.code
+
+        });
+
+      }
+
+
+      const valueValidation =
+        validateMemoryValue(
           req.body?.value
         );
 
-      const type =
-        normalizeText(
+
+      if (
+        !valueValidation.valid
+      ) {
+
+        return res.status(400).json({
+
+          success:
+            false,
+
+          error:
+            valueValidation.error,
+
+          code:
+            valueValidation.code
+
+        });
+
+      }
+
+
+      const memoryType =
+        normalizeMemoryType(
           req.body?.type
-        ) || "general";
+        );
+
 
       const importance =
-        normalizeImportance(
+        normalizeMemoryImportance(
           req.body?.importance
         );
 
-      if (!key || !value) {
-        return res.status(400).json({
-          success: false,
-          error:
-            "Memory key and value are required"
-        });
-      }
 
       const result =
         await pool.query(
+
           `INSERT INTO user_memory
            (
              user_id,
@@ -2169,9 +5604,19 @@ app.post(
              memory_type,
              importance
            )
-           VALUES ($1, $2, $3, $4, $5)
+           VALUES
+           (
+             $1,
+             $2,
+             $3,
+             $4,
+             $5
+           )
            ON CONFLICT
-           (user_id, memory_key)
+           (
+             user_id,
+             memory_key
+           )
            DO UPDATE SET
              memory_value =
                EXCLUDED.memory_value,
@@ -2182,147 +5627,584 @@ app.post(
              updated_at =
                CURRENT_TIMESTAMP
            RETURNING *`,
+
           [
+
             req.user.id,
-            key,
-            value,
-            type,
+
+            keyValidation.value,
+
+            valueValidation.value,
+
+            memoryType,
+
             importance
+
           ]
+
         );
 
-      res.status(201).json({
-        success: true,
-        memory:
-          result.rows[0]
+
+      if (
+        result.rows.length ===
+        0
+      ) {
+
+        throw new Error(
+          "Memory operation returned no record"
+        );
+
+      }
+
+
+      const memory =
+        result.rows[0];
+
+
+      await systemLog(
+
+        "info",
+
+        "memory",
+
+        "Persistent memory saved",
+
+        {
+
+          userId:
+            req.user.id,
+
+          memoryId:
+            memory.id,
+
+          memoryType:
+            memory.memory_type,
+
+          importance:
+            memory.importance
+
+        }
+
+      );
+
+
+      return res.status(201).json({
+
+        success:
+          true,
+
+        memory
+
       });
+
     } catch (error) {
+
       console.error(
-        "Save memory error:",
+        "Save persistent memory error:",
         error
       );
 
-      res.status(500).json({
-        success: false,
+
+      await systemLog(
+
+        "error",
+
+        "memory",
+
+        "Persistent memory save failed",
+
+        {
+
+          userId:
+            req.user?.id,
+
+          message:
+            error?.message
+
+        }
+
+      );
+
+
+      return res.status(500).json({
+
+        success:
+          false,
+
         error:
-          "Could not save memory"
+          "Could not save memory",
+
+        code:
+          "MEMORY_SAVE_FAILED"
+
       });
+
     }
+
   }
 );
+
+
+// ============================================================
+// LIST PERSISTENT MEMORY
+// ============================================================
 
 app.get(
   "/api/memory",
   authenticateToken,
   async (req, res) => {
+
     try {
-      const result =
-        await pool.query(
-          `SELECT *
-           FROM user_memory
-           WHERE user_id = $1
-           ORDER BY
-             importance DESC,
-             updated_at DESC`,
-          [req.user.id]
+
+      const limit =
+        normalizeMemoryLimit(
+          req.query?.limit
         );
 
-      res.json({
-        success: true,
+
+      const type =
+        normalizeMemoryType(
+          req.query?.type
+        );
+
+
+      const search =
+        normalizeMemorySearch(
+          req.query?.search
+        );
+
+
+      const values = [
+        req.user.id
+      ];
+
+
+      let query = `
+
+        SELECT
+          id,
+          memory_key,
+          memory_value,
+          memory_type,
+          importance,
+          created_at,
+          updated_at
+
+        FROM user_memory
+
+        WHERE user_id = $1
+
+      `;
+
+
+      if (type) {
+
+        values.push(
+          type
+        );
+
+        query += `
+          AND memory_type = $${values.length}
+        `;
+
+      }
+
+
+      if (search) {
+
+        values.push(
+          `%${search}%`
+        );
+
+        query += `
+          AND (
+            memory_key ILIKE $${values.length}
+            OR
+            memory_value ILIKE $${values.length}
+          )
+        `;
+
+      }
+
+
+      values.push(
+        limit
+      );
+
+
+      query += `
+        ORDER BY
+          importance DESC,
+          updated_at DESC,
+          id DESC
+
+        LIMIT $${values.length}
+      `;
+
+
+      const result =
+        await pool.query(
+          query,
+          values
+        );
+
+
+      return res.json({
+
+        success:
+          true,
+
         memories:
-          result.rows
+          result.rows,
+
+        count:
+          result.rows.length
+
       });
+
     } catch (error) {
-      res.status(500).json({
-        success: false,
+
+      console.error(
+        "Load persistent memory error:",
+        error
+      );
+
+
+      return res.status(500).json({
+
+        success:
+          false,
+
         error:
-          "Could not load memory"
+          "Could not load memory",
+
+        code:
+          "MEMORY_LOAD_FAILED"
+
       });
+
     }
+
   }
 );
+
+
+// ============================================================
+// GET ONE MEMORY BY KEY
+// ============================================================
+
+app.get(
+  "/api/memory/:key",
+  authenticateToken,
+  async (req, res) => {
+
+    try {
+
+      const key =
+        normalizeText(
+          req.params.key
+        );
+
+
+      if (!key) {
+
+        return res.status(400).json({
+
+          success:
+            false,
+
+          error:
+            "Memory key is required",
+
+          code:
+            "MEMORY_KEY_REQUIRED"
+
+        });
+
+      }
+
+
+      const result =
+        await pool.query(
+
+          `SELECT
+             id,
+             memory_key,
+             memory_value,
+             memory_type,
+             importance,
+             created_at,
+             updated_at
+           FROM user_memory
+           WHERE user_id = $1
+           AND memory_key = $2
+           LIMIT 1`,
+
+          [
+
+            req.user.id,
+
+            key
+
+          ]
+
+        );
+
+
+      if (
+        result.rows.length ===
+        0
+      ) {
+
+        return res.status(404).json({
+
+          success:
+            false,
+
+          error:
+            "Memory not found",
+
+          code:
+            "MEMORY_NOT_FOUND"
+
+        });
+
+      }
+
+
+      return res.json({
+
+        success:
+          true,
+
+        memory:
+          result.rows[0]
+
+      });
+
+    } catch (error) {
+
+      console.error(
+        "Get memory error:",
+        error
+      );
+
+
+      return res.status(500).json({
+
+        success:
+          false,
+
+        error:
+          "Could not load memory",
+
+        code:
+          "MEMORY_GET_FAILED"
+
+      });
+
+    }
+
+  }
+);
+
+
+// ============================================================
+// DELETE PERSISTENT MEMORY
+// ============================================================
 
 app.delete(
   "/api/memory/:key",
   authenticateToken,
   async (req, res) => {
+
     try {
+
+      const key =
+        normalizeText(
+          req.params.key
+        );
+
+
+      if (!key) {
+
+        return res.status(400).json({
+
+          success:
+            false,
+
+          error:
+            "Memory key is required",
+
+          code:
+            "MEMORY_KEY_REQUIRED"
+
+        });
+
+      }
+
+
       const result =
         await pool.query(
+
           `DELETE FROM user_memory
            WHERE user_id = $1
            AND memory_key = $2
-           RETURNING id`,
+           RETURNING
+             id,
+             memory_key`,
+
           [
+
             req.user.id,
-            req.params.key
+
+            key
+
           ]
+
         );
 
+
       if (
-        result.rows.length === 0
+        result.rows.length ===
+        0
       ) {
+
         return res.status(404).json({
-          success: false,
+
+          success:
+            false,
+
           error:
-            "Memory not found"
+            "Memory not found",
+
+          code:
+            "MEMORY_NOT_FOUND"
+
         });
+
       }
 
-      res.json({
-        success: true,
+
+      await systemLog(
+
+        "info",
+
+        "memory",
+
+        "Persistent memory deleted",
+
+        {
+
+          userId:
+            req.user.id,
+
+          memoryId:
+            result.rows[0].id,
+
+          memoryKey:
+            result.rows[0].memory_key
+
+        }
+
+      );
+
+
+      return res.json({
+
+        success:
+          true,
+
         message:
           "Memory deleted"
+
       });
+
     } catch (error) {
-      res.status(500).json({
-        success: false,
+
+      console.error(
+        "Delete memory error:",
+        error
+      );
+
+
+      return res.status(500).json({
+
+        success:
+          false,
+
         error:
-          "Could not delete memory"
+          "Could not delete memory",
+
+        code:
+          "MEMORY_DELETE_FAILED"
+
       });
+
     }
+
   }
 );
 
+
 // ============================================================
-// LONG-TERM MEMORY
+// CREATE LONG-TERM MEMORY
 // ============================================================
 
 app.post(
   "/api/long-term-memory",
   authenticateToken,
   async (req, res) => {
+
     try {
-      const content =
-        normalizeText(
+
+      const validation =
+        validateLongTermMemoryContent(
           req.body?.content
         );
 
-      const type =
-        normalizeText(
+
+      if (
+        !validation.valid
+      ) {
+
+        return res.status(400).json({
+
+          success:
+            false,
+
+          error:
+            validation.error,
+
+          code:
+            validation.code
+
+        });
+
+      }
+
+
+      const memoryType =
+        normalizeMemoryType(
           req.body?.type
-        ) || "general";
+        );
+
 
       const importance =
-        normalizeImportance(
+        normalizeMemoryImportance(
           req.body?.importance
         );
 
-      const source =
-        normalizeText(
-          req.body?.source
-        ) || "user";
 
-      if (!content) {
-        return res.status(400).json({
-          success: false,
-          error:
-            "Content is required"
-        });
-      }
+      const source =
+        normalizeMemorySource(
+          req.body?.source
+        );
+
 
       const result =
         await pool.query(
+
           `INSERT INTO long_term_memory
            (
              user_id,
@@ -2332,35 +6214,113 @@ app.post(
              source
            )
            VALUES
-           ($1, $2, $3, $4, $5)
+           (
+             $1,
+             $2,
+             $3,
+             $4,
+             $5
+           )
            RETURNING *`,
+
           [
+
             req.user.id,
-            content,
-            type,
+
+            validation.value,
+
+            memoryType,
+
             importance,
+
             source
+
           ]
+
         );
 
-      res.status(201).json({
-        success: true,
-        memory:
-          result.rows[0]      });
+
+      if (
+        result.rows.length ===
+        0
+      ) {
+
+        throw new Error(
+          "Long-term memory creation returned no record"
+        );
+
+      }
+
+
+      const memory =
+        result.rows[0];
+
+
+      await systemLog(
+
+        "info",
+
+        "long_term_memory",
+
+        "Long-term memory created",
+
+        {
+
+          userId:
+            req.user.id,
+
+          memoryId:
+            memory.id,
+
+          memoryType:
+            memory.memory_type,
+
+          importance:
+            memory.importance,
+
+          source:
+            memory.source
+
+        }
+
+      );
+
+
+      return res.status(201).json({
+
+        success:
+          true,
+
+        memory
+
+      });
+
     } catch (error) {
+
       console.error(
-        "Save long-term memory error:",
+        "Create long-term memory error:",
         error
       );
 
-      res.status(500).json({
-        success: false,
+
+      return res.status(500).json({
+
+        success:
+          false,
+
         error:
-          "Could not save long-term memory"
+          "Could not save long-term memory",
+
+        code:
+          "LONG_TERM_MEMORY_SAVE_FAILED"
+
       });
+
     }
+
   }
 );
+
 
 // ============================================================
 // LIST LONG-TERM MEMORY
@@ -2370,36 +6330,260 @@ app.get(
   "/api/long-term-memory",
   authenticateToken,
   async (req, res) => {
+
     try {
-      const result =
-        await pool.query(
-          `SELECT *
-           FROM long_term_memory
-           WHERE user_id = $1
-           ORDER BY
-             importance DESC,
-             updated_at DESC`,
-          [req.user.id]
+
+      const limit =
+        normalizeMemoryLimit(
+          req.query?.limit
         );
 
-      res.json({
-        success: true,
-        memories: result.rows
+
+      const type =
+        normalizeMemoryType(
+          req.query?.type
+        );
+
+
+      const search =
+        normalizeMemorySearch(
+          req.query?.search
+        );
+
+
+      const values = [
+        req.user.id
+      ];
+
+
+      let query = `
+
+        SELECT
+          id,
+          content,
+          memory_type,
+          importance,
+          source,
+          created_at,
+          updated_at
+
+        FROM long_term_memory
+
+        WHERE user_id = $1
+
+      `;
+
+
+      if (type) {
+
+        values.push(
+          type
+        );
+
+        query += `
+          AND memory_type = $${values.length}
+        `;
+
+      }
+
+
+      if (search) {
+
+        values.push(
+          `%${search}%`
+        );
+
+        query += `
+          AND content ILIKE $${values.length}
+        `;
+
+      }
+
+
+      values.push(
+        limit
+      );
+
+
+      query += `
+        ORDER BY
+          importance DESC,
+          updated_at DESC,
+          id DESC
+
+        LIMIT $${values.length}
+      `;
+
+
+      const result =
+        await pool.query(
+          query,
+          values
+        );
+
+
+      return res.json({
+
+        success:
+          true,
+
+        memories:
+          result.rows,
+
+        count:
+          result.rows.length
+
       });
+
     } catch (error) {
+
       console.error(
         "Load long-term memory error:",
         error
       );
 
-      res.status(500).json({
-        success: false,
+
+      return res.status(500).json({
+
+        success:
+          false,
+
         error:
-          "Could not load long-term memory"
+          "Could not load long-term memory",
+
+        code:
+          "LONG_TERM_MEMORY_LOAD_FAILED"
+
       });
+
     }
+
   }
 );
+
+
+// ============================================================
+// GET LONG-TERM MEMORY BY ID
+// ============================================================
+
+app.get(
+  "/api/long-term-memory/:id",
+  authenticateToken,
+  async (req, res) => {
+
+    try {
+
+      const id =
+        Number(
+          req.params.id
+        );
+
+
+      if (
+        !Number.isInteger(id) ||
+        id <= 0
+      ) {
+
+        return res.status(400).json({
+
+          success:
+            false,
+
+          error:
+            "Invalid memory ID",
+
+          code:
+            "INVALID_MEMORY_ID"
+
+        });
+
+      }
+
+
+      const result =
+        await pool.query(
+
+          `SELECT
+             id,
+             content,
+             memory_type,
+             importance,
+             source,
+             created_at,
+             updated_at
+           FROM long_term_memory
+           WHERE id = $1
+           AND user_id = $2
+           LIMIT 1`,
+
+          [
+
+            id,
+
+            req.user.id
+
+          ]
+
+        );
+
+
+      if (
+        result.rows.length ===
+        0
+      ) {
+
+        return res.status(404).json({
+
+          success:
+            false,
+
+          error:
+            "Long-term memory not found",
+
+          code:
+            "LONG_TERM_MEMORY_NOT_FOUND"
+
+        });
+
+      }
+
+
+      return res.json({
+
+        success:
+          true,
+
+        memory:
+          result.rows[0]
+
+      });
+
+    } catch (error) {
+
+      console.error(
+        "Get long-term memory error:",
+        error
+      );
+
+
+      return res.status(500).json({
+
+        success:
+          false,
+
+        error:
+          "Could not load long-term memory",
+
+        code:
+          "LONG_TERM_MEMORY_GET_FAILED"
+
+      });
+
+    }
+
+  }
+);
+
 
 // ============================================================
 // DELETE LONG-TERM MEMORY
@@ -2409,1872 +6593,3752 @@ app.delete(
   "/api/long-term-memory/:id",
   authenticateToken,
   async (req, res) => {
+
     try {
+
       const id =
-        Number(req.params.id);
+        Number(
+          req.params.id
+        );
+
 
       if (
         !Number.isInteger(id) ||
         id <= 0
       ) {
+
         return res.status(400).json({
-          success: false,
+
+          success:
+            false,
+
           error:
-            "Invalid memory ID"
+            "Invalid memory ID",
+
+          code:
+            "INVALID_MEMORY_ID"
+
         });
+
       }
+
 
       const result =
         await pool.query(
+
           `DELETE FROM long_term_memory
            WHERE id = $1
            AND user_id = $2
-           RETURNING id`,
+           RETURNING
+             id,
+             memory_type`,
+
           [
+
             id,
+
             req.user.id
+
           ]
+
         );
 
+
       if (
-        result.rows.length === 0
+        result.rows.length ===
+        0
       ) {
+
         return res.status(404).json({
-          success: false,
+
+          success:
+            false,
+
           error:
-            "Long-term memory not found"
+            "Long-term memory not found",
+
+          code:
+            "LONG_TERM_MEMORY_NOT_FOUND"
+
         });
+
       }
 
-      res.json({
-        success: true,
+
+      await systemLog(
+
+        "info",
+
+        "long_term_memory",
+
+        "Long-term memory deleted",
+
+        {
+
+          userId:
+            req.user.id,
+
+          memoryId:
+            result.rows[0].id,
+
+          memoryType:
+            result.rows[0].memory_type
+
+        }
+
+      );
+
+
+      return res.json({
+
+        success:
+          true,
+
         message:
           "Long-term memory deleted"
+
       });
+
     } catch (error) {
+
       console.error(
         "Delete long-term memory error:",
         error
       );
 
-      res.status(500).json({
-        success: false,
+
+      return res.status(500).json({
+
+        success:
+          false,
+
         error:
-          "Could not delete long-term memory"
+          "Could not delete long-term memory",
+
+        code:
+          "LONG_TERM_MEMORY_DELETE_FAILED"
+
       });
+
     }
+
   }
 );
 
+
 // ============================================================
-// KNOWLEDGE BASE
+// MEMORY STATISTICS
+// ============================================================
+//
+// Gives the Agent/UI a compact understanding of the user's
+// memory system without downloading all memory records.
+//
+
+app.get(
+  "/api/memory/stats",
+  authenticateToken,
+  async (req, res) => {
+
+    try {
+
+      const persistentResult =
+        await pool.query(
+
+          `SELECT
+             COUNT(*)::integer AS total,
+             COUNT(
+               DISTINCT memory_type
+             )::integer AS types,
+             COALESCE(
+               AVG(importance),
+               0
+             ) AS average_importance
+           FROM user_memory
+           WHERE user_id = $1`,
+
+          [
+            req.user.id
+          ]
+
+        );
+
+
+      const longTermResult =
+        await pool.query(
+
+          `SELECT
+             COUNT(*)::integer AS total,
+             COUNT(
+               DISTINCT memory_type
+             )::integer AS types,
+             COALESCE(
+               AVG(importance),
+               0
+             ) AS average_importance
+           FROM long_term_memory
+           WHERE user_id = $1`,
+
+          [
+            req.user.id
+          ]
+
+        );
+
+
+      const persistent =
+        persistentResult.rows[0] ||
+        {};
+
+
+      const longTerm =
+        longTermResult.rows[0] ||
+        {};
+
+
+      return res.json({
+
+        success:
+          true,
+
+        statistics: {
+
+          persistentMemory: {
+
+            total:
+              Number(
+                persistent.total ||
+                0
+              ),
+
+            types:
+              Number(
+                persistent.types ||
+                0
+              ),
+
+            averageImportance:
+              Number(
+                persistent.average_importance ||
+                0
+              )
+
+          },
+
+          longTermMemory: {
+
+            total:
+              Number(
+                longTerm.total ||
+                0
+              ),
+
+            types:
+              Number(
+                longTerm.types ||
+                0
+              ),
+
+            averageImportance:
+              Number(
+                longTerm.average_importance ||
+                0
+              )
+
+          },
+
+          totalMemory:
+
+            Number(
+              persistent.total ||
+              0
+            ) +
+
+            Number(
+              longTerm.total ||
+              0
+            )
+
+        }
+
+      });
+
+    } catch (error) {
+
+      console.error(
+        "Memory statistics error:",
+        error
+      );
+
+
+      return res.status(500).json({
+
+        success:
+          false,
+
+        error:
+          "Could not load memory statistics",
+
+        code:
+          "MEMORY_STATS_FAILED"
+
+      });
+
+    }
+
+  }
+);
+// ============================================================
+// AGENT MEMORY SNAPSHOT
+// ============================================================
+//
+// Internal-friendly endpoint.
+//
+// It returns the most relevant memories first.
+//
+// This will later become one of the major inputs to the
+// Nkwasibwe Agent Orchestration Engine.
+//
+
+app.get(
+  "/api/memory/snapshot",
+  authenticateToken,
+  async (req, res) => {
+
+    try {
+
+      const limit =
+        normalizeMemoryLimit(
+          req.query?.limit
+        );
+
+
+      const persistentLimit =
+        Math.ceil(
+          limit / 2
+        );
+
+
+      const longTermLimit =
+        Math.floor(
+          limit / 2
+        );
+
+
+      const [
+        persistentResult,
+        longTermResult
+      ] =
+        await Promise.all([
+
+          pool.query(
+
+            `SELECT
+               id,
+               memory_key,
+               memory_value,
+               memory_type,
+               importance,
+               created_at,
+               updated_at
+             FROM user_memory
+             WHERE user_id = $1
+             ORDER BY
+               importance DESC,
+               updated_at DESC,
+               id DESC
+             LIMIT $2`,
+
+            [
+
+              req.user.id,
+
+              persistentLimit
+
+            ]
+
+          ),
+
+          pool.query(
+
+            `SELECT
+               id,
+               content,
+               memory_type,
+               importance,
+               source,
+               created_at,
+               updated_at
+             FROM long_term_memory
+             WHERE user_id = $1
+             ORDER BY
+               importance DESC,
+               updated_at DESC,
+               id DESC
+             LIMIT $2`,
+
+            [
+
+              req.user.id,
+
+              longTermLimit
+
+            ]
+
+          )
+
+        ]);
+
+
+      return res.json({
+
+        success:
+          true,
+
+        snapshot: {
+
+          persistent:
+            persistentResult.rows,
+
+          longTerm:
+            longTermResult.rows,
+
+          generatedAt:
+            new Date().toISOString()
+
+        }
+
+      });
+
+    } catch (error) {
+
+      console.error(
+        "Memory snapshot error:",
+        error
+      );
+
+
+      return res.status(500).json({
+
+        success:
+          false,
+
+        error:
+          "Could not create memory snapshot",
+
+        code:
+          "MEMORY_SNAPSHOT_FAILED"
+
+      });
+
+    }
+
+  }
+);
+
+
+// ============================================================
+// PART 5 COMPLETE
+// ============================================================
+
+// ============================================================
+// PART 6/14
+// NKWSIBWE IRHCF — MEMORY ENGINE
+// ============================================================
+//
+// Responsibilities:
+//
+// • User memory
+// • Long-term memory
+// • Memory ownership
+// • Memory importance
+// • Memory search
+// • Memory retrieval
+// • Memory deletion
+// • Memory limits
+// • Memory sanitization
+// • Memory protection
+// • Memory statistics
+// • Agent-ready memory context
+//
+// SECURITY PRINCIPLE:
+//
+// A memory record MUST belong to the authenticated user.
+// A user must NEVER be able to read, modify or delete another
+// user's memory by knowing a memory ID.
+//
+// IMPORTANT:
+//
+// This module depends on infrastructure defined in previous
+// parts:
+//
+// • express
+// • pool
+// • authenticateToken
+// • normalizeText
+// • systemLog
+//
+// ============================================================
+
+
+// ============================================================
+// MEMORY CONFIGURATION
+// ============================================================
+
+const MEMORY_CONFIG = Object.freeze({
+
+  // ----------------------------------------------------------
+  // General limits
+  // ----------------------------------------------------------
+
+  MAX_MEMORY_CONTENT_LENGTH:
+    20000,
+
+  MAX_MEMORY_TITLE_LENGTH:
+    300,
+
+  MAX_MEMORY_SOURCE_LENGTH:
+    200,
+
+  MAX_MEMORY_TAGS:
+    30,
+
+  MAX_TAG_LENGTH:
+    80,
+
+  MAX_RETRIEVAL_LIMIT:
+    100,
+
+  DEFAULT_RETRIEVAL_LIMIT:
+    20,
+
+  MAX_IMPORTANCE:
+    10,
+
+  MIN_IMPORTANCE:
+    1,
+
+  // ----------------------------------------------------------
+  // Memory types
+  // ----------------------------------------------------------
+
+  ALLOWED_TYPES: Object.freeze([
+
+    "fact",
+
+    "preference",
+
+    "instruction",
+
+    "profile",
+
+    "goal",
+
+    "project",
+
+    "context",
+
+    "relationship",
+
+    "knowledge",
+
+    "experience",
+
+    "other"
+
+  ]),
+
+  // ----------------------------------------------------------
+  // Memory sources
+  // ----------------------------------------------------------
+
+  ALLOWED_SOURCES: Object.freeze([
+
+    "user",
+
+    "conversation",
+
+    "agent",
+
+    "system",
+
+    "import",
+
+    "manual"
+
+  ])
+
+});
+
+
+// ============================================================
+// MEMORY ID VALIDATION
+// ============================================================
+//
+// Supports UUID and numeric database IDs.
+//
+// This makes the API compatible with different PostgreSQL
+// schemas without allowing arbitrary SQL values.
+//
+
+function isValidMemoryId(
+  memoryId
+) {
+
+  if (
+    memoryId === null ||
+    memoryId === undefined
+  ) {
+
+    return false;
+
+  }
+
+
+  const value =
+    String(
+      memoryId
+    ).trim();
+
+
+  if (!value) {
+
+    return false;
+
+  }
+
+
+  // UUID
+  if (
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+      .test(value)
+  ) {
+
+    return true;
+
+  }
+
+
+  // Positive integer
+  if (
+    /^[1-9][0-9]*$/.test(
+      value
+    )
+  ) {
+
+    return true;
+
+  }
+
+
+  return false;
+
+}
+
+
+// ============================================================
+// INTEGER NORMALIZATION
+// ============================================================
+
+function normalizeMemoryInteger(
+  value,
+  fallback,
+  minimum,
+  maximum
+) {
+
+  const number =
+    Number(
+      value
+    );
+
+
+  if (
+    !Number.isInteger(
+      number
+    )
+  ) {
+
+    return fallback;
+
+  }
+
+
+  return Math.min(
+
+    Math.max(
+      number,
+      minimum
+    ),
+
+    maximum
+
+  );
+
+}
+
+
+// ============================================================
+// MEMORY IMPORTANCE
+// ============================================================
+
+function normalizeMemoryImportance(
+  value
+) {
+
+  return normalizeMemoryInteger(
+
+    value,
+
+    5,
+
+    MEMORY_CONFIG.MIN_IMPORTANCE,
+
+    MEMORY_CONFIG.MAX_IMPORTANCE
+
+  );
+
+}
+
+
+// ============================================================
+// MEMORY TYPE
+// ============================================================
+
+function normalizeMemoryType(
+  value
+) {
+
+  const type =
+    normalizeText(
+      value
+    ).toLowerCase();
+
+
+  if (
+    MEMORY_CONFIG.ALLOWED_TYPES
+      .includes(type)
+  ) {
+
+    return type;
+
+  }
+
+
+  return "other";
+
+}
+
+
+// ============================================================
+// MEMORY SOURCE
+// ============================================================
+
+function normalizeMemorySource(
+  value
+) {
+
+  const source =
+    normalizeText(
+      value
+    ).toLowerCase();
+
+
+  if (
+    MEMORY_CONFIG.ALLOWED_SOURCES
+      .includes(source)
+  ) {
+
+    return source;
+
+  }
+
+
+  return "user";
+
+}
+
+
+// ============================================================
+// MEMORY CONTENT VALIDATION
+// ============================================================
+
+function validateMemoryContent(
+  content
+) {
+
+  const value =
+    normalizeText(
+      content
+    );
+
+
+  if (!value) {
+
+    return {
+
+      valid:
+        false,
+
+      error:
+        "Memory content is required",
+
+      code:
+        "MEMORY_CONTENT_REQUIRED"
+
+    };
+
+  }
+
+
+  if (
+    value.length >
+    MEMORY_CONFIG.MAX_MEMORY_CONTENT_LENGTH
+  ) {
+
+    return {
+
+      valid:
+        false,
+
+      error:
+        "Memory content is too long",
+
+      code:
+        "MEMORY_CONTENT_TOO_LONG"
+
+    };
+
+  }
+
+
+  return {
+
+    valid:
+      true,
+
+    value
+
+  };
+
+}
+
+
+// ============================================================
+// MEMORY TITLE
+// ============================================================
+
+function normalizeMemoryTitle(
+  value
+) {
+
+  const title =
+    normalizeText(
+      value
+    );
+
+
+  if (!title) {
+
+    return null;
+
+  }
+
+
+  return title.slice(
+    0,
+    MEMORY_CONFIG.MAX_MEMORY_TITLE_LENGTH
+  );
+
+}
+
+
+// ============================================================
+// MEMORY SOURCE LABEL
+// ============================================================
+
+function normalizeMemorySourceLabel(
+  value
+) {
+
+  const source =
+    normalizeText(
+      value
+    );
+
+
+  if (!source) {
+
+    return null;
+
+  }
+
+
+  return source.slice(
+    0,
+    MEMORY_CONFIG.MAX_MEMORY_SOURCE_LENGTH
+  );
+
+}
+
+
+// ============================================================
+// MEMORY TAGS
+// ============================================================
+
+function normalizeMemoryTags(
+  value
+) {
+
+  if (
+    value === null ||
+    value === undefined
+  ) {
+
+    return [];
+
+  }
+
+
+  let tags = [];
+
+
+  if (
+    Array.isArray(value)
+  ) {
+
+    tags =
+      value;
+
+  } else if (
+    typeof value ===
+    "string"
+  ) {
+
+    tags =
+      value.split(",");
+
+  } else {
+
+    return [];
+
+  }
+
+
+  const normalized = [];
+
+
+  for (
+    const tag of tags
+  ) {
+
+    const clean =
+      normalizeText(
+        tag
+      ).toLowerCase();
+
+
+    if (!clean) {
+
+      continue;
+
+    }
+
+
+    const limited =
+      clean.slice(
+        0,
+        MEMORY_CONFIG.MAX_TAG_LENGTH
+      );
+
+
+    if (
+      !normalized.includes(
+        limited
+      )
+    ) {
+
+      normalized.push(
+        limited
+      );
+
+    }
+
+
+    if (
+      normalized.length >=
+      MEMORY_CONFIG.MAX_MEMORY_TAGS
+    ) {
+
+      break;
+
+    }
+
+  }
+
+
+  return normalized;
+
+}
+
+
+// ============================================================
+// MEMORY QUERY VALIDATION
+// ============================================================
+
+function normalizeMemorySearchQuery(
+  value
+) {
+
+  const query =
+    normalizeText(
+      value
+    );
+
+
+  if (!query) {
+
+    return null;
+
+  }
+
+
+  return query.slice(
+    0,
+    1000
+  );
+
+}
+
+
+// ============================================================
+// SAFE MEMORY OBJECT
+// ============================================================
+//
+// Never expose unnecessary internal database information.
+//
+
+function sanitizeMemoryRecord(
+  memory
+) {
+
+  if (!memory) {
+
+    return null;
+
+  }
+
+
+  return {
+
+    id:
+      memory.id,
+
+    user_id:
+      memory.user_id,
+
+    title:
+      memory.title ||
+      null,
+
+    content:
+      memory.content ||
+      "",
+
+    memory_type:
+      memory.memory_type ||
+      "other",
+
+    importance:
+      Number(
+        memory.importance ||
+        5
+      ),
+
+    source:
+      memory.source ||
+      "user",
+
+    source_label:
+      memory.source_label ||
+      null,
+
+    tags:
+      Array.isArray(
+        memory.tags
+      )
+        ? memory.tags
+        : [],
+
+    created_at:
+      memory.created_at ||
+      null,
+
+    updated_at:
+      memory.updated_at ||
+      null,
+
+    last_accessed_at:
+      memory.last_accessed_at ||
+      null
+
+  };
+
+}
+
+
+// ============================================================
+// RESOLVE USER MEMORY
+// ============================================================
+//
+// Ownership is ALWAYS enforced.
+//
+
+async function resolveUserMemory(
+  userId,
+  memoryId
+) {
+
+  if (!userId) {
+
+    throw new Error(
+      "User ID is required"
+    );
+
+  }
+
+
+  if (
+    !isValidMemoryId(
+      memoryId
+    )
+  ) {
+
+    return null;
+
+  }
+
+
+  const result =
+    await pool.query(
+
+      `SELECT
+         *
+       FROM user_memory
+       WHERE id = $1
+       AND user_id = $2
+       LIMIT 1`,
+
+      [
+
+        memoryId,
+
+        userId
+
+      ]
+
+    );
+
+
+  if (
+    result.rows.length ===
+    0
+  ) {
+
+    return null;
+
+  }
+
+
+  return result.rows[0];
+
+}
+
+
+// ============================================================
+// RESOLVE LONG-TERM MEMORY
+// ============================================================
+
+async function resolveLongTermMemory(
+  userId,
+  memoryId
+) {
+
+  if (!userId) {
+
+    throw new Error(
+      "User ID is required"
+    );
+
+  }
+
+
+  if (
+    !isValidMemoryId(
+      memoryId
+    )
+  ) {
+
+    return null;
+
+  }
+
+
+  const result =
+    await pool.query(
+
+      `SELECT
+         *
+       FROM long_term_memory
+       WHERE id = $1
+       AND user_id = $2
+       LIMIT 1`,
+
+      [
+
+        memoryId,
+
+        userId
+
+      ]
+
+    );
+
+
+  if (
+    result.rows.length ===
+    0
+  ) {
+
+    return null;
+
+  }
+
+
+  return result.rows[0];
+
+}
+
+
+// ============================================================
+// CREATE USER MEMORY
 // ============================================================
 
 app.post(
-  "/api/knowledge",
+  "/api/memory",
   authenticateToken,
-  async (req, res) => {
-    try {
-      const title =
-        normalizeText(
-          req.body?.title
-        );
+  async (
+    req,
+    res
+  ) => {
 
-      const content =
-        normalizeText(
+    try {
+
+      const validation =
+        validateMemoryContent(
           req.body?.content
         );
 
+
+      if (
+        !validation.valid
+      ) {
+
+        return res.status(400).json({
+
+          success:
+            false,
+
+          error:
+            validation.error,
+
+          code:
+            validation.code
+
+        });
+
+      }
+
+
+      const title =
+        normalizeMemoryTitle(
+          req.body?.title
+        );
+
+
+      const memoryType =
+        normalizeMemoryType(
+          req.body?.memory_type ||
+          req.body?.type
+        );
+
+
+      const importance =
+        normalizeMemoryImportance(
+          req.body?.importance
+        );
+
+
       const source =
-        normalizeText(
+        normalizeMemorySource(
           req.body?.source
         );
 
-      const sourceType =
-        normalizeText(
-          req.body?.source_type
-        ) || "text";
 
-      const metadata =
-        safeMetadata(
-          req.body?.metadata
+      const sourceLabel =
+        normalizeMemorySourceLabel(
+          req.body?.source_label
         );
 
-      if (!content) {
-        return res.status(400).json({
-          success: false,
-          error:
-            "Knowledge content is required"
-        });
-      }
+
+      const tags =
+        normalizeMemoryTags(
+          req.body?.tags
+        );
+
 
       const result =
         await pool.query(
-          `INSERT INTO knowledge
+
+          `INSERT INTO user_memory
            (
              user_id,
              title,
              content,
+             memory_type,
+             importance,
              source,
-             source_type,
-             metadata
-           )
-           VALUES
-           ($1, $2, $3, $4, $5, $6::jsonb)
-           RETURNING *`,
-          [
-            req.user.id,
-            title || null,
-            content,
-            source || null,
-            sourceType,
-            JSON.stringify(metadata)
-          ]
-        );
-
-      res.status(201).json({
-        success: true,
-        knowledge:
-          result.rows[0]
-      });
-    } catch (error) {
-      console.error(
-        "Save knowledge error:",
-        error
-      );
-
-      res.status(500).json({
-        success: false,
-        error:
-          "Could not save knowledge"
-      });
-    }
-  }
-);
-
-// ============================================================
-// LIST KNOWLEDGE
-// ============================================================
-
-app.get(
-  "/api/knowledge",
-  authenticateToken,
-  async (req, res) => {
-    try {
-      const limitValue =
-        Number(req.query.limit);
-
-      const limit =
-        Number.isInteger(limitValue)
-          ? Math.min(
-              Math.max(limitValue, 1),
-              100
-            )
-          : 50;
-
-      const result =
-        await pool.query(
-          `SELECT *
-           FROM knowledge
-           WHERE
-             user_id = $1
-             OR user_id IS NULL
-           ORDER BY
-             updated_at DESC
-           LIMIT $2`,
-          [
-            req.user.id,
-            limit
-          ]
-        );
-
-      res.json({
-        success: true,
-        knowledge:
-          result.rows
-      });
-    } catch (error) {
-      console.error(
-        "Load knowledge error:",
-        error
-      );
-
-      res.status(500).json({
-        success: false,
-        error:
-          "Could not load knowledge"
-      });
-    }
-  }
-);
-
-// ============================================================
-// GET KNOWLEDGE ITEM
-// ============================================================
-
-app.get(
-  "/api/knowledge/:id",
-  authenticateToken,
-  async (req, res) => {
-    try {
-      const id =
-        Number(req.params.id);
-
-      if (
-        !Number.isInteger(id) ||
-        id <= 0
-      ) {
-        return res.status(400).json({
-          success: false,
-          error:
-            "Invalid knowledge ID"
-        });
-      }
-
-      const result =
-        await pool.query(
-          `SELECT *
-           FROM knowledge
-           WHERE id = $1
-           AND (
-             user_id = $2
-             OR user_id IS NULL
-           )`,
-          [
-            id,
-            req.user.id
-          ]
-        );
-
-      if (
-        result.rows.length === 0
-      ) {
-        return res.status(404).json({
-          success: false,
-          error:
-            "Knowledge not found"
-        });
-      }
-
-      res.json({
-        success: true,
-        knowledge:
-          result.rows[0]
-      });
-    } catch (error) {
-      console.error(
-        "Get knowledge error:",
-        error
-      );
-
-      res.status(500).json({
-        success: false,
-        error:
-          "Could not load knowledge"
-      });
-    }
-  }
-);
-
-// ============================================================
-// DELETE KNOWLEDGE
-// ============================================================
-
-app.delete(
-  "/api/knowledge/:id",
-  authenticateToken,
-  async (req, res) => {
-    try {
-      const id =
-        Number(req.params.id);
-
-      if (
-        !Number.isInteger(id) ||
-        id <= 0
-      ) {
-        return res.status(400).json({
-          success: false,
-          error:
-            "Invalid knowledge ID"
-        });
-      }
-
-      const result =
-        await pool.query(
-          `DELETE FROM knowledge
-           WHERE id = $1
-           AND user_id = $2
-           RETURNING id`,
-          [
-            id,
-            req.user.id
-          ]
-        );
-
-      if (
-        result.rows.length === 0
-      ) {
-        return res.status(404).json({
-          success: false,
-          error:
-            "Knowledge not found"
-        });
-      }
-
-      res.json({
-        success: true,
-        message:
-          "Knowledge deleted"
-      });
-    } catch (error) {
-      console.error(
-        "Delete knowledge error:",
-        error
-      );
-
-      res.status(500).json({
-        success: false,
-        error:
-          "Could not delete knowledge"
-      });
-    }
-  }
-);
-
-// ============================================================
-// TASK MANAGEMENT
-// ============================================================
-
-app.post(
-  "/api/tasks",
-  authenticateToken,
-  async (req, res) => {
-    try {
-      const task =
-        normalizeText(
-          req.body?.task
-        );
-
-      const priority =
-        normalizeImportance(
-          req.body?.priority
-        );
-
-      const metadata =
-        safeMetadata(
-          req.body?.metadata
-        );
-
-      if (!task) {
-        return res.status(400).json({
-          success: false,
-          error:
-            "Task is required"
-        });
-      }
-
-      const result =
-        await pool.query(
-          `INSERT INTO tasks
-           (
-             user_id,
-             task,
-             priority,
-             metadata
-           )
-           VALUES
-           ($1, $2, $3, $4::jsonb)
-           RETURNING *`,
-          [
-            req.user.id,
-            task,
-            priority,
-            JSON.stringify(metadata)
-          ]
-        );
-
-      await systemLog(
-        "info",
-        "tasks",
-        "Task created",
-        {
-          userId:
-            req.user.id,
-          taskId:
-            result.rows[0].id
-        }
-      );
-
-      res.status(201).json({
-        success: true,
-        task:
-          result.rows[0]
-      });
-    } catch (error) {
-      console.error(
-        "Create task error:",
-        error
-      );
-
-      res.status(500).json({
-        success: false,
-        error:
-          "Could not create task"
-      });
-    }
-  }
-);
-
-// ============================================================
-// LIST TASKS
-// ============================================================
-
-app.get(
-  "/api/tasks",
-  authenticateToken,
-  async (req, res) => {
-    try {
-      const result =
-        await pool.query(
-          `SELECT *
-           FROM tasks
-           WHERE user_id = $1
-           ORDER BY
-             created_at DESC`,
-          [req.user.id]
-        );
-
-      res.json({
-        success: true,
-        tasks: result.rows
-      });
-    } catch (error) {
-      console.error(
-        "Load tasks error:",
-        error
-      );
-
-      res.status(500).json({
-        success: false,
-        error:
-          "Could not load tasks"
-      });
-    }
-  }
-);
-
-// ============================================================
-// GET TASK
-// ============================================================
-
-app.get(
-  "/api/tasks/:id",
-  authenticateToken,
-  async (req, res) => {
-    try {
-      const id =
-        Number(req.params.id);
-
-      if (
-        !Number.isInteger(id) ||
-        id <= 0
-      ) {
-        return res.status(400).json({
-          success: false,
-          error:
-            "Invalid task ID"
-        });
-      }
-
-      const result =
-        await pool.query(
-          `SELECT *
-           FROM tasks
-           WHERE id = $1
-           AND user_id = $2`,
-          [
-            id,
-            req.user.id
-          ]
-        );
-
-      if (
-        result.rows.length === 0
-      ) {
-        return res.status(404).json({
-          success: false,
-          error:
-            "Task not found"
-        });
-      }
-
-      res.json({
-        success: true,
-        task:
-          result.rows[0]
-      });
-    } catch (error) {
-      console.error(
-        "Get task error:",
-        error
-      );
-
-      res.status(500).json({
-        success: false,
-        error:
-          "Could not load task"
-      });
-    }
-  }
-);
-
-// ============================================================
-// UPDATE TASK
-// ============================================================
-
-app.patch(
-  "/api/tasks/:id",
-  authenticateToken,
-  async (req, res) => {
-    try {
-      const id =
-        Number(req.params.id);
-
-      if (
-        !Number.isInteger(id) ||
-        id <= 0
-      ) {
-        return res.status(400).json({
-          success: false,
-          error:
-            "Invalid task ID"
-        });
-      }
-
-      const allowedStatuses = [
-        "pending",
-        "planning",
-        "running",
-        "completed",
-        "failed",
-        "cancelled"
-      ];
-
-      const requestedStatus =
-        normalizeText(
-          req.body?.status
-        );
-
-      if (
-        requestedStatus &&
-        !allowedStatuses.includes(
-          requestedStatus
-        )
-      ) {
-        return res.status(400).json({
-          success: false,
-          error:
-            "Invalid task status"
-        });
-      }
-
-      const resultText =
-        typeof req.body?.result ===
-        "string"
-          ? req.body.result
-          : null;
-
-      const errorText =
-        typeof req.body?.error ===
-        "string"
-          ? req.body.error
-          : null;
-
-      const result =
-        await pool.query(
-          `UPDATE tasks
-           SET
-             status =
-               COALESCE(
-                 $1,
-                 status
-               ),
-             result =
-               COALESCE(
-                 $2,
-                 result
-               ),
-             error =
-               COALESCE(
-                 $3,
-                 error
-               ),
-             updated_at =
-               CURRENT_TIMESTAMP
-           WHERE id = $4
-           AND user_id = $5
-           RETURNING *`,
-          [
-            requestedStatus || null,
-            resultText,
-            errorText,
-            id,
-            req.user.id
-          ]
-        );
-
-      if (
-        result.rows.length === 0
-      ) {
-        return res.status(404).json({
-          success: false,
-          error:
-            "Task not found"
-        });
-      }
-
-      res.json({
-        success: true,
-        task:
-          result.rows[0]
-      });
-    } catch (error) {
-      console.error(
-        "Update task error:",
-        error
-      );
-
-      res.status(500).json({
-        success: false,
-        error:
-          "Could not update task"
-      });
-    }
-  }
-);
-
-// ============================================================
-// DELETE TASK
-// ============================================================
-
-app.delete(
-  "/api/tasks/:id",
-  authenticateToken,
-  async (req, res) => {
-    try {
-      const id =
-        Number(req.params.id);
-
-      if (
-        !Number.isInteger(id) ||
-        id <= 0
-      ) {
-        return res.status(400).json({
-          success: false,
-          error:
-            "Invalid task ID"
-        });
-      }
-
-      const result =
-        await pool.query(
-          `DELETE FROM tasks
-           WHERE id = $1
-           AND user_id = $2
-           RETURNING id`,
-          [
-            id,
-            req.user.id
-          ]
-        );
-
-      if (
-        result.rows.length === 0
-      ) {
-        return res.status(404).json({
-          success: false,
-          error:
-            "Task not found"
-        });
-      }
-
-      res.json({
-        success: true,
-        message:
-          "Task deleted"
-      });
-    } catch (error) {
-      console.error(
-        "Delete task error:",
-        error
-      );
-
-      res.status(500).json({
-        success: false,
-        error:
-          "Could not delete task"
-      });
-    }
-  }
-);
-
-// ============================================================
-// CAPABILITIES
-// ============================================================
-
-app.get(
-  "/api/capabilities",
-  authenticateToken,
-  async (req, res) => {
-    try {
-      const result =
-        await pool.query(
-          `SELECT
-             id,
-             name,
-             description,
-             category,
-             module_path,
-             enabled,
-             version,
-             metadata,
-             created_at,
-             updated_at
-           FROM capabilities
-           WHERE enabled = TRUE
-           ORDER BY category, name`
-        );
-
-      res.json({
-        success: true,
-        capabilities:
-          result.rows
-      });
-    } catch (error) {
-      console.error(
-        "Load capabilities error:",
-        error
-      );
-
-      res.status(500).json({
-        success: false,
-        error:
-          "Could not load capabilities"
-      });
-    }
-  }
-);
-
-// ============================================================
-// TOOLS
-// ============================================================
-
-app.get(
-  "/api/tools",
-  authenticateToken,
-  async (req, res) => {
-    try {
-      const result =
-        await pool.query(
-          `SELECT
-             id,
-             name,
-             description,
-             category,
-             enabled,
-             requires_auth,
-             input_schema,
-             version,
-             metadata
-           FROM tools
-           WHERE enabled = TRUE
-           ORDER BY category, name`
-        );
-
-      res.json({
-        success: true,
-        tools: result.rows
-      });
-    } catch (error) {
-      console.error(
-        "Load tools error:",
-        error
-      );
-
-      res.status(500).json({
-        success: false,
-        error:
-          "Could not load tools"
-      });
-    }
-  }
-);
-
-// ============================================================
-// AGENT RUNS
-// ============================================================
-
-app.post(
-  "/api/agent-runs",
-  authenticateToken,
-  async (req, res) => {
-    try {
-      const goal =
-        normalizeText(
-          req.body?.goal
-        );
-
-      const taskId =
-        Number(req.body?.taskId);
-
-      const metadata =
-        safeMetadata(
-          req.body?.metadata
-        );
-
-      if (!goal) {
-        return res.status(400).json({
-          success: false,
-          error:
-            "Agent goal is required"
-        });
-      }
-
-      let validTaskId = null;
-
-      if (
-        Number.isInteger(taskId) &&
-        taskId > 0
-      ) {
-        const taskCheck =
-          await pool.query(
-            `SELECT id
-             FROM tasks
-             WHERE id = $1
-             AND user_id = $2`,
-            [
-              taskId,
-              req.user.id
-            ]
-          );
-
-        if (
-          taskCheck.rows.length === 0
-        ) {
-          return res.status(404).json({
-            success: false,
-            error:
-              "Task not found"
-          });
-        }
-
-        validTaskId = taskId;
-      }
-
-      const result =
-        await pool.query(
-          `INSERT INTO agent_runs
-           (
-             user_id,
-             task_id,
-             goal,
-             status,
-             metadata
+             source_label,
+             tags
            )
            VALUES
            (
              $1,
              $2,
              $3,
-             'planning',
-             $4::jsonb
+             $4,
+             $5,
+             $6,
+             $7,
+             $8
            )
-           RETURNING *`,
+           RETURNING
+             *`,
+
           [
+
             req.user.id,
-            validTaskId,
-            goal,
-            JSON.stringify(metadata)
+
+            title,
+
+            validation.value,
+
+            memoryType,
+
+            importance,
+
+            source,
+
+            sourceLabel,
+
+            tags
+
           ]
+
         );
 
-      res.status(201).json({
-        success: true,
-        agentRun:
+
+      if (
+        result.rows.length ===
+        0
+      ) {
+
+        throw new Error(
+          "Memory creation returned no record"
+        );
+
+      }
+
+
+      const memory =
+        sanitizeMemoryRecord(
           result.rows[0]
+        );
+
+
+      await systemLog(
+
+        "info",
+
+        "memory",
+
+        "User memory created",
+
+        {
+
+          userId:
+            req.user.id,
+
+          memoryId:
+            memory.id,
+
+          memoryType:
+            memory.memory_type,
+
+          importance:
+            memory.importance
+
+        }
+
+      );
+
+
+      return res.status(201).json({
+
+        success:
+          true,
+
+        memory
+
       });
+
     } catch (error) {
+
       console.error(
-        "Create agent run error:",
+        "Create memory error:",
         error
       );
 
-      res.status(500).json({
-        success: false,
+
+      await systemLog(
+
+        "error",
+
+        "memory",
+
+        "User memory creation failed",
+
+        {
+
+          userId:
+            req.user?.id,
+
+          message:
+            error?.message
+
+        }
+
+      );
+
+
+      return res.status(500).json({
+
+        success:
+          false,
+
         error:
-          "Could not create agent run"
+          "Could not create memory",
+
+        code:
+          "MEMORY_CREATE_FAILED"
+
       });
+
     }
+
   }
 );
 
+
 // ============================================================
-// LIST AGENT RUNS
+// LIST USER MEMORY
 // ============================================================
 
 app.get(
-  "/api/agent-runs",
+  "/api/memory",
   authenticateToken,
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
+
     try {
-      const result =
-        await pool.query(
-          `SELECT *
-           FROM agent_runs
-           WHERE user_id = $1
-           ORDER BY started_at DESC`,
-          [req.user.id]
+
+      const limit =
+        normalizeMemoryInteger(
+
+          req.query?.limit,
+
+          MEMORY_CONFIG
+            .DEFAULT_RETRIEVAL_LIMIT,
+
+          1,
+
+          MEMORY_CONFIG
+            .MAX_RETRIEVAL_LIMIT
+
         );
 
-      res.json({
-        success: true,
-        agentRuns:
-          result.rows
+
+      const offset =
+        normalizeMemoryInteger(
+
+          req.query?.offset,
+
+          0,
+
+          0,
+
+          Number.MAX_SAFE_INTEGER
+
+        );
+
+
+      const type =
+        normalizeText(
+          req.query?.type
+        ).toLowerCase();
+
+
+      const importance =
+        req.query?.importance !==
+        undefined
+
+          ? normalizeMemoryInteger(
+
+              req.query.importance,
+
+              1,
+
+              MEMORY_CONFIG.MIN_IMPORTANCE,
+
+              MEMORY_CONFIG.MAX_IMPORTANCE
+
+            )
+
+          : null;
+
+
+      const query =
+        normalizeMemorySearchQuery(
+          req.query?.q
+        );
+
+
+      const conditions = [
+
+        `user_id = $1`
+
+      ];
+
+
+      const values = [
+
+        req.user.id
+
+      ];
+
+
+      let parameterIndex =
+        2;
+
+
+      if (
+        type &&
+        MEMORY_CONFIG.ALLOWED_TYPES
+          .includes(type)
+      ) {
+
+        conditions.push(
+          `memory_type = $${parameterIndex}`
+        );
+
+        values.push(
+          type
+        );
+
+        parameterIndex++;
+
+      }
+
+
+      if (
+        importance !== null
+      ) {
+
+        conditions.push(
+          `importance >= $${parameterIndex}`
+        );
+
+        values.push(
+          importance
+        );
+
+        parameterIndex++;
+
+      }
+
+
+      if (
+        query
+      ) {
+
+        conditions.push(
+
+          `(content ILIKE $${parameterIndex}
+            OR title ILIKE $${parameterIndex}
+            OR source_label ILIKE $${parameterIndex})`
+
+        );
+
+        values.push(
+          `%${query}%`
+        );
+
+        parameterIndex++;
+
+      }
+
+
+      values.push(
+        limit
+      );
+
+      const limitParameter =
+        parameterIndex;
+
+      parameterIndex++;
+
+
+      values.push(
+        offset
+      );
+
+      const offsetParameter =
+        parameterIndex;
+
+
+      const result =
+        await pool.query(
+
+          `SELECT
+             *
+           FROM user_memory
+           WHERE ${conditions.join(
+             " AND "
+           )}
+           ORDER BY
+             importance DESC,
+             updated_at DESC,
+             id DESC
+           LIMIT $${limitParameter}
+           OFFSET $${offsetParameter}`,
+
+          values
+
+        );
+
+
+      const memories =
+        result.rows.map(
+          sanitizeMemoryRecord
+        );
+
+
+      return res.json({
+
+        success:
+          true,
+
+        memories,
+
+        pagination: {
+
+          limit,
+
+          offset,
+
+          returned:
+            memories.length
+
+        }
+
       });
+
     } catch (error) {
+
       console.error(
-        "Load agent runs error:",
+        "List memory error:",
         error
       );
 
-      res.status(500).json({
-        success: false,
+
+      return res.status(500).json({
+
+        success:
+          false,
+
         error:
-          "Could not load agent runs"
+          "Could not load memories",
+
+        code:
+          "MEMORY_LIST_FAILED"
+
       });
+
     }
+
   }
 );
 
-     // ============================================================
-// CHAT
+
+// ============================================================
+// GET SINGLE MEMORY
 // ============================================================
 
-app.post(
-  "/api/chat",
+app.get(
+  "/api/memory/:memoryId",
   authenticateToken,
-  async (req, res) => {
-    const startedAt = Date.now();
+  async (
+    req,
+    res
+  ) => {
 
     try {
-      if (!openai) {
-        return res.status(503).json({
-          success: false,
+
+      const memory =
+        await resolveUserMemory(
+
+          req.user.id,
+
+          req.params.memoryId
+
+        );
+
+
+      if (!memory) {
+
+        return res.status(404).json({
+
+          success:
+            false,
+
           error:
-            "OPENAI_API_KEY is not configured"
+            "Memory not found",
+
+          code:
+            "MEMORY_NOT_FOUND"
+
         });
+
       }
 
-      const message = normalizeText(
-        req.body?.message
-      );
 
-      const sessionId = normalizeText(
-        req.body?.sessionId
-      );
+      // Update access timestamp.
+      //
+      // Failure here should NOT prevent returning the memory.
 
-      if (!message) {
-        return res.status(400).json({
-          success: false,
-          error:
-            "Message is required"
-        });
+      try {
+
+        await pool.query(
+
+          `UPDATE user_memory
+           SET
+             last_accessed_at =
+               CURRENT_TIMESTAMP
+           WHERE id = $1
+           AND user_id = $2`,
+
+          [
+
+            memory.id,
+
+            req.user.id
+
+          ]
+
+        );
+
+      } catch (
+        accessError
+      ) {
+
+        console.error(
+
+          "Memory access timestamp update failed:",
+
+          accessError
+
+        );
+
       }
 
-      let conversation;
 
-      // ======================================================
-      // FIND OR CREATE CONVERSATION
-      // ======================================================
+      return res.json({
 
-      if (sessionId) {
-        const conversationResult =
-          await pool.query(
-            `SELECT *
-             FROM conversations
-             WHERE user_id = $1
-             AND session_id = $2`,
-            [
-              req.user.id,
-              sessionId
-            ]
+        success:
+          true,
+
+        memory:
+          sanitizeMemoryRecord(
+            memory
+          )
+
+      });
+
+    } catch (error) {
+
+      console.error(
+        "Get memory error:",
+        error
+      );
+
+
+      return res.status(500).json({
+
+        success:
+          false,
+
+        error:
+          "Could not load memory",
+
+        code:
+          "MEMORY_GET_FAILED"
+
+      });
+
+    }
+
+  }
+);
+
+
+// ============================================================
+// UPDATE USER MEMORY
+// ============================================================
+
+app.patch(
+  "/api/memory/:memoryId",
+  authenticateToken,
+  async (
+    req,
+    res
+  ) => {
+
+    try {
+
+      const existing =
+        await resolveUserMemory(
+
+          req.user.id,
+
+          req.params.memoryId
+
+        );
+
+
+      if (!existing) {
+
+        return res.status(404).json({
+
+          success:
+            false,
+
+          error:
+            "Memory not found",
+
+          code:
+            "MEMORY_NOT_FOUND"
+
+        });
+
+      }
+
+
+      const updates = [];
+
+      const values = [];
+
+
+      // --------------------------------------------------------
+      // Content
+      // --------------------------------------------------------
+
+      if (
+        req.body?.content !==
+        undefined
+      ) {
+
+        const validation =
+          validateMemoryContent(
+            req.body.content
           );
+
 
         if (
-          conversationResult.rows.length === 0
+          !validation.valid
         ) {
-          return res.status(404).json({
-            success: false,
+
+          return res.status(400).json({
+
+            success:
+              false,
+
             error:
-              "Conversation not found"
+              validation.error,
+
+            code:
+              validation.code
+
           });
+
         }
 
-        conversation =
-          conversationResult.rows[0];
-      } else {
-        const newSessionId =
-          crypto.randomUUID();
 
-        const title =
-          message.length > 80
-            ? `${message.slice(0, 77)}...`
-            : message;
+        updates.push(
+          `content = $${values.length + 1}`
+        );
 
-        const conversationResult =
-          await pool.query(
-            `INSERT INTO conversations
-             (
-               user_id,
-               session_id,
-               title
-             )
-             VALUES
-             ($1, $2, $3)
-             RETURNING *`,
-            [
-              req.user.id,
-              newSessionId,
-              title
-            ]
-          );
+        values.push(
+          validation.value
+        );
 
-        conversation =
-          conversationResult.rows[0];
       }
 
-      // ======================================================
-      // SAVE USER MESSAGE
-      // ======================================================
 
-      await pool.query(
-        `INSERT INTO messages
-         (
-           conversation_id,
-           role,
-           content
-         )
-         VALUES
-         ($1, $2, $3)`,
-        [
-          conversation.id,
-          "user",
-          message
-        ]
+      // --------------------------------------------------------
+      // Title
+      // --------------------------------------------------------
+
+      if (
+        req.body?.title !==
+        undefined
+      ) {
+
+        const title =
+          normalizeMemoryTitle(
+            req.body.title
+          );
+
+
+        updates.push(
+          `title = $${values.length + 1}`
+        );
+
+        values.push(
+          title
+        );
+
+      }
+
+
+      
+      // --------------------------------------------------------
+      // Memory type
+      // --------------------------------------------------------
+
+      if (
+        req.body?.memory_type !==
+        undefined ||
+        req.body?.type !==
+        undefined
+      ) {
+
+        const type =
+          normalizeMemoryType(
+
+            req.body?.memory_type ??
+            req.body?.type
+
+          );
+
+
+        updates.push(
+          `memory_type = $${values.length + 1}`
+        );
+
+        values.push(
+          type
+        );
+
+      }
+
+
+      // --------------------------------------------------------
+      // Importance
+      // --------------------------------------------------------
+
+      if (
+        req.body?.importance !==
+        undefined
+      ) {
+
+        const importance =
+          normalizeMemoryImportance(
+            req.body.importance
+          );
+
+
+        updates.push(
+          `importance = $${values.length + 1}`
+        );
+
+        values.push(
+          importance
+        );
+
+      }
+
+
+      // --------------------------------------------------------
+      // Source
+      // --------------------------------------------------------
+
+      if (
+        req.body?.source !==
+        undefined
+      ) {
+
+        const source =
+          normalizeMemorySource(
+            req.body.source
+          );
+
+
+        updates.push(
+          `source = $${values.length + 1}`
+        );
+
+        values.push(
+          source
+        );
+
+      }
+
+
+      // --------------------------------------------------------
+      // Source label
+      // --------------------------------------------------------
+
+      if (
+        req.body?.source_label !==
+        undefined
+      ) {
+
+        const sourceLabel =
+          normalizeMemorySourceLabel(
+            req.body.source_label
+          );
+
+
+        updates.push(
+          `source_label = $${values.length + 1}`
+        );
+
+        values.push(
+          sourceLabel
+        );
+
+      }
+
+
+      // --------------------------------------------------------
+      // Tags
+      // --------------------------------------------------------
+
+      if (
+        req.body?.tags !==
+        undefined
+      ) {
+
+        const tags =
+          normalizeMemoryTags(
+            req.body.tags
+          );
+
+
+        updates.push(
+          `tags = $${values.length + 1}`
+        );
+
+        values.push(
+          tags
+        );
+
+      }
+
+
+      if (
+        updates.length ===
+        0
+      ) {
+
+        return res.status(400).json({
+
+          success:
+            false,
+
+          error:
+            "No valid memory fields provided",
+
+          code:
+            "NO_MEMORY_UPDATES"
+
+        });
+
+      }
+
+
+      updates.push(
+        "updated_at = CURRENT_TIMESTAMP"
       );
 
-      // ======================================================
-      // LOAD RECENT CONVERSATION HISTORY
-      // ======================================================
 
-      const historyResult =
+      values.push(
+        req.params.memoryId
+      );
+
+      const memoryIdParameter =
+        values.length;
+
+
+      values.push(
+        req.user.id
+      );
+
+      const userIdParameter =
+        values.length;
+
+
+      const result =
         await pool.query(
-          `SELECT
-             role,
-             content
-           FROM (
-             SELECT
-               id,
-               role,
-               content,
-               created_at
-             FROM messages
-             WHERE conversation_id = $1
-             ORDER BY
-               created_at DESC,
-               id DESC
-             LIMIT 30
-           ) AS recent_messages
-           ORDER BY
-             created_at ASC,
-             id ASC`,
-          [conversation.id]
+
+          `UPDATE user_memory
+           SET
+             ${updates.join(",\n             ")}
+           WHERE id = $${memoryIdParameter}
+           AND user_id = $${userIdParameter}
+           RETURNING *`,
+
+          values
+
         );
 
-      // ======================================================
-      // LOAD USER MEMORY
-      // ======================================================
 
-      const memoryResult =
-        await pool.query(
-          `SELECT
-             memory_key,
-             memory_value,
-             memory_type,
-             importance
-           FROM user_memory
-           WHERE user_id = $1
-           ORDER BY
-             importance DESC,
-             updated_at DESC
-           LIMIT 20`,
-          [req.user.id]
+      if (
+        result.rows.length ===
+        0
+      ) {
+
+        return res.status(404).json({
+
+          success:
+            false,
+
+          error:
+            "Memory not found",
+
+          code:
+            "MEMORY_NOT_FOUND"
+
+        });
+
+      }
+
+
+      const memory =
+        sanitizeMemoryRecord(
+          result.rows[0]
         );
 
-      // ======================================================
-      // LOAD LONG-TERM MEMORY
-      // ======================================================
 
-      const longTermMemoryResult =
+      await systemLog(
+
+        "info",
+
+        "memory",
+
+        "User memory updated",
+
+        {
+
+          userId:
+            req.user.id,
+
+          memoryId:
+            memory.id
+
+        }
+
+      );
+
+
+      return res.json({
+
+        success:
+          true,
+
+        memory
+
+      });
+
+    } catch (error) {
+
+      console.error(
+        "Update memory error:",
+        error
+      );
+
+
+      return res.status(500).json({
+
+        success:
+          false,
+
+        error:
+          "Could not update memory",
+
+        code:
+          "MEMORY_UPDATE_FAILED"
+
+      });
+
+    }
+
+  }
+);
+
+// ============================================================
+// DELETE USER MEMORY
+// ============================================================
+
+app.delete(
+  "/api/memory/:memoryId",
+  authenticateToken,
+  async (
+    req,
+    res
+  ) => {
+
+    try {
+
+      const result =
         await pool.query(
-          `SELECT
+
+          `DELETE FROM user_memory
+           WHERE id = $1
+           AND user_id = $2
+           RETURNING
+             id`,
+
+          [
+
+            req.params.memoryId,
+
+            req.user.id
+
+          ]
+
+        );
+
+
+      if (
+        result.rows.length ===
+        0
+      ) {
+
+        return res.status(404).json({
+
+          success:
+            false,
+
+          error:
+            "Memory not found",
+
+          code:
+            "MEMORY_NOT_FOUND"
+
+        });
+
+      }
+
+
+      await systemLog(
+
+        "info",
+
+        "memory",
+
+        "User memory deleted",
+
+        {
+
+          userId:
+            req.user.id,
+
+          memoryId:
+            result.rows[0].id
+
+        }
+
+      );
+
+
+      return res.json({
+
+        success:
+          true,
+
+        message:
+          "Memory deleted",
+
+        memoryId:
+          result.rows[0].id
+
+      });
+
+    } catch (error) {
+
+      console.error(
+        "Delete memory error:",
+        error
+      );
+
+
+      return res.status(500).json({
+
+        success:
+          false,
+
+        error:
+          "Could not delete memory",
+
+        code:
+          "MEMORY_DELETE_FAILED"
+
+      });
+
+    }
+
+  }
+);
+
+
+// ============================================================
+// CREATE LONG-TERM MEMORY
+// ============================================================
+//
+// Long-term memory is separated from ordinary user memory so
+// future Agent/AI systems can treat persistent knowledge with
+// stronger retrieval semantics.
+//
+
+app.post(
+  "/api/long-term-memory",
+  authenticateToken,
+  async (
+    req,
+    res
+  ) => {
+
+    try {
+
+      const validation =
+        validateMemoryContent(
+          req.body?.content
+        );
+
+
+      if (
+        !validation.valid
+      ) {
+
+        return res.status(400).json({
+
+          success:
+            false,
+
+          error:
+            validation.error,
+
+          code:
+            validation.code
+
+        });
+
+      }
+
+
+      const title =
+        normalizeMemoryTitle(
+          req.body?.title
+        );
+
+
+      const memoryType =
+        normalizeMemoryType(
+          req.body?.memory_type ||
+          req.body?.type
+        );
+
+
+      const importance =
+        normalizeMemoryImportance(
+
+          req.body?.importance ??
+          7
+
+        );
+
+
+      const source =
+        normalizeMemorySource(
+          req.body?.source
+        );
+
+
+      const sourceLabel =
+        normalizeMemorySourceLabel(
+          req.body?.source_label
+        );
+
+
+      const tags =
+        normalizeMemoryTags(
+          req.body?.tags
+        );
+
+
+      const result =
+        await pool.query(
+
+          `INSERT INTO long_term_memory
+           (
+             user_id,
+             title,
              content,
              memory_type,
              importance,
-             source
+             source,
+             source_label,
+             tags
+           )
+           VALUES
+           (
+             $1,
+             $2,
+             $3,
+             $4,
+             $5,
+             $6,
+             $7,
+             $8
+           )
+           RETURNING *`,
+
+          [
+
+            req.user.id,
+
+            title,
+
+            validation.value,
+
+            memoryType,
+
+            importance,
+
+            source,
+
+            sourceLabel,
+
+            tags
+
+          ]
+
+        );
+
+
+      if (
+        result.rows.length ===
+        0
+      ) {
+
+        throw new Error(
+          "Long-term memory creation returned no record"
+        );
+
+      }
+
+
+      const memory =
+        sanitizeMemoryRecord(
+          result.rows[0]
+        );
+
+
+      await systemLog(
+
+        "info",
+
+        "memory",
+
+        "Long-term memory created",
+
+        {
+
+          userId:
+            req.user.id,
+
+          memoryId:
+            memory.id,
+
+          importance:
+            memory.importance
+
+        }
+
+      );
+
+
+      return res.status(201).json({
+
+        success:
+          true,
+
+        memory
+
+      });
+
+    } catch (error) {
+
+      console.error(
+        "Create long-term memory error:",
+        error
+      );
+
+
+      return res.status(500).json({
+
+        success:
+          false,
+
+        error:
+          "Could not create long-term memory",
+
+        code:
+          "LONG_TERM_MEMORY_CREATE_FAILED"
+
+      });
+
+    }
+
+  }
+);
+
+
+// ============================================================
+// LIST LONG-TERM MEMORY
+// ============================================================
+
+app.get(
+  "/api/long-term-memory",
+  authenticateToken,
+  async (
+    req,
+    res
+  ) => {
+
+    try {
+
+      const limit =
+        normalizeMemoryInteger(
+
+          req.query?.limit,
+
+          MEMORY_CONFIG
+            .DEFAULT_RETRIEVAL_LIMIT,
+
+          1,
+
+          MEMORY_CONFIG
+            .MAX_RETRIEVAL_LIMIT
+
+        );
+
+
+      const offset =
+        normalizeMemoryInteger(
+
+          req.query?.offset,
+
+          0,
+
+          0,
+
+          Number.MAX_SAFE_INTEGER
+
+        );
+
+
+      const result =
+        await pool.query(
+
+          `SELECT
+             *
            FROM long_term_memory
            WHERE user_id = $1
            ORDER BY
              importance DESC,
-             updated_at DESC
-           LIMIT 20`,
-          [req.user.id]
-        );
+             updated_at DESC,
+             id DESC
+           LIMIT $2
+           OFFSET $3`,
 
-      // ======================================================
-      // LOAD KNOWLEDGE
-      // ======================================================
-
-      const knowledgeResult =
-        await pool.query(
-          `SELECT
-             title,
-             content,
-             source,
-             source_type
-           FROM knowledge
-           WHERE
-             user_id = $1
-             OR user_id IS NULL
-           ORDER BY
-             updated_at DESC
-           LIMIT 10`,
-          [req.user.id]
-        );
-
-      // ======================================================
-      // FORMAT MEMORY
-      // ======================================================
-
-      const memoryText =
-        memoryResult.rows.length > 0
-          ? memoryResult.rows
-              .map(
-                memory =>
-                  `- ${memory.memory_key}: ${memory.memory_value}`
-              )
-              .join("\n")
-          : "No persistent memory available.";
-
-      const longTermMemoryText =
-        longTermMemoryResult.rows.length > 0
-          ? longTermMemoryResult.rows
-              .map(
-                memory =>
-                  `- ${memory.content}`
-              )
-              .join("\n")
-          : "No long-term memory available.";
-
-      const knowledgeText =
-        knowledgeResult.rows.length > 0
-          ? knowledgeResult.rows
-              .map(
-                item =>
-                  `Title: ${
-                    item.title || "Untitled"
-                  }\nContent: ${
-                    item.content
-                  }`
-              )
-              .join("\n\n")
-          : "No additional knowledge available.";
-
-      // ======================================================
-      // SYSTEM PROMPT
-      // ======================================================
-
-      const systemPrompt = `
-You are Nkwasibwe IRHCF, an AI Agent Platform.
-
-Your purpose is not to behave as only a simple chatbot.
-
-Your goal is to help users understand problems, plan tasks,
-execute tasks when tools and capabilities are actually available,
-check results, identify errors, and provide useful final answers.
-
-Core workflow:
-
-Understand → Plan → Execute → Test → Repair → Verify → Deliver
-
-Important rules:
-
-1. Be helpful, accurate and honest.
-2. Do not claim that you performed an action when you did not.
-3. If you cannot access a required capability, explain what is missing.
-4. Use stored memory only when relevant.
-5. Respect user privacy and security.
-6. Never expose secrets, passwords, API keys or authentication tokens.
-7. Break complex tasks into clear steps.
-8. Clearly distinguish between planning and completed execution.
-9. Prefer practical solutions.
-10. Never pretend external actions were completed without confirmation.
-11. Do not invent tool results.
-12. Explain limitations clearly.
-
-USER PERSISTENT MEMORY:
-
-${memoryText}
-
-USER LONG-TERM MEMORY:
-
-${longTermMemoryText}
-
-KNOWLEDGE BASE:
-
-${knowledgeText}
-`;
-
-      // ======================================================
-      // BUILD AI MESSAGES
-      // ======================================================
-
-      const aiMessages = [
-        {
-          role: "system",
-          content: systemPrompt
-        },
-        ...historyResult.rows.map(
-          item => ({
-            role: item.role,
-            content: item.content
-          })
-        )
-      ];
-
-      // ======================================================
-// CALL OPENAI
-// ======================================================
-
-let completion;
-
-try {
-
-  completion =
-    await openai.chat.completions.create({
-      model:
-        config.openaiModel ||
-        "gpt-4o-mini",
-
-      messages:
-        aiMessages,
-
-      temperature: 0.7
-    });
-
-} catch (error) {
-
-  console.error(
-    "OpenAI API ERROR:",
-    error
-  );
-
-  // ----------------------------------------------------
-  // NO API CREDITS
-  // ----------------------------------------------------
-
-  if (
-    error &&
-    (
-      error.code ===
-        "credit_balance_exhausted" ||
-      error.code ===
-        "insufficient_quota"
-    )
-  ) {
-
-    return res.status(429).json({
-      success: false,
-      error:
-        "OpenAI API credits zarangiye. Ongera credits kuri OpenAI kugira ngo Nkwasibwe IRHCF ikomeze gukoresha AI.",
-      code:
-        "CREDIT_BALANCE_EXHAUSTED"
-    });
-
-  }
-
-  // ----------------------------------------------------
-  // OTHER OPENAI RATE LIMIT
-  // ----------------------------------------------------
-
-  if (
-    error &&
-    error.status === 429
-  ) {
-
-    return res.status(429).json({
-      success: false,
-      error:
-        "OpenAI API iri kugabanya requests cyangwa quota ntihagije. Ongera ugerageze nyuma gato.",
-      code:
-        "OPENAI_RATE_LIMITED"
-    });
-
-  }
-
-  // ----------------------------------------------------
-  // OPENAI AUTHENTICATION ERROR
-  // ----------------------------------------------------
-
-  if (
-    error &&
-    error.status === 401
-  ) {
-
-    return res.status(500).json({
-      success: false,
-      error:
-        "OpenAI API key ntabwo yemerewe cyangwa ntabwo ikora.",
-      code:
-        "OPENAI_AUTH_ERROR"
-    });
-
-  }
-
-  // ----------------------------------------------------
-  // OTHER OPENAI ERROR
-  // ----------------------------------------------------
-
-  return res.status(500).json({
-    success: false,
-    error:
-      "Nkwasibwe IRHCF ntiyashoboye kuvugana na OpenAI.",
-    code:
-      "OPENAI_API_ERROR"
-  });// ======================================================
-// NKWASIBWE AI ORCHESTRATION
-//
-// IMPORTANT:
-//
-// /api/chat does NOT know which AI provider is being used.
-//
-// It delegates provider selection to generateAIResponse().
-//
-// This separation is intentional:
-//
-// HTTP API
-//    ↓
-// Conversation Engine
-//    ↓
-// Memory Engine
-//    ↓
-// AI Provider Router
-//    ↓
-// Provider Adapter
-//
-// This allows us to add future providers without rewriting
-// the chat endpoint.
-// ======================================================
-
-let aiResult;
-
-try {
-
-  aiResult =
-    await generateAIResponse(
-      aiMessages,
-      {
-        providers:
-          AI_PROVIDER_ORDER
-      }
-    );
-
-} catch (error) {
-
-  console.error(
-    "NKWASIBWE AI ROUTER ERROR:",
-    {
-      code:
-        error &&
-        error.code,
-
-      message:
-        error &&
-        error.message,
-
-      attempts:
-        error &&
-        error.attempts
-          ? error.attempts
-          : []
-    }
-  );
-
-
-  /*
-   * Record the failure in the persistent system log.
-   *
-   * We deliberately do not store API keys, tokens, passwords,
-   * or full provider responses here.
-   */
-
-  await systemLog(
-    "error",
-    "ai-router",
-    "All AI providers failed",
-    {
-      userId:
-        req.user.id,
-
-      conversationId:
-        conversation.id,
-
-      code:
-        error &&
-        error.code
-          ? error.code
-          : "UNKNOWN",
-
-      attempts:
-        error &&
-        Array.isArray(
-          error.attempts
-        )
-          ? error.attempts
-          : []
-    }
-  );
-
-
-  if (
-    error &&
-    error.code ===
-      "INPUT_TOO_LARGE"
-  ) {
-
-    return res.status(413).json({
-      success: false,
-
-      error:
-        "Task nini ni ndende cyane. Gabanya ubwinshi bw'amakuru ugerageze kongera.",
-      
-      code:
-        "AI_INPUT_TOO_LARGE"
-    });
-
-  }
-
-
-  if (
-    error &&
-    error.code ===
-      "ALL_PROVIDERS_FAILED"
-  ) {
-
-    return res.status(503).json({
-
-      success: false,
-
-      error:
-        "Nkwasibwe IRHCF ntiyabonye AI provider iboneka ubu. Gemini, Groq na OpenAI byose byanze cyangwa ntibashyizweho.",
-
-      code:
-        "ALL_AI_PROVIDERS_FAILED",
-
-      providers:
-        error.attempts || []
-
-    });
-
-  }
-
-
-  return res.status(503).json({
-
-    success: false,
-
-    error:
-      "Nkwasibwe IRHCF ntiyashoboye kubona AI provider iboneka.",
-
-    code:
-      "AI_PROVIDER_ERROR"
-
-  });
-
-}
-
-
-// ======================================================
-// NORMALIZED AI RESPONSE
-// ======================================================
-
-const assistantMessage =
-  aiResult &&
-  typeof aiResult.response ===
-    "string" &&
-  aiResult.response.trim()
-    ? aiResult.response.trim()
-    : "Nkwasibwe IRHCF ntiyabonye igisubizo cya AI.";
-
-const selectedProvider =
-  aiResult &&
-  aiResult.provider
-    ? aiResult.provider
-    : "unknown";
-
-const selectedModel =
-  aiResult &&
-  aiResult.model
-    ? aiResult.model
-    : "unknown";
-
-const providerDurationMs =
-  aiResult &&
-  Number.isFinite(
-    aiResult.durationMs
-  )
-    ? aiResult.durationMs
-    : null;
-
-
-
-      // ======================================================
-      // SAVE ASSISTANT MESSAGE
-      // ======================================================
-
-      const savedAssistantMessage =
-        await pool.query(
-          `INSERT INTO messages
-           (
-             conversation_id,
-             role,
-             content
-           )
-           VALUES
-           ($1, $2, $3)
-           RETURNING *`,
           [
-            conversation.id,
-            "assistant",
-            assistantMessage
+
+            req.user.id,
+
+            limit,
+
+            offset
+
           ]
+
         );
 
-      // ======================================================
-      // UPDATE CONVERSATION
-      // ======================================================
 
-      await pool.query(
-        `UPDATE conversations
-         SET updated_at =
-           CURRENT_TIMESTAMP
-         WHERE id = $1`,
-        [conversation.id]
-      );
+      return res.json({
 
-      // ======================================================
-// CREATE AGENT RUN RECORD
-// ======================================================
+        success:
+          true,
 
-const durationMs =
-  Date.now() - startedAt;
+        memories:
+          result.rows.map(
+            sanitizeMemoryRecord
+          ),
 
+        pagination: {
 
-// ------------------------------------------------------
-// BUILD AI EXECUTION METADATA
-// ------------------------------------------------------
+          limit,
 
-const aiExecutionMetadata = {
-  source: "chat",
+          offset,
 
-  conversationId:
-    conversation.id,
+          returned:
+            result.rows.length
 
-  durationMs:
+        }
 
-    durationMs,
-
-  provider:
-    aiResult &&
-    aiResult.provider
-      ? aiResult.provider
-      : null,
-
-  model:
-    aiResult &&
-    aiResult.model
-      ? aiResult.model
-      : null,
-
-  latencyMs:
-    aiResult &&
-    typeof aiResult.latencyMs === "number"
-      ? aiResult.latencyMs
-      : null,
-
-  requestId:
-    aiResult &&
-    aiResult.requestId
-      ? aiResult.requestId
-      : null,
-
-  attempts:
-    aiResult &&
-    Array.isArray(aiResult.attempts)
-      ? aiResult.attempts
-      : [],
-
-  usage:
-    aiResult &&
-    aiResult.usage
-      ? aiResult.usage
-      : null,
-
-  providerOrder:
-    AI_CONFIG &&
-    Array.isArray(
-      AI_CONFIG.providerOrder
-    )
-      ? AI_CONFIG.providerOrder
-      : [],
-
-  executionMode:
-    "provider_router",
-
-  status:
-    "completed"
-};
-
-
-// ------------------------------------------------------
-// DETERMINE WHETHER FALLBACK WAS USED
-// ------------------------------------------------------
-
-const providerAttempts =
-  aiResult &&
-  Array.isArray(aiResult.attempts)
-    ? aiResult.attempts
-    : [];
-
-const failedProviderAttempts =
-  providerAttempts.filter(
-    function (attempt) {
-      return (
-        attempt &&
-        attempt.status === "failed"
-      );
-    }
-  );
-
-const fallbackUsed =
-  failedProviderAttempts.length > 0;
-
-
-// ------------------------------------------------------
-// ADD FALLBACK INFORMATION
-// ------------------------------------------------------
-
-aiExecutionMetadata.fallbackUsed =
-  fallbackUsed;
-
-aiExecutionMetadata.failedProviders =
-  failedProviderAttempts.map(
-    function (attempt) {
-      return {
-        provider:
-          attempt.provider || null,
-
-        attempt:
-          attempt.attempt || null,
-
-        code:
-          attempt.code || null,
-
-        latencyMs:
-          typeof attempt.latencyMs === "number"
-            ? attempt.latencyMs
-            : null
-      };
-    }
-  );
-
-
-// ------------------------------------------------------
-// CREATE AGENT RUN
-// ------------------------------------------------------
-
-const agentRunResult =
-  await pool.query(
-    `INSERT INTO agent_runs
-     (
-       user_id,
-       goal,
-       status,
-       result,
-       metadata,
-       completed_at
-     )
-     VALUES
-     (
-       $1,
-       $2,
-       'completed',
-       $3,
-       $4::jsonb,
-       CURRENT_TIMESTAMP
-     )
-     RETURNING *`,
-    [
-      req.user.id,
-
-      message,
-
-      assistantMessage,
-
-      JSON.stringify(
-        aiExecutionMetadata
-      )
-    ]
-  );
-
-
-// ------------------------------------------------------
-// EXTRACT CREATED AGENT RUN
-// ------------------------------------------------------
-
-const agentRun =
-  agentRunResult &&
-  agentRunResult.rows &&
-  agentRunResult.rows[0]
-    ? agentRunResult.rows[0]
-    : null;
-
-
-// ------------------------------------------------------
-// INTERNAL EXECUTION LOG
-// ------------------------------------------------------
-
-console.log(
-  "[AGENT RUN] Completed",
-  {
-    agentRunId:
-      agentRun &&
-      agentRun.id
-        ? agentRun.id
-        : null,
-
-    provider:
-      aiExecutionMetadata.provider,
-
-    model:
-      aiExecutionMetadata.model,
-
-    durationMs:
-      aiExecutionMetadata.durationMs,
-
-    latencyMs:
-      aiExecutionMetadata.latencyMs,
-
-    fallbackUsed:
-      aiExecutionMetadata.fallbackUsed
-  }
-);
-  
-      // ======================================================
-      // RESPONSE
-      // ======================================================
-
-      res.json({
-        success: true,
-        conversation: {
-          id: conversation.id,
-          session_id:
-            conversation.session_id,
-          title:
-            conversation.title
-        },
-        message:
-          savedAssistantMessage.rows[0],
-        response:
-          assistantMessage,
-        agentRun:
-          agentRunResult.rows[0],
-        durationMs
       });
 
     } catch (error) {
+
       console.error(
-        "Chat error:",
+        "List long-term memory error:",
         error
       );
 
-      await systemLog(
-        "error",
-        "chat",
-        "Chat request failed",
-        {
-          message:
-            error.message
-        }
-      );
 
-      res.status(500).json({
-        success: false,
+      return res.status(500).json({
+
+        success:
+          false,
+
         error:
-          "Could not process chat request"
+          "Could not load long-term memories",
+
+        code:
+          "LONG_TERM_MEMORY_LIST_FAILED"
+
       });
+
     }
+
   }
-);                
- // ============================================================
-// START SERVER
+);// ============================================================
+// GET LONG-TERM MEMORY
 // ============================================================
 
-async function startServer() {
-  try {
-    await initializeDatabase();
+app.get(
+  "/api/long-term-memory/:memoryId",
+  authenticateToken,
+  async (
+    req,
+    res
+  ) => {
 
-    app.listen(PORT, "0.0.0.0", () => {
-      console.log("================================");
-      console.log("Nkwasibwe IRHCF server is running");
-      console.log(`Port: ${PORT}`);
-      console.log(
-        `Environment: ${config.environment}`
-      );
-      console.log(
-        `AI: ${
-          openai
-            ? "Configured"
-            : "Not configured"
-        }`
-      );
-      console.log(
-        `Authentication: ${
-          JWT_SECRET
-            ? "Configured"
-            : "Not configured"
-        }`
-      );
-      console.log("================================");
-    });
-  } catch (error) {
-    console.error(
-      "Failed to start server:",
-      error
-    );
+    try {
 
-    process.exit(1);
+      const memory =
+        await resolveLongTermMemory(
+
+          req.user.id,
+
+          req.params.memoryId
+
+        );
+
+
+      if (!memory) {
+
+        return res.status(404).json({
+
+          success:
+            false,
+
+          error:
+            "Long-term memory not found",
+
+          code:
+            "LONG_TERM_MEMORY_NOT_FOUND"
+
+        });
+
+      }
+
+
+      try {
+
+        await pool.query(
+
+          `UPDATE long_term_memory
+           SET
+             last_accessed_at =
+               CURRENT_TIMESTAMP
+           WHERE id = $1
+           AND user_id = $2`,
+
+          [
+
+            memory.id,
+
+            req.user.id
+
+          ]
+
+        );
+
+      } catch (
+        accessError
+      ) {
+
+        console.error(
+
+          "Long-term memory access update failed:",
+
+          accessError
+
+        );
+
+      }
+
+
+      return res.json({
+
+        success:
+          true,
+
+        memory:
+          sanitizeMemoryRecord(
+            memory
+          )
+
+      });
+
+    } catch (error) {
+
+      console.error(
+        "Get long-term memory error:",
+        error
+      );
+
+
+      return res.status(500).json({
+
+        success:
+          false,
+
+        error:
+          "Could not load long-term memory",
+
+        code:
+          "LONG_TERM_MEMORY_GET_FAILED"
+
+      });
+
+    }
+
   }
-}
+);
 
-startServer();             
+
+// ============================================================
+// DELETE LONG-TERM MEMORY
+// ============================================================
+
+app.delete(
+  "/api/long-term-memory/:memoryId",
+  authenticateToken,
+  async (
+    req,
+    res
+  ) => {
+
+    try {
+
+      const result =
+        await pool.query(
+
+          `DELETE FROM long_term_memory
+           WHERE id = $1
+           AND user_id = $2
+           RETURNING id`,
+
+          [
+
+            req.params.memoryId,
+
+            req.user.id
+
+          ]
+
+        );
+
+
+      if (
+        result.rows.length ===
+        0
+      ) {
+
+        return res.status(404).json({
+
+          success:
+            false,
+
+          error:
+            "Long-term memory not found",
+
+          code:
+            "LONG_TERM_MEMORY_NOT_FOUND"
+
+        });
+
+      }
+
+
+      await systemLog(
+
+        "info",
+
+        "memory",
+
+        "Long-term memory deleted",
+
+        {
+
+          userId:
+            req.user.id,
+
+          memoryId:
+            result.rows[0].id
+
+        }
+
+      );
+
+
+      return res.json({
+
+        success:
+          true,
+
+        message:
+          "Long-term memory deleted",
+
+        memoryId:
+          result.rows[0].id
+
+      });
+
+    } catch (error) {
+
+      console.error(
+        "Delete long-term memory error:",
+        error
+      );
+
+
+      return res.status(500).json({
+
+        success:
+          false,
+
+        error:
+          "Could not delete long-term memory",
+
+        code:
+          "LONG_TERM_MEMORY_DELETE_FAILED"
+
+      });
+
+    }
+
+  }
+);
+
+
+// ============================================================
+// MEMORY SEARCH
+// ============================================================
+//
+// Searches both memory layers.
+//
+// Ownership remains mandatory.
+//
+// This endpoint is intended for the future AI Agent retrieval
+// pipeline.
+//
+
+app.get(
+  "/api/memory/search",
+  authenticateToken,
+  async (
+    req,
+    res
+  ) => {
+
+    try {
+
+      const query =
+        normalizeMemorySearchQuery(
+          req.query?.q
+        );
+
+
+      if (!query) {
+
+        return res.status(400).json({
+
+          success:
+            false,
+
+          error:
+            "Memory search query is required",
+
+          code:
+            "MEMORY_SEARCH_QUERY_REQUIRED"
+
+        });
+
+      }
+
+
+      const limit =
+        normalizeMemoryInteger(
+
+          req.query?.limit,
+
+          20,
+
+          1,
+
+          50
+
+        );
+
+
+      const searchPattern =
+        `%${query}%`;
+
+
+      const userMemoryResult =
+        await pool.query(
+
+          `SELECT
+             *,
+             1 AS memory_layer
+           FROM user_memory
+           WHERE user_id = $1
+           AND (
+             content ILIKE $2
+             OR title ILIKE $2
+             OR source_label ILIKE $2
+           )
+           ORDER BY
+             importance DESC,
+             updated_at DESC
+           LIMIT $3`,
+
+          [
+
+            req.user.id,
+
+            searchPattern,
+
+            limit
+
+          ]
+
+        );
+
+
+      const longTermResult =
+        await pool.query(
+
+          `SELECT
+             *,
+             2 AS memory_layer
+           FROM long_term_memory
+           WHERE user_id = $1
+           AND (
+             content ILIKE $2
+             OR title ILIKE $2
+             OR source_label ILIKE $2
+           )
+           ORDER BY
+             importance DESC,
+             updated_at DESC
+           LIMIT $3`,
+
+          [
+
+            req.user.id,
+
+            searchPattern,
+
+            limit
+
+          ]
+
+        );
+
+
+      const results = [
+
+        ...userMemoryResult.rows.map(
+          memory => ({
+            ...sanitizeMemoryRecord(
+              memory
+            ),
+            memory_layer:
+              "user"
+          })
+        ),
+
+        ...longTermResult.rows.map(
+          memory => ({
+            ...sanitizeMemoryRecord(
+              memory
+            ),
+            memory_layer:
+              "long_term"
+          })
+        )
+
+      ];
+
+
+      results.sort(
+
+        (
+          a,
+          b
+        ) => {
+
+          const importanceDifference =
+            Number(
+              b.importance || 0
+            ) -
+            Number(
+              a.importance || 0
+            );
+
+
+          if (
+            importanceDifference !==
+            0
+          ) {
+
+            return importanceDifference;
+
+          }
+
+
+          const aTime =
+            new Date(
+              a.updated_at ||
+              a.created_at ||
+              0
+            ).getTime();
+
+
+          const bTime =
+            new Date(
+              b.updated_at ||
+              b.created_at ||
+              0
+            ).getTime();
+
+
+          return bTime - aTime;
+
+        }
+
+      );
+
+
+      return res.json({
+
+        success:
+          true,
+
+        query,
+
+        results:
+          results.slice(
+            0,
+            limit
+          ),
+
+        count:
+          Math.min(
+            results.length,
+            limit
+          )
+
+      });
+
+    } catch (error) {
+
+      console.error(
+        "Memory search error:",
+        error
+      );
+
+
+      return res.status(500).json({
+
+        success:
+          false,
+
+        error:
+          "Could not search memory",
+
+        code:
+          "MEMORY_SEARCH_FAILED"
+
+      });
+
+    }
+
+  }
+);
+
+
+// ============================================================
+// MEMORY STATISTICS
+// ============================================================
+
+app.get(
+  "/api/memory/statistics",
+  authenticateToken,
+  async (
+    req,
+    res
+  ) => {
+
+    try {
+
+      const userMemoryStats =
+        await pool.query(
+
+          `SELECT
+
+             COUNT(*)::integer
+               AS total,
+
+             COALESCE(
+               AVG(importance),
+               0
+             ) AS average_importance,
+
+             COUNT(
+               CASE
+                 WHEN importance >= 8
+                 THEN 1
+               END
+             )::integer
+               AS high_importance
+
+           FROM user_memory
+
+           WHERE user_id = $1`,
+
+          [
+            req.user.id
+          ]
+
+        );
+
+
+      const longTermStats =
+        await pool.query(
+
+          `SELECT
+
+             COUNT(*)::integer
+               AS total,
+
+             COALESCE(
+               AVG(importance),
+               0
+             ) AS average_importance,
+
+             COUNT(
+               CASE
+                 WHEN importance >= 8
+                 THEN 1
+               END
+             )::integer
+               AS high_importance
+
+           FROM long_term_memory
+
+           WHERE user_id = $1`,
+
+          [
+            req.user.id
+          ]
+
+        );
+
+
+      const userStats =
+        userMemoryStats
+          .rows[0] || {};
+
+
+      const longStats =
+        longTermStats
+          .rows[0] || {};
+
+
+      return res.json({
+
+        success:
+          true,
+
+        statistics: {
+
+          userMemory: {
+
+            total:
+              Number(
+                userStats.total || 0
+              ),
+
+            averageImportance:
+              Number(
+                userStats.average_importance ||
+                0
+              ),
+
+            highImportance:
+              Number(
+                userStats.high_importance ||
+                0
+              )
+
+          },
+
+          longTermMemory: {
+
+            total:
+              Number(
+                longStats.total || 0
+              ),
+
+            averageImportance:
+              Number(
+                longStats.average_importance ||
+                0
+              ),
+
+            highImportance:
+              Number(
+                longStats.high_importance ||
+                0
+              )
+
+          },
+
+          total:
+
+            Number(
+              userStats.total || 0
+            ) +
+
+            Number(
+              longStats.total || 0
+            )
+
+        }
+
+      });
+
+    } catch (error) {
+
+      console.error(
+        "Memory statistics error:",
+        error
+      );
+
+
+      return res.status(500).json({
+
+        success:
+          false,
+
+        error:
+          "Could not load memory statistics",
+
+        code:
+          "MEMORY_STATISTICS_FAILED"
+
+      });
+
+    }
+
+  }
+);
+
+  // ============================================================
+// AGENT MEMORY CONTEXT
+// ============================================================
+//
+// This endpoint prepares a compact memory package for the
+// future Nkwasibwe AI Agent.
+//
+// The Agent should NOT receive unlimited memory.
+//
+// Only relevant/high-value memories are returned.
+//
+
+app.get(
+  "/api/memory/agent-context",
+  authenticateToken,
+  async (
+    req,
+    res
+  ) => {
+
+    try {
+
+      const limit =
+        normalizeMemoryInteger(
+
+          req.query?.limit,
+
+          20,
+
+          1,
+
+          50
+
+        );
+
+
+      const query =
+        normalizeMemorySearchQuery(
+          req.query?.q
+        );
+
+
+      const pattern =
+        query
+          ? `%${query}%`
+          : null;
+
+
+      let userResult;
+
+
+      let longTermResult;
+
+
+      if (pattern) {
+
+        userResult =
+          await pool.query(
+
+            `SELECT
+               *
+             FROM user_memory
+             WHERE user_id = $1
+             AND (
+               content ILIKE $2
+               OR title ILIKE $2
+               OR source_label ILIKE $2
+             )
+             ORDER BY
+               importance DESC,
+               updated_at DESC
+             LIMIT $3`,
+
+            [
+
+              req.user.id,
+
+              pattern,
+
+              limit
+
+            ]
+
+          );
+
+
+        longTermResult =
+          await pool.query(
+
+            `SELECT
+               *
+             FROM long_term_memory
+             WHERE user_id = $1
+             AND (
+               content ILIKE $2
+               OR title ILIKE $2
+               OR source_label ILIKE $2
+             )
+             ORDER BY
+               importance DESC,
+               updated_at DESC
+             LIMIT $3`,
+
+            [
+
+              req.user.id,
+
+              pattern,
+
+              limit
+
+            ]
+
+          );
+
+      } else {
+
+        userResult =
+          await pool.query(
+
+            `SELECT
+               *
+             FROM user_memory
+             WHERE user_id = $1
+             ORDER BY
+               importance DESC,
+               updated_at DESC
+             LIMIT $2`,
+
+            [
+
+              req.user.id,
+
+              limit
+
+            ]
+
+          );
+
+
+        longTermResult =
+          await pool.query(
+
+            `SELECT
+               *
+             FROM long_term_memory
+             WHERE user_id = $1
+             ORDER BY
+               importance DESC,
+               updated_at DESC
+             LIMIT $2`,
+
+            [
+
+              req.user.id,
+
+              limit
+
+            ]
+
+          );
+
+      }
+
+
+      const memories = [
+
+        ...userResult.rows.map(
+
+          memory => ({
+
+            ...sanitizeMemoryRecord(
+              memory
+            ),
+
+            memory_layer:
+              "user"
+
+          })
+
+        ),
+
+        ...longTermResult.rows.map(
+
+          memory => ({
+
+            ...sanitizeMemoryRecord(
+              memory
+            ),
+
+            memory_layer:
+              "long_term"
+
+          })
+
+        )
+
+      ];
+
+
+      memories.sort(
+
+        (
+          a,
+          b
+        ) => {
+
+          return (
+
+            Number(
+              b.importance || 0
+            ) -
+
+            Number(
+              a.importance || 0
+            )
+
+          );
+
+        }
+
+      );
+
+
+      const selectedMemories =
+        memories.slice(
+          0,
+          limit
+        );
+
+
+      return res.json({
+
+        success:
+          true,
+
+        context: {
+
+          userId:
+            req.user.id,
+
+          query:
+            query || null,
+
+          memoryCount:
+            selectedMemories.length,
+
+          memories:
+            selectedMemories
+
+        }
+
+      });
+
+    } catch (error) {
+
+      console.error(
+        "Agent memory context error:",
+        error
+      );
+
+
+      await systemLog(
+
+        "error",
+
+        "memory",
+
+        "Agent memory context failed",
+
+        {
+
+          userId:
+            req.user?.id,
+
+          message:
+            error?.message
+
+        }
+
+      );
+
+
+      return res.status(500).json({
+
+        success:
+          false,
+
+        error:
+          "Could not prepare agent memory context",
+
+        code:
+          "AGENT_MEMORY_CONTEXT_FAILED"
+
+      });
+
+    }
+
+  }
+);
+
+
+// ============================================================
+// MEMORY HEALTH CHECK
+// ============================================================
+//
+// Internal diagnostic endpoint.
+//
+
+app.get(
+  "/api/memory/health",
+  authenticateToken,
+  async (
+    req,
+    res
+  ) => {
+
+    try {
+
+      const result =
+        await pool.query(
+
+          `SELECT
+             (
+               SELECT COUNT(*)
+               FROM user_memory
+               WHERE user_id = $1
+             )::integer
+             AS user_memory_count,
+
+             (
+               SELECT COUNT(*)
+               FROM long_term_memory
+               WHERE user_id = $1
+             )::integer
+             AS long_term_memory_count`,
+
+          [
+            req.user.id
+          ]
+
+        );
+
+
+      const row =
+        result.rows[0] || {};
+
+
+      return res.json({
+
+        success:
+          true,
+
+        memory:
+
+          "operational",
+
+        userMemoryCount:
+          Number(
+            row.user_memory_count ||
+            0
+          ),
+
+        longTermMemoryCount:
+          Number(
+            row.long_term_memory_count ||
+            0
+          )
+
+      });
+
+    } catch (error) {
+
+      console.error(
+        "Memory health error:",
+        error
+      );
+
+
+      return res.status(500).json({
+
+        success:
+          false,
+
+        memory:
+          "unavailable",
+
+        error:
+          "Memory system unavailable",
+
+        code:
+          "MEMORY_HEALTH_FAILED"
+
+      });
+
+    }
+
+  }
+);
+
+
+// ============================================================
+// PART 6 COMPLETE
+// ============================================================
+//
+// MEMORY ENGINE NOW PROVIDES:
+//
+// ✓ User memory creation
+// ✓ User memory listing
+// ✓ User memory retrieval
+// ✓ User memory update
+// ✓ User memory deletion
+// ✓ Long-term memory creation
+// ✓ Long-term memory listing
+// ✓ Long-term memory retrieval
+// ✓ Long-term memory deletion
+// ✓ Memory search
+// ✓ Memory statistics
+// ✓ Agent memory context
+// ✓ Memory health check
+// ✓ Importance scoring
+// ✓ Memory types
+// ✓ Tags
+// ✓ Memory source tracking
+// ✓ Ownership enforcement
+// ✓ Input validation
+// ✓ SQL parameterization
+// ✓ Access timestamp tracking
+// ✓ Security logging
+//
+// ============================================================
