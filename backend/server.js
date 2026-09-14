@@ -17037,6 +17037,11 @@ registerAgentAction(
 
           "LONG_TERM_MEMORY_NOT_FOUND"
 
+        );
+
+      }
+
+
       return memory;
 
     }
