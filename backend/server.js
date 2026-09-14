@@ -5148,8 +5148,11 @@ try {
 // ============================================================
 // MEMORY CONFIGURATION
 // ============================================================
-
 const MEMORY_CONFIG = Object.freeze({
+
+  // ----------------------------------------------------------
+  // PART 5 — BASE MEMORY ENGINE LIMITS
+  // ----------------------------------------------------------
 
   MAX_KEY_LENGTH:
     200,
@@ -5175,14 +5178,127 @@ const MEMORY_CONFIG = Object.freeze({
   MAX_SEARCH_LENGTH:
     200,
 
+  // ----------------------------------------------------------
+  // PART 6 — ADVANCED MEMORY LIMITS
+  // ----------------------------------------------------------
+
+  MAX_MEMORY_CONTENT_LENGTH:
+    20000,
+
+  MAX_MEMORY_TITLE_LENGTH:
+    300,
+
+  MAX_MEMORY_SOURCE_LENGTH:
+    200,
+
+  MAX_MEMORY_TAGS:
+    30,
+
+  MAX_TAG_LENGTH:
+    80,
+
+  MAX_RETRIEVAL_LIMIT:
+    100,
+
+  DEFAULT_RETRIEVAL_LIMIT:
+    20,
+
+  MAX_MEMORY_LENGTH:
+    20000,
+
+  MAX_LONG_TERM_MEMORY_LENGTH:
+    30000,
+
+  MAX_USER_MEMORY_ITEMS:
+    500,
+
+  MAX_LONG_TERM_MEMORY_ITEMS:
+    1000,
+
+  DEFAULT_MEMORY_LIMIT:
+    20,
+
+  MAX_MEMORY_CONTEXT_ITEMS:
+    30,
+
+  DEFAULT_IMPORTANCE:
+    5,
+
+  DUPLICATE_SIMILARITY_THRESHOLD:
+    0.92,
+
+  CONTEXT_CHARACTER_LIMIT:
+    30000,
+
+  SUMMARY_CHARACTER_LIMIT:
+    12000,
+
+  MEMORY_TTL_DAYS:
+    3650,
+
+  // ----------------------------------------------------------
+  // IMPORTANCE
+  // ----------------------------------------------------------
+
   MAX_IMPORTANCE:
     10,
 
   MIN_IMPORTANCE:
-    1
+    1,
+
+  // ----------------------------------------------------------
+  // MEMORY TYPES
+  // ----------------------------------------------------------
+
+  ALLOWED_TYPES:
+    Object.freeze([
+
+      "fact",
+
+      "preference",
+
+      "instruction",
+
+      "profile",
+
+      "goal",
+
+      "project",
+
+      "context",
+
+      "relationship",
+
+      "knowledge",
+
+      "experience",
+
+      "other"
+
+    ]),
+
+  // ----------------------------------------------------------
+  // MEMORY SOURCES
+  // ----------------------------------------------------------
+
+  ALLOWED_SOURCES:
+    Object.freeze([
+
+      "user",
+
+      "conversation",
+
+      "agent",
+
+      "system",
+
+      "import",
+
+      "manual"
+
+    ])
 
 });
-
 
 // ============================================================
 // MEMORY TYPE NORMALIZATION
@@ -7081,138 +7197,13 @@ app.get(
 
 
 // ============================================================
-// MEMORY CONFIGURATION
-// ============================================================
-
-const MEMORY_CONFIG = Object.freeze({
-
-  // ----------------------------------------------------------
-  // General limits
-  // ----------------------------------------------------------
-
-  MAX_MEMORY_CONTENT_LENGTH:
-    20000,
-
-  MAX_MEMORY_TITLE_LENGTH:
-    300,
-
-  MAX_MEMORY_SOURCE_LENGTH:
-    200,
-
-  MAX_MEMORY_TAGS:
-    30,
-
-  MAX_TAG_LENGTH:
-    80,
-
-  MAX_RETRIEVAL_LIMIT:
-    100,
-
-  DEFAULT_RETRIEVAL_LIMIT:
-    20,
-    MAX_MEMORY_LENGTH:
-    20000,
-
-  MAX_LONG_TERM_MEMORY_LENGTH:
-    30000,
-
-  MAX_USER_MEMORY_ITEMS:
-    500,
-
-  MAX_LONG_TERM_MEMORY_ITEMS:
-    1000,
-
-  DEFAULT_MEMORY_LIMIT:
-    20,
-
-  MAX_MEMORY_CONTEXT_ITEMS:
-    30,
-
-  DEFAULT_IMPORTANCE:
-    5,
-
-  MAX_SEARCH_LENGTH:
-    500,
-
-  DUPLICATE_SIMILARITY_THRESHOLD:
-    0.92,
-
-  CONTEXT_CHARACTER_LIMIT:
-    30000,
-
-  SUMMARY_CHARACTER_LIMIT:
-    12000,
-
-  MEMORY_TTL_DAYS:
-    3650,
-
-  MAX_IMPORTANCE:
-    10,
-
-  MIN_IMPORTANCE:
-    1,
-
-  // ----------------------------------------------------------
-  // Memory types
-  // ----------------------------------------------------------
-
-  ALLOWED_TYPES: Object.freeze([
-
-    "fact",
-
-    "preference",
-
-    "instruction",
-
-    "profile",
-
-    "goal",
-
-    "project",
-
-    "context",
-
-    "relationship",
-
-    "knowledge",
-
-    "experience",
-
-    "other"
-
-  ]),
-
-  // ----------------------------------------------------------
-  // Memory sources
-  // ----------------------------------------------------------
-
-  ALLOWED_SOURCES: Object.freeze([
-
-    "user",
-
-    "conversation",
-
-    "agent",
-
-    "system",
-
-    "import",
-
-    "manual"
-
-  ])
-
-});
-
-
-// ============================================================
 // MEMORY ID VALIDATION
 // ============================================================
 //
-// Supports UUID and numeric database IDs.
-//
+
 // This makes the API compatible with different PostgreSQL
 // schemas without allowing arbitrary SQL values.
+//// Supports UUID and numeric database IDs.
 //
 
 function isValidMemoryId(
