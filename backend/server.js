@@ -18703,56 +18703,6 @@ if (
 // ============================================================
 
 
-// ============================================================
-// AGENT ACTION CONFIGURATION
-// ============================================================
-
-const AGENT_ACTION_CONFIG = Object.freeze({
-
-  MAX_ACTION_NAME_LENGTH:
-    100,
-
-  MAX_ACTION_ARGUMENTS:
-    50,
-
-  MAX_ARGUMENT_STRING_LENGTH:
-    10000,
-
-  MAX_RESULT_LENGTH:
-    50000,
-
-  DEFAULT_TIMEOUT_MS:
-    30000,
-
-  MAX_TIMEOUT_MS:
-    120000,
-
-  DEFAULT_RETRY_COUNT:
-    0,
-
-  MAX_RETRY_COUNT:
-    2,
-
-  IDEMPOTENCY_KEY_MAX_LENGTH:
-    200,
-
-  MAX_EXECUTION_HISTORY:
-    100,
-
-  MAX_ACTIONS_PER_REQUEST:
-    10,
-
-  MAX_CONCURRENT_ACTIONS:
-    5,
-
-  ACTION_CONTEXT_MAX_LENGTH:
-    30000,
-
-  ENABLE_DESTRUCTIVE_ACTIONS:
-    false
-
-});
-
 
 // ============================================================
 // AGENT ACTION RUNTIME
