@@ -18704,20 +18704,6 @@ if (
 
 
 // ============================================================
-// ACTION REGISTRY
-// ============================================================
-//
-// Only registered actions can be executed.
-//
-// This is intentionally strict.
-// Unknown actions are rejected.
-//
-
-const AGENT_ACTION_REGISTRY =
-  new Map();
-
-
-// ============================================================
 // ACTION EXECUTION HISTORY
 // ============================================================
 //
