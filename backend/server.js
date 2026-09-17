@@ -27314,45 +27314,6 @@ const AGENT_RELIABILITY_CONFIG =
 
 
 // ============================================================
-// AGENT RUNTIME
-// ============================================================
-
-const AGENT_RUNTIME = {
-
-  activeTasks:
-    0,
-
-  completedTasks:
-    0,
-
-  failedTasks:
-    0,
-
-  cancelledTasks:
-    0,
-
-  timeoutTasks:
-    0,
-
-  retriedTasks:
-    0,
-
-  totalExecutionTime:
-    0,
-
-  lastExecutionAt:
-    null,
-
-  lastFailureAt:
-    null,
-
-  lastSuccessAt:
-    null
-
-};
-
-
-// ============================================================
 // ACTIVE TASK REGISTRY
 // ============================================================
 //
