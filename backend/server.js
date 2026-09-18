@@ -555,6 +555,34 @@ function safeString(
 
 }
 
+// ============================================================
+// NORMALIZE TEXT
+// ============================================================
+//
+// Central text normalization utility.
+// Used throughout the Nkwasibwe IRHCF backend.
+//
+// IMPORTANT:
+// Keep this function globally available because many
+// modules depend on it.
+//
+
+function normalizeText(
+  value
+) {
+
+  if (
+    value === null ||
+    value === undefined
+  ) {
+    return "";
+  }
+
+  return String(value)
+    .replace(/\u0000/g, "")
+    .trim();
+
+}
 
 // ============================================================
 // SAFE INTEGER
