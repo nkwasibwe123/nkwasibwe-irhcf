@@ -19117,8 +19117,57 @@ function canExecuteAgentAction(
 // ============================================================
 
 function registerAgentAction(
-  actionDefinition
+  actionDefinition,
+  legacyDefinition
 ) {
+
+  /*
+   * SUPPORT BOTH REGISTRATION FORMATS
+   *
+   * OLD:
+   * registerAgentAction(
+   *   "memory.search",
+   *   { handler: ... }
+   * );
+   *
+   * NEW:
+   * registerAgentAction({
+   *   name: "system.get_time",
+   *   handler: ...
+   * });
+   */
+
+  if (
+    typeof actionDefinition ===
+      "string"
+  ) {
+
+    actionDefinition =
+      Object.assign(
+        {},
+        legacyDefinition || {},
+        {
+          name:
+            actionDefinition
+        }
+      );
+
+    /*
+     * OLD ACTIONS sometimes use
+     * timeoutMs while the new engine
+     * uses timeout.
+     */
+    if (
+      actionDefinition.timeout ===
+        undefined &&
+      actionDefinition.timeoutMs !==
+        undefined
+    ) {
+      actionDefinition.timeout =
+        actionDefinition.timeoutMs;
+    }
+  }
+
 
   if (
     !actionDefinition ||
@@ -19131,8 +19180,6 @@ function registerAgentAction(
     );
 
   }
-
-
   const name =
     normalizeAgentActionName(
       actionDefinition.name
