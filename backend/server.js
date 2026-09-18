@@ -32335,3 +32335,128 @@ async function runFinalStartupDiagnostics() {
 // ============================================================
 // END OF PART 14/14
 // ============================================================
+
+// ============================================================
+// FINAL SERVER STARTUP
+// ============================================================
+//
+// IMPORTANT:
+// Render requires the Express application to listen on
+// the PORT provided by the environment.
+//
+// This must remain at the very end of server.js.
+//
+
+let server = null;
+
+async function startServer() {
+
+  try {
+
+    /*
+     * Run final diagnostics before opening
+     * the HTTP port.
+     */
+    if (
+      typeof runFinalStartupDiagnostics ===
+      "function"
+    ) {
+
+      try {
+
+        await runFinalStartupDiagnostics();
+
+      } catch (diagnosticError) {
+
+        console.error(
+          "Startup diagnostics warning:",
+          diagnosticError
+        );
+
+      }
+
+    }
+
+
+    /*
+     * Start Express HTTP server.
+     */
+    server =
+      app.listen(
+        PORT,
+        "0.0.0.0",
+        () => {
+
+          console.log(
+            "============================================================"
+          );
+
+          console.log(
+            "NKWASIBWE IRHCF SERVER STARTED"
+          );
+
+          console.log(
+            `Environment: ${NODE_ENV}`
+          );
+
+          console.log(
+            `Port: ${PORT}`
+          );
+
+          console.log(
+            "Host: 0.0.0.0"
+          );
+
+          console.log(
+            `URL: http://0.0.0.0:${PORT}`
+          );
+
+          console.log(
+            "Status: ONLINE"
+          );
+
+          console.log(
+            "============================================================"
+          );
+
+        }
+      );
+
+
+    /*
+     * Protect against server startup errors.
+     */
+    server.on(
+      "error",
+      error => {
+
+        console.error(
+          "HTTP SERVER ERROR:",
+          error
+        );
+
+        process.exit(
+          1
+        );
+
+      }
+    );
+
+
+  } catch (error) {
+
+    console.error(
+      "NKWASIBWE IRHCF STARTUP FAILED:",
+      error
+    );
+
+    process.exit(
+      1
+    );
+
+  }
+
+}
+
+
+startServer();
