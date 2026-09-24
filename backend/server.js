@@ -12215,6 +12215,79 @@ async function executeNkwasibweAgent(
   }
 
 }
+
+// ============================================================
+// PHASE 4 — AGENT EXECUTOR ADAPTER
+// ============================================================
+//
+// Connects the controlled agent runtime to the existing
+// Nkwasibwe core agent engine.
+//
+// The controlled runtime expects one of:
+//   runAgentTask
+//   executeAgentTask
+//   processAgentTask
+//
+// We use runAgentTask as the canonical adapter.
+//
+// IMPORTANT:
+// This does NOT create a second AI engine.
+// It reuses executeNkwasibweAgent().
+//
+
+async function runAgentTask(execution) {
+
+  if (!execution) {
+    const error =
+      new Error(
+        "Agent execution context is required"
+      );
+
+    error.code =
+      "AGENT_EXECUTION_CONTEXT_REQUIRED";
+
+    throw error;
+  }
+
+  const userId =
+    execution.userId;
+
+  const task =
+    execution.task;
+
+  const sessionId =
+    execution.sessionId || null;
+
+  if (!userId) {
+    const error =
+      new Error(
+        "Authenticated user is required"
+      );
+
+    error.code =
+      "AUTHENTICATION_REQUIRED";
+
+    throw error;
+  }
+
+  if (!task) {
+    const error =
+      new Error(
+        "Agent task is required"
+      );
+
+    error.code =
+      "AGENT_TASK_REQUIRED";
+
+    throw error;
+  }
+
+  return await executeNkwasibweAgent({
+    userId,
+    task,
+    sessionId
+  });
+}
 // ============================================================
 // CHAT ENDPOINT
 // ============================================================
