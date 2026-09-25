@@ -32425,6 +32425,29 @@ let server = null;
 async function startServer() {
 
   try {
+        /*
+     * Initialize and verify the PostgreSQL database schema
+     * before the HTTP server starts accepting requests.
+     */
+    if (typeof createSchema === "function") {
+
+      console.log(
+        "[DATABASE] Initializing database schema..."
+      );
+
+      await createSchema();
+
+      console.log(
+        "[DATABASE] Database schema initialized successfully."
+      );
+
+    } else {
+
+      throw new Error(
+        "createSchema function is not available."
+      );
+
+    }
 
     /*
      * Run final diagnostics before opening
