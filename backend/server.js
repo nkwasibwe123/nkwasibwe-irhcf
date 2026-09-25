@@ -2831,23 +2831,16 @@ app.post(
       );
 
 
-      await systemLog(
+      console.error(
+  "[AUTH] User registration failed:",
+  {
+    message:
+      error?.message || "Unknown registration error",
 
-        "error",
-
-        "authentication",
-
-        "User registration failed",
-
-        {
-          message:
-            error?.message,
-
-          code:
-            error?.code
-        }
-
-      );
+    code:
+      error?.code || "UNKNOWN_ERROR"
+  }
+);
 
 
       // PostgreSQL unique constraint protection
@@ -3018,39 +3011,30 @@ app.post(
 
         );
 
+if (!validPassword) {
 
-      if (!validPassword) {
+  console.warn(
+    "[AUTH] Invalid password during login:",
+    {
+      userId:
+        user.id
+    }
+  );
 
-        await systemLog(
+  return res.status(401).json({
 
-          "warn",
+    success: false,
 
-          "authentication",
+    error:
+      "Invalid email or password",
 
-          "Invalid password during login",
+    code:
+      "INVALID_CREDENTIALS"
 
-          {
-            userId:
-              user.id
-          }
+  });
 
-        );
-
-        return res.status(401).json({
-
-          success: false,
-
-          error:
-            "Invalid email or password",
-
-          code:
-            "INVALID_CREDENTIALS"
-
-        });
-
-      }
-
-
+}
+      
       // ------------------------------------------------------
       // SAFE USER
       // ------------------------------------------------------
