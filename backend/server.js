@@ -3805,29 +3805,11 @@ app.post(
       const conversation =
         result.rows[0];
 
-
-      await systemLog(
-
-        "info",
-
-        "conversations",
-
-        "Conversation created",
-
-        {
-
-          userId:
-            req.user.id,
-
-          conversationId:
-            conversation.id,
-
-          sessionId:
-            conversation.session_id
-
-        }
-
-      );
+console.error(
+  "Create conversation error:",
+  error
+);
+      
 
 
       return res.status(201).json({
@@ -3847,27 +3829,7 @@ app.post(
       );
 
 
-      await systemLog(
-
-        "error",
-
-        "conversations",
-
-        "Conversation creation failed",
-
-        {
-
-          userId:
-            req.user?.id,
-
-          message:
-            error?.message
-
-        }
-
-      );
-
-
+      
       return res.status(500).json({
 
         success:
@@ -3885,7 +3847,10 @@ app.post(
 
   }
 );
-
+console.error(
+  "Conversation processing error:",
+  error
+);
 
 // ============================================================
 // LIST USER CONVERSATIONS
