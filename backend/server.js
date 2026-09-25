@@ -2977,35 +2977,26 @@ app.post(
       // ------------------------------------------------------
 
       if (
-        result.rows.length ===
-        0
-      ) {
+  result.rows.length ===
+  0
+) {
 
-        await systemLog(
+  console.warn(
+    "[AUTH] Login attempt for unknown account:",
+    email
+  );
 
-          "warn",
+  return res.status(401).json({
 
-          "authentication",
+    success: false,
 
-          "Login attempt for unknown account",
+    error:
+      "Invalid email or password",
 
-          {
-            email
-          }
+    code:
+      "INVALID_CREDENTIALS"
 
-        );
-
-        return res.status(401).json({
-
-          success: false,
-
-          error:
-            "Invalid email or password",
-
-          code:
-            "INVALID_CREDENTIALS"
-
-        });
+  });
 
       }
 
@@ -3097,69 +3088,59 @@ app.post(
 
       );
 
+// ------------------------------------------------------
+// RESPONSE
+// ------------------------------------------------------
 
-      // ------------------------------------------------------
-      // RESPONSE
-      // ------------------------------------------------------
+return res.json({
 
-      return res.json({
+  success: true,
 
-        success: true,
+  message:
+    "Login successful",
 
-        message:
-          "Login successful",
+  token,
 
-        token,
+  user:
+    userSafe
 
-        user:
-          userSafe
+});
 
-      });
+} catch (error) {
 
-    } catch (error) {
+  console.error(
+    "LOGIN ERROR:",
+    error
+  );
 
-      console.error(
-        "LOGIN ERROR:",
-        error
-      );
+  console.error(
+    "[AUTH] Login request failed:",
+    {
+      message:
+        error?.message || "Unknown login error",
 
-
-      await systemLog(
-
-        "error",
-
-        "authentication",
-
-        "Login request failed",
-
-        {
-          message:
-            error?.message,
-
-          code:
-            error?.code
-        }
-
-      );
-
-
-      return res.status(500).json({
-
-        success: false,
-
-        error:
-          "Could not login",
-
-        code:
-          "LOGIN_FAILED"
-
-      });
-
+      code:
+        error?.code || "UNKNOWN_ERROR"
     }
+  );
 
-  }
+  return res.status(500).json({
+
+    success: false,
+
+    error:
+      "Could not login",
+
+    code:
+      "LOGIN_FAILED"
+
+  });
+
+}
+
+}
 );
-
+      
 
 // ============================================================
 // CURRENT USER
