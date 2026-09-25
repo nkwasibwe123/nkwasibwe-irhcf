@@ -3057,21 +3057,14 @@ if (!validPassword) {
       // SECURITY LOG
       // ------------------------------------------------------
 
-      await systemLog(
-
-        "info",
-
-        "authentication",
-
-        "User logged in successfully",
-
-        {
-          userId:
-            userSafe.id
-        }
-
-      );
-
+      console.log(
+  "[AUTH] Login successful:",
+  {
+    userId:
+      user.id
+  }
+);
+      
 // ------------------------------------------------------
 // RESPONSE
 // ------------------------------------------------------
