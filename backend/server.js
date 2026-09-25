@@ -3847,10 +3847,7 @@ console.error(
 
   }
 );
-console.error(
-  "Conversation processing error:",
-  error
-);
+
 
 // ============================================================
 // LIST USER CONVERSATIONS
