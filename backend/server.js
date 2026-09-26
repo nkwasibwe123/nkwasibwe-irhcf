@@ -3805,12 +3805,6 @@ app.post(
       const conversation =
         result.rows[0];
 
-console.error(
-  "Create conversation error:",
-  error
-);
-      
-
 
       return res.status(201).json({
 
