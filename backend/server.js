@@ -12230,33 +12230,14 @@ app.post(
         req.body?.task ??
         req.body?.prompt;
 
+const validation =
+  validateAgentTask(
+    task
+  );
 
-      const validation =
-        validateAgentTask(
-          task
-        );
-
-
-      if (
-        !validation.valid
-      ) {
-
-        return res.status(400).json({
-
-          success:
-            false,
-
-          error:
-            validation.error,
-
-          code:
-            validation.code
-
-        });
-
-      }
-
-
+const validatedTask =
+  validation;
+      
       const sessionId =
         normalizeText(
           req.body?.sessionId ||
@@ -12272,7 +12253,7 @@ app.post(
             req.user.id,
 
           task:
-            validation.value,
+  validatedTask,
 
           sessionId
 
