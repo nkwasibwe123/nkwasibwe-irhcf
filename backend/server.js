@@ -277,6 +277,21 @@ const openai =
           OPENAI_API_KEY
       })
     : null;
+const GEMINI_API_KEY =
+  process.env.GEMINI_API_KEY ||
+  "";
+
+const GROQ_API_KEY =
+  process.env.GROQ_API_KEY ||
+  "";
+
+const GEMINI_MODEL =
+  process.env.GEMINI_MODEL ||
+  "gemini-2.5-flash";
+
+const GROQ_MODEL =
+  process.env.GROQ_MODEL ||
+  "openai/gpt-oss-20b";
 
 // ============================================================
 // PROVIDER STATE
@@ -11180,55 +11195,552 @@ async function callOpenAIWithTimeout(
   }
 
 }
+// ============================================================
+// GEMINI PROVIDER
+// ============================================================
+
+async function callGeminiWithTimeout(
+  messages,
+  options = {}
+) {
+
+  if (!GEMINI_API_KEY) {
+
+    const error =
+      new Error(
+        "Gemini provider is not configured"
+      );
+
+    error.code =
+      "GEMINI_PROVIDER_NOT_CONFIGURED";
+
+    throw error;
+
+  }
+
+
+  const model =
+    options.geminiModel ||
+    GEMINI_MODEL;
+
+
+  const controller =
+    new AbortController();
+
+
+  const timeout =
+    setTimeout(
+
+      () => {
+        controller.abort();
+      },
+
+      AGENT_CONFIG.REQUEST_TIMEOUT_MS
+
+    );
+
+
+  try {
+
+    const systemMessages =
+      messages
+        .filter(
+          message =>
+            message?.role === "system"
+        )
+        .map(
+          message =>
+            String(
+              message?.content || ""
+            )
+        )
+        .join("\n\n");
+
+
+    const contents =
+      messages
+        .filter(
+          message =>
+            message?.role !== "system"
+        )
+        .map(
+          message => ({
+            role:
+              message?.role === "assistant"
+                ? "model"
+                : "user",
+
+            parts: [
+              {
+                text:
+                  String(
+                    message?.content || ""
+                  )
+              }
+            ]
+          })
+        );
+
+
+    const body = {
+
+      contents,
+
+      generationConfig: {
+
+        temperature:
+          typeof options.temperature ===
+          "number"
+            ? options.temperature
+            : AGENT_CONFIG.TEMPERATURE,
+
+        maxOutputTokens:
+          options.maxTokens ||
+          4096
+
+      }
+
+    };
+
+
+    if (systemMessages) {
+
+      body.systemInstruction = {
+
+        parts: [
+          {
+            text:
+              systemMessages
+          }
+        ]
+
+      };
+
+    }
+
+
+    const response =
+      await fetch(
+
+        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+          model
+        )}:generateContent?key=${encodeURIComponent(
+          GEMINI_API_KEY
+        )}`,
+
+        {
+
+          method: "POST",
+
+          headers: {
+            "Content-Type":
+              "application/json"
+          },
+
+          body:
+            JSON.stringify(body),
+
+          signal:
+            controller.signal
+
+        }
+
+      );
+
+
+    const data =
+      await response.json();
+
+
+    if (!response.ok) {
+
+      const error =
+        new Error(
+          data?.error?.message ||
+          "Gemini provider request failed"
+        );
+
+      error.status =
+        response.status;
+
+      error.code =
+        "GEMINI_PROVIDER_ERROR";
+
+      throw error;
+
+    }
+
+
+    const text =
+      data
+        ?.candidates?.[0]
+        ?.content
+        ?.parts
+        ?.map(
+          part =>
+            part?.text || ""
+        )
+        .join("")
+        .trim();
+
+
+    if (!text) {
+
+      const error =
+        new Error(
+          "Gemini returned an empty response"
+        );
+
+      error.code =
+        "GEMINI_EMPTY_RESPONSE";
+
+      throw error;
+
+    }
+
+
+    return {
+
+      choices: [
+
+        {
+
+          message: {
+
+            role:
+              "assistant",
+
+            content:
+              text
+
+          }
+
+        }
+
+      ]
+
+    };
+
+  } catch (error) {
+
+    if (
+      error?.name ===
+      "AbortError"
+    ) {
+
+      const timeoutError =
+        new Error(
+          "Gemini provider request timed out"
+        );
+
+      timeoutError.code =
+        "GEMINI_PROVIDER_TIMEOUT";
+
+      throw timeoutError;
+
+    }
+
+    throw error;
+
+  } finally {
+
+    clearTimeout(
+      timeout
+    );
+
+  }
+
+}
 
 
 // ============================================================
-// OPENAI RETRY ENGINE
+// GROQ PROVIDER
 // ============================================================
+
+async function callGroqWithTimeout(
+  messages,
+  options = {}
+) {
+
+  if (!GROQ_API_KEY) {
+
+    const error =
+      new Error(
+        "Groq provider is not configured"
+      );
+
+    error.code =
+      "GROQ_PROVIDER_NOT_CONFIGURED";
+
+    throw error;
+
+  }
+
+
+  const model =
+    options.groqModel ||
+    GROQ_MODEL;
+
+
+  const controller =
+    new AbortController();
+
+
+  const timeout =
+    setTimeout(
+
+      () => {
+        controller.abort();
+      },
+
+      AGENT_CONFIG.REQUEST_TIMEOUT_MS
+
+    );
+
+
+  try {
+
+    const response =
+      await fetch(
+
+        "https://api.groq.com/openai/v1/chat/completions",
+
+        {
+
+          method: "POST",
+
+          headers: {
+
+            "Content-Type":
+              "application/json",
+
+            Authorization:
+              `Bearer ${GROQ_API_KEY}`
+
+          },
+
+          body:
+            JSON.stringify({
+
+              model,
+
+              messages,
+
+              temperature:
+                typeof options.temperature ===
+                "number"
+                  ? options.temperature
+                  : AGENT_CONFIG.TEMPERATURE,
+
+              max_tokens:
+                options.maxTokens ||
+                4096
+
+            }),
+
+          signal:
+            controller.signal
+
+        }
+
+      );
+
+
+    const data =
+      await response.json();
+
+
+    if (!response.ok) {
+
+      const error =
+        new Error(
+          data?.error?.message ||
+          "Groq provider request failed"
+        );
+
+      error.status =
+        response.status;
+
+      error.code =
+        "GROQ_PROVIDER_ERROR";
+
+      throw error;
+
+    }
+
+
+    if (
+      !data?.choices?.[0]?.message?.content
+    ) {
+
+      const error =
+        new Error(
+          "Groq returned an empty response"
+        );
+
+      error.code =
+        "GROQ_EMPTY_RESPONSE";
+
+      throw error;
+
+    }
+
+
+    return data;
+
+  } catch (error) {
+
+    if (
+      error?.name ===
+      "AbortError"
+    ) {
+
+      const timeoutError =
+        new Error(
+          "Groq provider request timed out"
+        );
+
+      timeoutError.code =
+        "GROQ_PROVIDER_TIMEOUT";
+
+      throw timeoutError;
+
+    }
+
+    throw error;
+
+  } finally {
+
+    clearTimeout(
+      timeout
+    );
+
+  }
+
+}
+
+
+     // ============================================================
+// MULTI-PROVIDER AI ENGINE
+// ============================================================
+//
+// Provider order:
+//   1. OpenAI
+//   2. Gemini
+//   3. Groq
+//
+// If one provider fails, the next provider is tried.
+//
 
 async function executeAIProvider(
   messages,
   options = {}
 ) {
 
+  const providers = [];
+
+
+  if (openai) {
+
+    providers.push({
+
+      name:
+        "openai",
+
+      execute:
+        () =>
+          callOpenAIWithTimeout(
+            messages,
+            options
+          )
+
+    });
+
+  }
+
+
+  if (GEMINI_API_KEY) {
+
+    providers.push({
+
+      name:
+        "gemini",
+
+      execute:
+        () =>
+          callGeminiWithTimeout(
+            messages,
+            options
+          )
+
+    });
+
+  }
+
+
+  if (GROQ_API_KEY) {
+
+    providers.push({
+
+      name:
+        "groq",
+
+      execute:
+        () =>
+          callGroqWithTimeout(
+            messages,
+            options
+          )
+
+    });
+
+  }
+
+
+  if (
+    providers.length ===
+    0
+  ) {
+
+    const error =
+      new Error(
+        "No AI provider is configured"
+      );
+
+    error.code =
+      "AI_PROVIDER_NOT_CONFIGURED";
+
+    throw error;
+
+  }
+
+
   let lastError =
     null;
 
 
-  const maxRetries =
-    Math.max(
-
-      0,
-
-      Math.min(
-
-        Number(
-          options.maxRetries ??
-          AGENT_CONFIG.MAX_RETRIES
-        ),
-
-        5
-
-      )
-
-    );
-
-
   for (
-    let attempt = 0;
-    attempt <= maxRetries;
-    attempt++
+    const provider
+    of providers
   ) {
 
     try {
 
-      return await callOpenAIWithTimeout(
-
-        messages,
-
-        options
-
+      console.log(
+        `[AI] Trying provider: ${provider.name}`
       );
+
+
+      const response =
+        await provider.execute();
+
+
+      console.log(
+        `[AI] Provider succeeded: ${provider.name}`
+      );
+
+
+      return response;
 
     } catch (error) {
 
@@ -11244,46 +11756,21 @@ async function executeAIProvider(
         );
 
 
-      const retryable =
-        status === 408 ||
-        status === 409 ||
-        status === 429 ||
-        status >= 500 ||
-        error?.code ===
-          "AI_PROVIDER_TIMEOUT";
-
-
-      if (
-        !retryable ||
-        attempt >= maxRetries
-      ) {
-
-        break;
-
-      }
-
-
-      const delay =
-        Math.min(
-
-          1000 *
-            Math.pow(
-              2,
-              attempt
-            ),
-
-          5000
-
-        );
-
-
-      await new Promise(
-        resolve =>
-          setTimeout(
-            resolve,
-            delay
-          )
+      console.warn(
+        `[AI] Provider failed: ${provider.name}`,
+        {
+          status,
+          code:
+            error?.code ||
+            "UNKNOWN_ERROR",
+          message:
+            error?.message ||
+            "Unknown provider error"
+        }
       );
+
+
+      continue;
 
     }
 
@@ -11292,11 +11779,10 @@ async function executeAIProvider(
 
   throw lastError ||
     new Error(
-      "AI provider request failed"
+      "All AI providers failed"
     );
 
-}
-
+} 
 
 // ============================================================
 // EXTRACT AI RESPONSE
