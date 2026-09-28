@@ -11795,27 +11795,10 @@ async function executeNkwasibweAgent(
     options || {};
 
 
-  const validation =
-    validateAgentTask(
-      task
-    );
-
-
-  if (
-    !validation.valid
-  ) {
-
-    const error =
-      new Error(
-        validation.error
-      );
-
-    error.code =
-      validation.code;
-
-    throw error;
-
-  }
+  const validatedTask =
+  validateAgentTask(
+    task
+  );
 
 
   if (!userId) {
@@ -11882,7 +11865,7 @@ async function executeNkwasibweAgent(
 
         userId,
 
-        validation.value
+        validatedTask
 
       );
 
@@ -11904,7 +11887,7 @@ async function executeNkwasibweAgent(
   const agentMessages =
     buildAgentMessages(
 
-      validation.value,
+      validatedTask,
 
       conversationMessages,
 
@@ -11955,7 +11938,7 @@ async function executeNkwasibweAgent(
 
         conversation,
 
-        validation.value
+        validatedTask
 
       );
 
