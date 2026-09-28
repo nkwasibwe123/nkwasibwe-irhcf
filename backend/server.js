@@ -25,6 +25,11 @@ const config = require("./config");
 const pool = require("./db/pool");
 const createSchema = require("./db/schema");
 
+const {
+  analyzeTask,
+  summarizePlan
+} = require("./core/task-orchestrator");
+
 // ============================================================
 // APPLICATION IDENTITY
 // ============================================================
@@ -12645,21 +12650,36 @@ async function runAgentTask(execution) {
     sessionId
   });
 }
-// ============================================================
+
+    // ============================================================
 // CHAT ENDPOINT
 // ============================================================
 //
+// NKWASIBWE TASK ORCHESTRATION ENTRY POINT
+//
+// Pipeline:
+//
+// USER MESSAGE
+//      ↓
+// VALIDATE
+//      ↓
+// TASK ANALYSIS
+//      ↓
+// CLASSIFY
+//      ↓
+// CAPABILITY DISCOVERY
+//      ↓
+// EXECUTION STRATEGY
+//      ↓
+// EXISTING NKWASIBWE AGENT
+//      ↓
+// RESULT
+//
 // IMPORTANT:
-//
-// This endpoint is authenticated.
-//
-// The frontend MUST send:
-//
-// Authorization: Bearer <JWT>
-//
-// This prevents the 401 problem caused by sending /api/chat
-// without an authentication token.
-//
+// The existing agent executor remains the execution engine.
+// This layer adds structured task intelligence without
+// breaking the current chat contract.
+// ============================================================
 
 app.post(
   "/api/chat",
@@ -12673,14 +12693,33 @@ app.post(
         req.body?.task ??
         req.body?.prompt;
 
-const validation =
-  validateAgentTask(
-    task
-  );
+      const validation =
+        validateAgentTask(
+          task
+        );
 
-const validatedTask =
-  validation;
-      
+      if (
+        !validation.valid
+      ) {
+
+        return res.status(
+          400
+        ).json({
+          success:
+            false,
+
+          error:
+            validation.error,
+
+          code:
+            validation.code
+        });
+
+      }
+
+      const validatedTask =
+        validation.value;
+
       const sessionId =
         normalizeText(
           req.body?.sessionId ||
@@ -12688,38 +12727,150 @@ const validatedTask =
           ""
         ) || null;
 
+      /*
+       * --------------------------------------------------------
+       * TASK ORCHESTRATION ANALYSIS
+       * --------------------------------------------------------
+       *
+       * This does NOT execute tools.
+       * It determines what kind of task the user has submitted.
+       */
+
+      let taskAnalysis = null;
+
+      try {
+
+        taskAnalysis =
+          analyzeTask(
+            validatedTask,
+            {
+              userId:
+                req.user?.id ||
+                null,
+
+              sessionId
+            }
+          );
+
+        console.log(
+          "[NKWASIBWE TASK ANALYSIS]",
+          summarizePlan(
+            taskAnalysis
+          )
+        );
+
+      } catch (
+        analysisError
+      ) {
+
+        /*
+         * Task analysis must never destroy
+         * the existing chat experience.
+         *
+         * If the new orchestration layer fails,
+         * the established agent still receives
+         * the original validated task.
+         */
+
+        console.warn(
+          "[TASK ORCHESTRATOR WARNING]",
+          analysisError?.message ||
+          analysisError
+        );
+
+      }
+
+      /*
+       * --------------------------------------------------------
+       * EXISTING AGENT EXECUTION
+       * --------------------------------------------------------
+       *
+       * We deliberately keep the existing executor.
+       *
+       * This protects:
+       *
+       * - authentication
+       * - conversation ownership
+       * - memory
+       * - database persistence
+       * - provider routing
+       * - existing tools
+       * - retry protection
+       * - timeout protection
+       */
 
       const result =
         await executeNkwasibweAgent({
-
           userId:
             req.user.id,
 
           task:
-  validatedTask,
+            validatedTask,
 
           sessionId
-
         });
 
+      /*
+       * --------------------------------------------------------
+       * RESPONSE ENRICHMENT
+       * --------------------------------------------------------
+       *
+       * Existing response fields are preserved.
+       * New orchestration metadata is additive.
+       */
 
-      return res.status(200).json(
-        result
-      );
+      return res.status(
+        200
+      ).json({
 
-    } catch (error) {
+        ...result,
+
+        orchestration:
+          taskAnalysis
+            ? {
+                engine:
+                  taskAnalysis.engine,
+
+                classification:
+                  taskAnalysis.classification,
+
+                capabilities:
+                  taskAnalysis.capabilities,
+
+                plan:
+                  taskAnalysis.plan,
+
+                verification:
+                  taskAnalysis.verification
+              }
+            : {
+                engine: {
+                  name:
+                    "Nkwasibwe Task Orchestration Engine",
+
+                  version:
+                    "1.0.0"
+                },
+
+                status:
+                  "analysis_unavailable"
+              }
+
+      });
+
+    } catch (
+      error
+    ) {
 
       console.error(
         "Chat error:",
         error
       );
 
-
       const normalized =
         normalizeAIError(
           error
         );
-
 
       return res.status(
         normalized.status
