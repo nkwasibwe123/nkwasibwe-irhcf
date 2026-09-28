@@ -12448,32 +12448,19 @@ async function executeNkwasibweAgent(
         new Date();
 
 
-    await systemLog(
-
-      "info",
-
-      "agent",
-
-      "AI agent task completed",
-
-      {
-
-        userId,
-
-        conversationId:
-          conversation.id,
-
-        sessionId:
-          conversation.session_id,
-
-        model,
-
-        memoryItems:
-          memories.length
-
-      }
-
-    );
+    console.log(
+  "[AGENT] AI agent task completed:",
+  {
+    userId,
+    conversationId:
+      conversation?.id || null,
+    sessionId:
+      conversation?.session_id || null,
+    model,
+    memoryItems:
+      memories?.length || 0
+  }
+);
 
 
     return {
