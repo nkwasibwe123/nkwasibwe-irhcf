@@ -287,7 +287,7 @@ const GROQ_API_KEY =
 
 const GEMINI_MODEL =
   process.env.GEMINI_MODEL ||
-  "gemini-2.5-flash";
+  "gemini-3.8-flash";
 
 const GROQ_MODEL =
   process.env.GROQ_MODEL ||
