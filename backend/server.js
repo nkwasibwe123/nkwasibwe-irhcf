@@ -12065,34 +12065,21 @@ async function executeNkwasibweAgent(
         new Date();
 
 
-    await systemLog(
-
-      "error",
-
-      "agent",
-
-      "AI agent task failed",
-
-      {
-
-        userId,
-
-        conversationId:
-          conversation?.id,
-
-        sessionId:
-          conversation?.session_id,
-
-        code:
-          error?.code,
-
-        message:
-          error?.message
-
-      }
-
-    );
-
+    
+console.error(
+  "[AGENT] AI agent task failed:",
+  {
+    userId,
+    conversationId:
+      conversation?.id || null,
+    sessionId:
+      conversation?.session_id || null,
+    code:
+      error?.code || "UNKNOWN_ERROR",
+    message:
+      error?.message || "Unknown agent error"
+  }
+);
 
     throw error;
 
