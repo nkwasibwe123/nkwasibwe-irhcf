@@ -10965,9 +10965,21 @@ function formatAgentMemoryContext(
 
 }
 
-
 // ============================================================
 // BUILD AGENT MESSAGES
+// ============================================================
+// Context-aware prompt builder.
+//
+// IMPORTANT:
+// Never send the entire conversation to the provider.
+// Large conversation history can exceed provider TPM limits.
+//
+// Strategy:
+// - Keep the system prompt.
+// - Keep only the most recent conversation turns.
+// - Limit every historical message.
+// - Keep memory compact.
+// - Always keep the current task.
 // ============================================================
 
 function buildAgentMessages(
@@ -10978,107 +10990,203 @@ function buildAgentMessages(
 
   const messages = [];
 
+  const MAX_HISTORY_MESSAGES = 12;
+  const MAX_HISTORY_MESSAGE_CHARS = 1800;
+  const MAX_MEMORY_CHARS = 4000;
+  const MAX_SYSTEM_CHARS = 8000;
+  const MAX_TOTAL_INPUT_CHARS = 24000;
+
+  // ----------------------------------------------------------
+  // SYSTEM PROMPT
+  // ----------------------------------------------------------
 
   messages.push({
+    role: "system",
 
-    role:
-      "system",
-
-    content:
-      AGENT_CONFIG.SYSTEM_PROMPT
-
+    content: safeAgentString(
+      AGENT_CONFIG.SYSTEM_PROMPT,
+      MAX_SYSTEM_CHARS
+    )
   });
 
+  // ----------------------------------------------------------
+  // MEMORY
+  // ----------------------------------------------------------
 
   if (
-    memoryContext
+    typeof memoryContext === "string" &&
+    memoryContext.trim()
   ) {
 
     messages.push({
-
-      role:
-        "system",
+      role: "system",
 
       content:
-        memoryContext
-
+        "Relevant user memory:\n" +
+        safeAgentString(
+          memoryContext,
+          MAX_MEMORY_CHARS
+        )
     });
 
   }
 
+  // ----------------------------------------------------------
+  // RECENT CONVERSATION ONLY
+  // ----------------------------------------------------------
 
   if (
-    Array.isArray(
-      conversationMessages
-    )
+    Array.isArray(conversationMessages) &&
+    conversationMessages.length > 0
   ) {
 
+    const recentMessages =
+      conversationMessages
+        .filter(
+          message =>
+            message &&
+            typeof message.content === "string" &&
+            message.content.trim()
+        )
+        .slice(
+          -MAX_HISTORY_MESSAGES
+        );
+
     for (
-      const message
-      of conversationMessages
+      const message of recentMessages
     ) {
-
-      if (
-        !message ||
-        !message.role ||
-        !message.content
-      ) {
-
-        continue;
-
-      }
-
 
       const role =
         [
-
           "user",
-
-          "assistant",
-
-          "system"
-
+          "assistant"
         ].includes(
           message.role
         )
           ? message.role
           : "user";
 
+      const content =
+        safeAgentString(
+          message.content,
+          MAX_HISTORY_MESSAGE_CHARS
+        );
+
+      if (!content) {
+        continue;
+      }
 
       messages.push({
-
         role,
-
-        content:
-          safeAgentString(
-            message.content,
-            CONVERSATION_CONFIG
-              .MAX_MESSAGE_LENGTH
-          )
-
+        content
       });
 
     }
 
   }
 
+  // ----------------------------------------------------------
+  // CURRENT TASK
+  // ----------------------------------------------------------
 
   messages.push({
+    role: "user",
 
-    role:
-      "user",
-
-    content:
-      task
-
+    content: safeAgentString(
+      task,
+      6000
+    )
   });
 
+  // ----------------------------------------------------------
+  // FINAL SAFETY CHECK
+  // ----------------------------------------------------------
 
-  return messages;
+  let totalChars = 0;
 
-}
+  const compactMessages = [];
 
+  for (
+    const message of messages
+  ) {
 
+    const content =
+      String(
+        message.content || ""
+      );
+
+    const nextSize =
+      totalChars +
+      content.length;
+
+    if (
+      nextSize >
+      MAX_TOTAL_INPUT_CHARS &&
+      compactMessages.length > 0
+    ) {
+
+      // Do not remove the current task.
+      if (
+        message ===
+        messages[messages.length - 1]
+      ) {
+
+        compactMessages.push({
+          role: message.role,
+          content:
+            safeAgentString(
+              message.content,
+              6000
+            )
+        });
+
+      }
+
+      continue;
+
+    }
+
+    compactMessages.push(
+      message
+    );
+
+    totalChars =
+      nextSize;
+
+  }
+
+  console.log(
+    "[AGENT CONTEXT]",
+    {
+      originalMessages:
+        Array.isArray(
+          conversationMessages
+        )
+          ? conversationMessages.length
+          : 0,
+
+      sentMessages:
+        compactMessages.length,
+
+      totalCharacters:
+        compactMessages.reduce(
+          (
+            total,
+            message
+          ) =>
+            total +
+            String(
+              message.content || ""
+            ).length,
+          0
+        )
+    }
+  );
+
+  return compactMessages;
+            }
+
+      
 // ============================================================
 // OPENAI REQUEST WITH TIMEOUT
 // ============================================================
@@ -11152,8 +11260,8 @@ async function callOpenAIWithTimeout(
           temperature,
 
           max_tokens:
-            options.maxTokens ||
-            4096
+  options.maxTokens ||
+  1500
 
         },
 
@@ -11300,8 +11408,8 @@ async function callGeminiWithTimeout(
             : AGENT_CONFIG.TEMPERATURE,
 
         maxOutputTokens:
-          options.maxTokens ||
-          4096
+  options.maxTokens ||
+  1500
 
       }
 
@@ -11538,8 +11646,8 @@ async function callGroqWithTimeout(
                   : AGENT_CONFIG.TEMPERATURE,
 
               max_tokens:
-                options.maxTokens ||
-                4096
+  options.maxTokens ||
+  1500
 
             }),
 
@@ -11736,8 +11844,33 @@ async function executeAIProvider(
       );
 
 
-      const response =
-        await provider.execute();
+      const providerOptions = {
+  ...options,
+
+  maxTokens:
+    provider.name === "groq"
+      ? (
+          options.groqMaxTokens ||
+          options.maxTokens ||
+          1500
+        )
+      : provider.name === "gemini"
+        ? (
+            options.geminiMaxTokens ||
+            options.maxTokens ||
+            1500
+          )
+        : (
+            options.openaiMaxTokens ||
+            options.maxTokens ||
+            1500
+          )
+};
+
+const response =
+  await provider.execute(
+    providerOptions
+  );
 
 
       console.log(
@@ -12402,20 +12535,23 @@ async function executeNkwasibweAgent(
 
   try {
 
-    const providerResponse =
-      await executeAIProvider(
+const providerResponse =
+  await executeAIProvider(
+    agentMessages,
+    {
+      model,
+      temperature,
 
-        agentMessages,
+      // Keep provider requests small enough
+      // for free/on-demand provider limits.
+      maxTokens: 1500,
 
-        {
-
-          model,
-
-          temperature
-
-        }
-
-      );
+      // Explicit provider-specific limits.
+      openaiMaxTokens: 1500,
+      geminiMaxTokens: 1500,
+      groqMaxTokens: 1500
+    }
+  );
 
 
     const answer =
