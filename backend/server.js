@@ -14816,34 +14816,34 @@ console.log(
   language:
     qualityResult.language,
 
-  responseQuality:
-    {
+        responseQuality: {
 
-      enabled:
-        true,
+        enabled:
+          true,
 
-      originalLength:
-        qualityResult.originalLength,
+        originalLength:
+          qualityResult.originalLength,
 
-      finalLength:
-        answer.length,
+        finalLength:
+          answer.length,
 
-      verified:
-        verification.valid,
+        verified:
+          verification.valid,
 
-      verificationIssues:
-        verification.issues,
+        verificationIssues:
+          verification.issues,
 
-      selfRepaired:
-        selfRepairResult.repaired,
+        selfRepaired:
+          selfRepairResult.repaired,
 
-      repairAttempts:
-        selfRepairResult.attempts
+        repairAttempts:
+          selfRepairResult.attempts
+
+      }
 
     }
 
-      }
-  } catch (error) {
+  } catch (error) { 
 
     // --------------------------------------------------------
     // FAILURE METRICS
