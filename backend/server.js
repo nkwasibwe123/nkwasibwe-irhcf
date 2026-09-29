@@ -13437,26 +13437,39 @@ function buildResponseQualityInstruction(
   };
 
 
-  const explicitDetailRequest =
-    /\b(
-      detailed|
-      detail|
-      deeply|
-      deep|
-      full|
-      complete|
-      comprehensive|
-      explain fully|
-      step by step|
-      in detail|
-      birambuye|
-      neza cyane|
-      ibisobanuro birambuye|
-      ku buryo burambuye|
-      byose
-    )\b/ix.test(
-      String(task || "")
-    );
+  const taskText =
+  String(
+    task || ""
+  )
+    .toLowerCase()
+    .trim();
+
+
+const explicitDetailRequest =
+  [
+    "detailed",
+    "detail",
+    "deeply",
+    "deep",
+    "full",
+    "complete",
+    "comprehensive",
+    "explain fully",
+    "step by step",
+    "in detail",
+
+    "birambuye",
+    "neza cyane",
+    "ibisobanuro birambuye",
+    "ku buryo burambuye",
+    "byose"
+  ]
+  .some(
+    phrase =>
+      taskText.includes(
+        phrase
+      )
+  );
 
 
   const lengthRule =
