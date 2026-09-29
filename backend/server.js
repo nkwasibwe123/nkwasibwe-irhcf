@@ -10964,22 +10964,104 @@ function formatAgentMemoryContext(
   );
 
 }
-
 // ============================================================
+// COLLAPSE REPEATED TEXT
+// ============================================================
+// Removes obvious repeated sentences/paragraphs from historical
+// context and from model output preparation.
+//
+// This is NOT intended to rewrite normal answers.
+// It only removes exact repeated blocks.
+// ============================================================
+
+function collapseRepeatedText(
+  text
+) {
+
+  const value =
+    safeAgentString(
+      text,
+      12000
+    );
+
+  if (!value) {
+    return "";
+  }
+
+  const lines =
+    value
+      .split(/\r?\n/)
+      .map(
+        line =>
+          line.trim()
+      )
+      .filter(
+        Boolean
+      );
+
+  if (
+    lines.length < 2
+  ) {
+    return value;
+  }
+
+  const result = [];
+
+  let previous =
+    null;
+
+  let repeatCount =
+    0;
+
+  for (
+    const line of lines
+  ) {
+
+    if (
+      line === previous
+    ) {
+
+      repeatCount++;
+
+      if (
+        repeatCount >= 1
+      ) {
+        continue;
+      }
+
+    } else {
+
+      repeatCount = 0;
+
+    }
+
+    result.push(
+      line
+    );
+
+    previous =
+      line;
+
+  }
+
+  return result
+    .join("\n")
+    .trim();
+
+}
+
+      
+      // ============================================================
 // BUILD AGENT MESSAGES
 // ============================================================
-// Context-aware prompt builder.
+// NKWASIBWE CONTEXT MANAGER
 //
-// IMPORTANT:
-// Never send the entire conversation to the provider.
-// Large conversation history can exceed provider TPM limits.
-//
-// Strategy:
-// - Keep the system prompt.
-// - Keep only the most recent conversation turns.
-// - Limit every historical message.
-// - Keep memory compact.
-// - Always keep the current task.
+// Goals:
+// - Keep the current task dominant.
+// - Prevent old malformed answers from poisoning context.
+// - Prevent repeated assistant responses.
+// - Keep provider requests small.
+// - Preserve enough conversation continuity.
 // ============================================================
 
 function buildAgentMessages(
@@ -10990,23 +11072,38 @@ function buildAgentMessages(
 
   const messages = [];
 
-  const MAX_HISTORY_MESSAGES = 12;
-  const MAX_HISTORY_MESSAGE_CHARS = 1800;
-  const MAX_MEMORY_CHARS = 4000;
-  const MAX_SYSTEM_CHARS = 8000;
-  const MAX_TOTAL_INPUT_CHARS = 24000;
+  const MAX_HISTORY_MESSAGES = 8;
+
+  const MAX_USER_HISTORY_CHARS = 1200;
+
+  const MAX_ASSISTANT_HISTORY_CHARS = 900;
+
+  const MAX_MEMORY_CHARS = 2500;
+
+  const MAX_SYSTEM_CHARS = 6000;
+
+  const MAX_TOTAL_INPUT_CHARS = 14000;
 
   // ----------------------------------------------------------
-  // SYSTEM PROMPT
+  // SYSTEM
   // ----------------------------------------------------------
 
   messages.push({
     role: "system",
 
-    content: safeAgentString(
-      AGENT_CONFIG.SYSTEM_PROMPT,
-      MAX_SYSTEM_CHARS
-    )
+    content:
+      safeAgentString(
+        AGENT_CONFIG.SYSTEM_PROMPT,
+        MAX_SYSTEM_CHARS
+      ) +
+      "\n\n" +
+      "IMPORTANT RESPONSE RULES:\n" +
+      "- Answer the current user request directly.\n" +
+      "- Do not repeat the same sentence, paragraph, or instruction.\n" +
+      "- Do not copy previous assistant answers unless necessary.\n" +
+      "- If the user asks in Kinyarwanda, answer in Kinyarwanda.\n" +
+      "- If the user asks for practical instructions, give practical instructions.\n" +
+      "- Never invent that an action was performed when it was not performed."
   });
 
   // ----------------------------------------------------------
@@ -11032,11 +11129,13 @@ function buildAgentMessages(
   }
 
   // ----------------------------------------------------------
-  // RECENT CONVERSATION ONLY
+  // RECENT CONVERSATION
   // ----------------------------------------------------------
 
   if (
-    Array.isArray(conversationMessages) &&
+    Array.isArray(
+      conversationMessages
+    ) &&
     conversationMessages.length > 0
   ) {
 
@@ -11057,19 +11156,30 @@ function buildAgentMessages(
     ) {
 
       const role =
-        [
-          "user",
-          "assistant"
-        ].includes(
-          message.role
-        )
-          ? message.role
+        message.role === "assistant"
+          ? "assistant"
           : "user";
 
-      const content =
+      const maxChars =
+        role === "assistant"
+          ? MAX_ASSISTANT_HISTORY_CHARS
+          : MAX_USER_HISTORY_CHARS;
+
+      let content =
         safeAgentString(
           message.content,
-          MAX_HISTORY_MESSAGE_CHARS
+          maxChars
+        );
+
+      if (!content) {
+        continue;
+      }
+
+      // Prevent old repeated blocks from entering
+      // the next model context.
+      content =
+        collapseRepeatedText(
+          content
         );
 
       if (!content) {
@@ -11089,20 +11199,25 @@ function buildAgentMessages(
   // CURRENT TASK
   // ----------------------------------------------------------
 
+  const currentTask =
+    safeAgentString(
+      task,
+      5000
+    );
+
   messages.push({
     role: "user",
 
-    content: safeAgentString(
-      task,
-      6000
-    )
+    content:
+      "CURRENT USER TASK:\n\n" +
+      currentTask
   });
 
   // ----------------------------------------------------------
-  // FINAL SAFETY CHECK
+  // TOTAL CONTEXT BUDGET
   // ----------------------------------------------------------
 
-  let totalChars = 0;
+  let totalCharacters = 0;
 
   const compactMessages = [];
 
@@ -11115,43 +11230,46 @@ function buildAgentMessages(
         message.content || ""
       );
 
-    const nextSize =
-      totalChars +
+    const contentLength =
       content.length;
 
+    const isCurrentTask =
+      message ===
+      messages[
+        messages.length - 1
+      ];
+
     if (
-      nextSize >
-      MAX_TOTAL_INPUT_CHARS &&
-      compactMessages.length > 0
+      !isCurrentTask &&
+      totalCharacters +
+        contentLength >
+        MAX_TOTAL_INPUT_CHARS
     ) {
-
-      // Do not remove the current task.
-      if (
-        message ===
-        messages[messages.length - 1]
-      ) {
-
-        compactMessages.push({
-          role: message.role,
-          content:
-            safeAgentString(
-              message.content,
-              6000
-            )
-        });
-
-      }
 
       continue;
 
     }
 
-    compactMessages.push(
-      message
-    );
+    compactMessages.push({
+      role:
+        message.role,
 
-    totalChars =
-      nextSize;
+      content:
+        isCurrentTask
+          ? safeAgentString(
+              content,
+              5000
+            )
+          : content
+    });
+
+    totalCharacters +=
+      isCurrentTask
+        ? Math.min(
+            contentLength,
+            5000
+          )
+        : contentLength;
 
   }
 
@@ -11168,24 +11286,12 @@ function buildAgentMessages(
       sentMessages:
         compactMessages.length,
 
-      totalCharacters:
-        compactMessages.reduce(
-          (
-            total,
-            message
-          ) =>
-            total +
-            String(
-              message.content || ""
-            ).length,
-          0
-        )
+      totalCharacters
     }
   );
 
   return compactMessages;
-            }
-
+}
       
 // ============================================================
 // OPENAI REQUEST WITH TIMEOUT
@@ -11925,6 +12031,9 @@ const response =
 // ============================================================
 // EXTRACT AI RESPONSE
 // ============================================================
+// Normalizes and protects AI output before it is persisted
+// and returned to the frontend.
+// ============================================================
 
 function extractAIResponse(
   response
@@ -11935,7 +12044,6 @@ function extractAIResponse(
       ?.choices?.[0]
       ?.message
       ?.content;
-
 
   if (
     typeof content !==
@@ -11954,10 +12062,8 @@ function extractAIResponse(
 
   }
 
-
   const value =
     content.trim();
-
 
   if (!value) {
 
@@ -11973,22 +12079,35 @@ function extractAIResponse(
 
   }
 
+  // ----------------------------------------------------------
+  // REMOVE OBVIOUS EXACT REPETITIONS
+  // ----------------------------------------------------------
+
+  const cleaned =
+    typeof collapseRepeatedText ===
+    "function"
+      ? collapseRepeatedText(
+          value
+        )
+      : value;
+
+  // ----------------------------------------------------------
+  // FINAL OUTPUT LIMIT
+  // ----------------------------------------------------------
 
   if (
-    value.length >
+    cleaned.length >
     AGENT_CONFIG.MAX_OUTPUT_LENGTH
   ) {
 
-    return value.slice(
+    return cleaned.slice(
       0,
       AGENT_CONFIG.MAX_OUTPUT_LENGTH
     );
 
   }
 
-
-  return value;
-
+  return cleaned;
 }
 
 
