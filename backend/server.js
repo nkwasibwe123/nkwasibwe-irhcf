@@ -11848,8 +11848,391 @@ async function callGroqWithTimeout(
 //   2. Gemini
 //   3. Groq
 //
-// If one provider fails, the next provider is tried.
+// Features:
+//   - Provider health tracking
+//   - Circuit breaker / cooldown
+//   - Automatic fallback
+//   - Provider-specific token limits
+//   - Failure classification
+//   - Half-open retry after cooldown
+// ============================================================
+
+
+// ============================================================
+// PROVIDER HEALTH STATE
+// ============================================================
 //
+// This state lives in memory on the backend process.
+//
+// It does NOT replace API keys or configuration.
+// It only prevents repeatedly calling providers that are
+// temporarily known to be failing.
+//
+
+const AI_PROVIDER_HEALTH = {
+
+  openai: {
+    failures: 0,
+    lastFailureAt: 0,
+    cooldownUntil: 0,
+    lastStatus: 0,
+    lastCode: null
+  },
+
+  gemini: {
+    failures: 0,
+    lastFailureAt: 0,
+    cooldownUntil: 0,
+    lastStatus: 0,
+    lastCode: null
+  },
+
+  groq: {
+    failures: 0,
+    lastFailureAt: 0,
+    cooldownUntil: 0,
+    lastStatus: 0,
+    lastCode: null
+  }
+
+};
+
+
+// ============================================================
+// PROVIDER COOLDOWN
+// ============================================================
+//
+// Permanent/billing/configuration-style errors get longer
+// cooldowns because retrying them on every request is wasteful.
+//
+// Temporary overload/server errors get shorter cooldowns.
+//
+
+function getProviderCooldownMs(
+  providerName,
+  error
+) {
+
+  const status =
+    Number(
+      error?.status ||
+      error?.statusCode ||
+      0
+    );
+
+  const code =
+    String(
+      error?.code ||
+      ""
+    )
+      .toLowerCase();
+
+
+  // ----------------------------------------------------------
+  // OPENAI BILLING / CREDIT EXHAUSTION
+  // ----------------------------------------------------------
+
+  if (
+    providerName === "openai" &&
+    (
+      code.includes(
+        "credit_balance_exhausted"
+      ) ||
+      code.includes(
+        "insufficient_quota"
+      ) ||
+      code.includes(
+        "quota"
+      )
+    )
+  ) {
+
+    // 10 minutes
+    return 10 * 60 * 1000;
+
+  }
+
+
+  // ----------------------------------------------------------
+  // RATE LIMIT
+  // ----------------------------------------------------------
+
+  if (
+    status === 429
+  ) {
+
+    // 2 minutes
+    return 2 * 60 * 1000;
+
+  }
+
+
+  // ----------------------------------------------------------
+  // TEMPORARY SERVER / OVERLOAD
+  // ----------------------------------------------------------
+
+  if (
+    status === 502 ||
+    status === 503 ||
+    status === 504
+  ) {
+
+    // 60 seconds
+    return 60 * 1000;
+
+  }
+
+
+  // ----------------------------------------------------------
+  // REQUEST TOO LARGE
+  // ----------------------------------------------------------
+
+  if (
+    status === 413
+  ) {
+
+    // 5 minutes
+    return 5 * 60 * 1000;
+
+  }
+
+
+  // ----------------------------------------------------------
+  // AUTHENTICATION / CONFIGURATION ERRORS
+  // ----------------------------------------------------------
+
+  if (
+    status === 401 ||
+    status === 403 ||
+    code.includes(
+      "invalid_api_key"
+    ) ||
+    code.includes(
+      "authentication"
+    )
+  ) {
+
+    // 10 minutes
+    return 10 * 60 * 1000;
+
+  }
+
+
+  // ----------------------------------------------------------
+  // UNKNOWN ERROR
+  // ----------------------------------------------------------
+
+  // 30 seconds
+  return 30 * 1000;
+
+}
+
+
+// ============================================================
+// MARK PROVIDER FAILURE
+// ============================================================
+
+function markProviderFailure(
+  providerName,
+  error
+) {
+
+  const health =
+    AI_PROVIDER_HEALTH[
+      providerName
+    ];
+
+  if (!health) {
+    return;
+  }
+
+
+  const now =
+    Date.now();
+
+  const status =
+    Number(
+      error?.status ||
+      error?.statusCode ||
+      0
+    );
+
+  const code =
+    String(
+      error?.code ||
+      "UNKNOWN_ERROR"
+    );
+
+
+  health.failures += 1;
+
+  health.lastFailureAt =
+    now;
+
+  health.lastStatus =
+    status;
+
+  health.lastCode =
+    code;
+
+  health.cooldownUntil =
+    now +
+    getProviderCooldownMs(
+      providerName,
+      error
+    );
+
+
+  console.warn(
+    `[AI HEALTH] ${providerName} marked unhealthy`,
+    {
+      failures:
+        health.failures,
+
+      status,
+
+      code,
+
+      cooldownUntil:
+        new Date(
+          health.cooldownUntil
+        ).toISOString()
+    }
+  );
+
+}
+
+
+// ============================================================
+// MARK PROVIDER SUCCESS
+// ============================================================
+
+function markProviderSuccess(
+  providerName
+) {
+
+  const health =
+    AI_PROVIDER_HEALTH[
+      providerName
+    ];
+
+  if (!health) {
+    return;
+  }
+
+
+  health.failures =
+    0;
+
+  health.lastFailureAt =
+    0;
+
+  health.cooldownUntil =
+    0;
+
+  health.lastStatus =
+    0;
+
+  health.lastCode =
+    null;
+
+
+  console.log(
+    `[AI HEALTH] ${providerName} marked healthy`
+  );
+
+}
+
+
+// ============================================================
+// CHECK PROVIDER HEALTH
+// ============================================================
+
+function isProviderHealthy(
+  providerName
+) {
+
+  const health =
+    AI_PROVIDER_HEALTH[
+      providerName
+    ];
+
+  if (!health) {
+    return true;
+  }
+
+
+  return (
+    Date.now() >=
+    health.cooldownUntil
+  );
+
+}
+
+
+// ============================================================
+// PROVIDER HEALTH SNAPSHOT
+// ============================================================
+
+function getProviderHealthSnapshot() {
+
+  const snapshot = {};
+
+  for (
+    const providerName
+    of Object.keys(
+      AI_PROVIDER_HEALTH
+    )
+  ) {
+
+    const health =
+      AI_PROVIDER_HEALTH[
+        providerName
+      ];
+
+    snapshot[
+      providerName
+    ] = {
+
+      healthy:
+        Date.now() >=
+        health.cooldownUntil,
+
+      failures:
+        health.failures,
+
+      lastFailureAt:
+        health.lastFailureAt
+          ? new Date(
+              health.lastFailureAt
+            ).toISOString()
+          : null,
+
+      cooldownUntil:
+        health.cooldownUntil
+          ? new Date(
+              health.cooldownUntil
+            ).toISOString()
+          : null,
+
+      lastStatus:
+        health.lastStatus,
+
+      lastCode:
+        health.lastCode
+
+    };
+
+  }
+
+  return snapshot;
+
+}
+
+
+// ============================================================
+// MULTI-PROVIDER AI EXECUTION
+// ============================================================
 
 async function executeAIProvider(
   messages,
@@ -11859,6 +12242,10 @@ async function executeAIProvider(
   const providers = [];
 
 
+  // ----------------------------------------------------------
+  // OPENAI
+  // ----------------------------------------------------------
+
   if (openai) {
 
     providers.push({
@@ -11867,16 +12254,20 @@ async function executeAIProvider(
         "openai",
 
       execute:
-        () =>
+        providerOptions =>
           callOpenAIWithTimeout(
             messages,
-            options
+            providerOptions
           )
 
     });
 
   }
 
+
+  // ----------------------------------------------------------
+  // GEMINI
+  // ----------------------------------------------------------
 
   if (GEMINI_API_KEY) {
 
@@ -11886,16 +12277,20 @@ async function executeAIProvider(
         "gemini",
 
       execute:
-        () =>
+        providerOptions =>
           callGeminiWithTimeout(
             messages,
-            options
+            providerOptions
           )
 
     });
 
   }
 
+
+  // ----------------------------------------------------------
+  // GROQ
+  // ----------------------------------------------------------
 
   if (GROQ_API_KEY) {
 
@@ -11905,16 +12300,20 @@ async function executeAIProvider(
         "groq",
 
       execute:
-        () =>
+        providerOptions =>
           callGroqWithTimeout(
             messages,
-            options
+            providerOptions
           )
 
     });
 
   }
 
+
+  // ----------------------------------------------------------
+  // NO PROVIDERS
+  // ----------------------------------------------------------
 
   if (
     providers.length ===
@@ -11938,9 +12337,94 @@ async function executeAIProvider(
     null;
 
 
+  // ----------------------------------------------------------
+  // HEALTHY PROVIDERS FIRST
+  // ----------------------------------------------------------
+
+  const healthyProviders =
+    providers.filter(
+      provider =>
+        isProviderHealthy(
+          provider.name
+        )
+    );
+
+
+  let providersToTry =
+    healthyProviders;
+
+
+  // ----------------------------------------------------------
+  // IF ALL PROVIDERS ARE IN COOLDOWN
+  // ----------------------------------------------------------
+  //
+  // Do not fail immediately.
+  // Select the provider whose cooldown expires first.
+  // This creates a simple HALF-OPEN circuit-breaker probe.
+  //
+
+  if (
+    providersToTry.length ===
+    0
+  ) {
+
+    const sorted =
+      [...providers].sort(
+        (
+          a,
+          b
+        ) => {
+
+          const aHealth =
+            AI_PROVIDER_HEALTH[
+              a.name
+            ];
+
+          const bHealth =
+            AI_PROVIDER_HEALTH[
+              b.name
+            ];
+
+          return (
+            (
+              aHealth?.cooldownUntil ||
+              0
+            ) -
+            (
+              bHealth?.cooldownUntil ||
+              0
+            )
+          );
+
+        }
+      );
+
+
+    providersToTry =
+      sorted.slice(
+        0,
+        1
+      );
+
+
+    console.warn(
+      "[AI HEALTH] All providers are in cooldown; probing earliest provider",
+      {
+        provider:
+          providersToTry[0]?.name
+      }
+    );
+
+  }
+
+
+  // ----------------------------------------------------------
+  // EXECUTE PROVIDERS
+  // ----------------------------------------------------------
+
   for (
     const provider
-    of providers
+    of providersToTry
   ) {
 
     try {
@@ -11950,33 +12434,59 @@ async function executeAIProvider(
       );
 
 
+      // ------------------------------------------------------
+      // PROVIDER-SPECIFIC OPTIONS
+      // ------------------------------------------------------
+
       const providerOptions = {
-  ...options,
 
-  maxTokens:
-    provider.name === "groq"
-      ? (
-          options.groqMaxTokens ||
-          options.maxTokens ||
-          1500
-        )
-      : provider.name === "gemini"
-        ? (
-            options.geminiMaxTokens ||
-            options.maxTokens ||
-            1500
-          )
-        : (
-            options.openaiMaxTokens ||
-            options.maxTokens ||
-            1500
-          )
-};
+        ...options,
 
-const response =
-  await provider.execute(
-    providerOptions
-  );
+        maxTokens:
+          provider.name ===
+          "groq"
+
+            ? (
+                options.groqMaxTokens ||
+                options.maxTokens ||
+                1500
+              )
+
+            : provider.name ===
+              "gemini"
+
+              ? (
+                  options.geminiMaxTokens ||
+                  options.maxTokens ||
+                  1500
+                )
+
+              : (
+                  options.openaiMaxTokens ||
+                  options.maxTokens ||
+                  1500
+                )
+
+      };
+
+
+      // ------------------------------------------------------
+      // CALL PROVIDER
+      // ------------------------------------------------------
+
+      const response =
+        await provider.execute(
+          providerOptions
+        );
+
+
+      // ------------------------------------------------------
+      // SUCCESS
+      // ------------------------------------------------------
+
+      markProviderSuccess(
+        provider.name
+      );
 
 
       console.log(
@@ -11986,7 +12496,9 @@ const response =
 
       return response;
 
-    } catch (error) {
+    } catch (
+      error
+    ) {
 
       lastError =
         error;
@@ -12000,19 +12512,38 @@ const response =
         );
 
 
+      const code =
+        error?.code ||
+        "UNKNOWN_ERROR";
+
+
       console.warn(
         `[AI] Provider failed: ${provider.name}`,
         {
           status,
-          code:
-            error?.code ||
-            "UNKNOWN_ERROR",
+
+          code,
+
           message:
             error?.message ||
             "Unknown provider error"
         }
       );
 
+
+      // ------------------------------------------------------
+      // CIRCUIT BREAKER
+      // ------------------------------------------------------
+
+      markProviderFailure(
+        provider.name,
+        error
+      );
+
+
+      // ------------------------------------------------------
+      // TRY NEXT PROVIDER
+      // ------------------------------------------------------
 
       continue;
 
@@ -12021,13 +12552,34 @@ const response =
   }
 
 
-  throw lastError ||
+  // ----------------------------------------------------------
+  // ALL ATTEMPTED PROVIDERS FAILED
+  // ----------------------------------------------------------
+
+  const finalError =
+    lastError ||
     new Error(
       "All AI providers failed"
     );
 
-} 
 
+  console.error(
+    "[AI HEALTH] All attempted AI providers failed",
+    {
+      error:
+        finalError?.message ||
+        "Unknown error",
+
+      providerHealth:
+        getProviderHealthSnapshot()
+    }
+  );
+
+
+  throw finalError;
+
+}
+    
 // ============================================================
 // EXTRACT AI RESPONSE
 // ============================================================
