@@ -13066,6 +13066,556 @@ async function createAgentConversation(
 }
 
 // ============================================================
+// RESPONSE QUALITY ENGINE
+// ============================================================
+// Responsibilities:
+// - Detect the user's language.
+// - Lock the response to that language.
+// - Keep answers concise unless detail is requested.
+// - Preserve Markdown structure.
+// - Remove obvious repeated paragraphs.
+// - Improve spacing and readability.
+// - Prevent empty or malformed answers.
+// ============================================================
+
+function detectAgentLanguage(text) {
+
+  const value =
+    String(text || "")
+      .trim()
+      .toLowerCase();
+
+  if (!value) {
+    return "unknown";
+  }
+
+  // ----------------------------------------------------------
+  // KINYARWANDA
+  // ----------------------------------------------------------
+
+  const kinyarwandaWords = [
+    "ni",
+    "iki",
+    "iki?",
+    "ese",
+    "nigute",
+    "nigute",
+    "gute",
+    "kuki",
+    "mbese",
+    "none",
+    "nonese",
+    "ndifuza",
+    "ndashaka",
+    "nakora",
+    "nabigenza",
+    "wambwira",
+    "urakoze",
+    "murakoze",
+    "yego",
+    "oya",
+    "igihe",
+    "umuntu",
+    "abantu",
+    "amazi",
+    "ibiryo",
+    "kwiga",
+    "ishuri",
+    "umuti",
+    "gukora",
+    "guteza",
+    "uburyo",
+    "nshaka",
+    "mfasha",
+    "mfite",
+    "nkeneye",
+    "mbwira"
+  ];
+
+  // ----------------------------------------------------------
+  // FRENCH
+  // ----------------------------------------------------------
+
+  const frenchWords = [
+    "bonjour",
+    "comment",
+    "pourquoi",
+    "quelle",
+    "quel",
+    "quels",
+    "quelles",
+    "avec",
+    "dans",
+    "pour",
+    "mais",
+    "vous",
+    "nous",
+    "je",
+    "suis",
+    "faire",
+    "besoin",
+    "merci",
+    "est",
+    "une",
+    "des",
+    "les",
+    "que"
+  ];
+
+  // ----------------------------------------------------------
+  // SWAHILI
+  // ----------------------------------------------------------
+
+  const swahiliWords = [
+    "nini",
+    "kwa",
+    "jinsi",
+    "gani",
+    "kwa nini",
+    "nina",
+    "nataka",
+    "naweza",
+    "unaweza",
+    "tafadhali",
+    "asante",
+    "habari",
+    "yangu",
+    "yako",
+    "watu",
+    "chakula",
+    "kujifunza",
+    "shule",
+    "kufanya"
+  ];
+
+  // ----------------------------------------------------------
+  // ENGLISH
+  // ----------------------------------------------------------
+
+  const englishWords = [
+    "what",
+    "why",
+    "how",
+    "when",
+    "where",
+    "who",
+    "which",
+    "can",
+    "could",
+    "would",
+    "should",
+    "please",
+    "help",
+    "need",
+    "want",
+    "give",
+    "tell",
+    "explain",
+    "show",
+    "make",
+    "create",
+    "learn",
+    "school",
+    "answer",
+    "question",
+    "hello",
+    "thanks",
+    "thank"
+  ];
+
+  const countMatches =
+    (words) => {
+
+      let score = 0;
+
+      for (
+        const word
+        of words
+      ) {
+
+        const pattern =
+          new RegExp(
+            `(^|\\s)${word.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&")}(?=\\s|[?.!,;:]|$)`,
+            "i"
+          );
+
+        if (
+          pattern.test(value)
+        ) {
+          score++;
+        }
+
+      }
+
+      return score;
+    };
+
+
+  const scores = {
+
+    rw:
+      countMatches(
+        kinyarwandaWords
+      ),
+
+    fr:
+      countMatches(
+        frenchWords
+      ),
+
+    sw:
+      countMatches(
+        swahiliWords
+      ),
+
+    en:
+      countMatches(
+        englishWords
+      )
+
+  };
+
+
+  const ranked =
+    Object.entries(
+      scores
+    )
+      .sort(
+        (a, b) =>
+          b[1] - a[1]
+      );
+
+
+  const winner =
+    ranked[0];
+
+
+  if (
+    !winner ||
+    winner[1] === 0
+  ) {
+    return "unknown";
+  }
+
+
+  return winner[0];
+
+}
+
+
+// ============================================================
+// RESPONSE FORMAT NORMALIZER
+// ============================================================
+
+function normalizeAgentResponse(
+  text
+) {
+
+  if (
+    typeof text !==
+    "string"
+  ) {
+    return "";
+  }
+
+
+  let value =
+    text
+      .replace(/\r\n/g, "\n")
+      .replace(/\r/g, "\n")
+      .trim();
+
+
+  if (!value) {
+    return "";
+  }
+
+
+  // ----------------------------------------------------------
+  // REMOVE EXCESSIVE EMPTY LINES
+  // ----------------------------------------------------------
+
+  value =
+    value.replace(
+      /\n{4,}/g,
+      "\n\n"
+    );
+
+
+  // ----------------------------------------------------------
+  // CLEAN SPACES AROUND HEADINGS
+  // ----------------------------------------------------------
+
+  value =
+    value.replace(
+      /[ \t]+\n/g,
+      "\n"
+    );
+
+
+  // ----------------------------------------------------------
+  // SEPARATE MARKDOWN HEADINGS
+  // ----------------------------------------------------------
+
+  value =
+    value.replace(
+      /([^\n])\n(#{1,6}\s)/g,
+      "$1\n\n$2"
+    );
+
+
+  // ----------------------------------------------------------
+  // SEPARATE NUMBERED SECTIONS
+  // ----------------------------------------------------------
+
+  value =
+    value.replace(
+      /([.!?])\s+(\d+\.\s+)/g,
+      "$1\n\n$2"
+    );
+
+
+  // ----------------------------------------------------------
+  // SEPARATE BULLET GROUPS
+  // ----------------------------------------------------------
+
+  value =
+    value.replace(
+      /([.!?])\s+([-*]\s+)/g,
+      "$1\n\n$2"
+    );
+
+
+  // ----------------------------------------------------------
+  // COLLAPSE OBVIOUS DUPLICATES
+  // ----------------------------------------------------------
+
+  if (
+    typeof collapseRepeatedText ===
+    "function"
+  ) {
+
+    value =
+      collapseRepeatedText(
+        value
+      );
+
+  }
+
+
+  return value.trim();
+
+}
+
+
+// ============================================================
+// RESPONSE QUALITY INSTRUCTIONS
+// ============================================================
+
+function buildResponseQualityInstruction(
+  language,
+  task
+) {
+
+  const languageRules = {
+
+    rw:
+      "Respond ONLY in Kinyarwanda. Do not switch to English, French, or another language unless the user explicitly asks for it.",
+
+    en:
+      "Respond ONLY in English. Do not switch to Kinyarwanda, French, Swahili, or another language unless the user explicitly asks for it.",
+
+    fr:
+      "Répondez UNIQUEMENT en français. Ne passez pas à l'anglais, au kinyarwanda ou à une autre langue sauf si l'utilisateur le demande explicitement.",
+
+    sw:
+      "Jibu KWA KISWAHILI TU. Usibadilishe kwenda Kiingereza, Kinyarwanda au lugha nyingine isipokuwa mtumiaji akiomba waziwazi.",
+
+    unknown:
+      "Use the same language as the user's current request. Do not unnecessarily mix languages."
+
+  };
+
+
+  const explicitDetailRequest =
+    /\b(
+      detailed|
+      detail|
+      deeply|
+      deep|
+      full|
+      complete|
+      comprehensive|
+      explain fully|
+      step by step|
+      in detail|
+      birambuye|
+      neza cyane|
+      ibisobanuro birambuye|
+      ku buryo burambuye|
+      byose
+    )\b/ix.test(
+      String(task || "")
+    );
+
+
+  const lengthRule =
+    explicitDetailRequest
+
+      ? "The user requested detail. Give enough detail to fully answer the request, but keep the structure clean and avoid repetition."
+
+      : "Keep the answer concise. Give only the information necessary to answer the current request clearly. Do not produce a long essay unless the task requires it.";
+
+
+  return [
+
+    "RESPONSE QUALITY POLICY:",
+
+    languageRules[
+      language
+    ] || languageRules.unknown,
+
+    lengthRule,
+
+    "Answer the CURRENT USER TASK, not an older task.",
+
+    "Do not repeat the same sentence, paragraph, idea, or instruction.",
+
+    "Use clean Markdown when useful.",
+
+    "If there are multiple distinct points, separate them with headings, bullets, numbered steps, or blank lines.",
+
+    "Avoid giant paragraphs when the information can be structured more clearly.",
+
+    "Do not add unnecessary introductions, conclusions, or filler.",
+
+    "Do not mix languages inside the same answer unless the user asks for translation or the content itself requires another language.",
+
+    "Do not claim that an action was completed unless the agent actually performed that action.",
+
+    "Preserve important technical content, code, commands, URLs, names, numbers, and terminology.",
+
+    "Prefer a short, direct answer followed by structured details when additional explanation is necessary."
+
+  ].join("\n");
+
+}
+
+
+// ============================================================
+// APPLY RESPONSE QUALITY
+// ============================================================
+
+function applyResponseQuality(
+  answer,
+  task
+) {
+
+  const original =
+    String(
+      answer || ""
+    ).trim();
+
+
+  if (!original) {
+
+    const error =
+      new Error(
+        "AI agent produced an empty response"
+      );
+
+    error.code =
+      "EMPTY_QUALITY_RESPONSE";
+
+    throw error;
+
+  }
+
+
+  const language =
+    detectAgentLanguage(
+      task
+    );
+
+
+  let systemQualityInstruction =
+    buildResponseQualityInstruction(
+      language,
+      task
+    );
+
+
+  // ----------------------------------------------------------
+  // NORMALIZE STRUCTURE
+  // ----------------------------------------------------------
+
+  let cleaned =
+    normalizeAgentResponse(
+      original
+    );
+
+
+  if (!cleaned) {
+
+    const error =
+      new Error(
+        "AI agent response became empty after quality processing"
+      );
+
+    error.code =
+      "INVALID_QUALITY_RESPONSE";
+
+    throw error;
+
+  }
+
+
+  // ----------------------------------------------------------
+  // OUTPUT SAFETY LIMIT
+  // ----------------------------------------------------------
+
+  const maxLength =
+    Number(
+      AGENT_CONFIG.MAX_OUTPUT_LENGTH
+    ) || 12000;
+
+
+  if (
+    cleaned.length >
+    maxLength
+  ) {
+
+    cleaned =
+      cleaned.slice(
+        0,
+        maxLength
+      ).trim();
+
+  }
+
+
+  return {
+
+    answer:
+      cleaned,
+
+    language,
+
+    qualityInstruction:
+      systemQualityInstruction,
+
+    originalLength:
+      original.length,
+
+    finalLength:
+      cleaned.length
+
+  };
+
+}
+
+
+// ============================================================
 // CORE AGENT EXECUTION
 // ============================================================
 
@@ -13081,7 +13631,8 @@ async function executeNkwasibweAgent(
 
     sessionId = null,
 
-    model = AGENT_CONFIG.DEFAULT_MODEL,
+    model =
+      AGENT_CONFIG.DEFAULT_MODEL,
 
     temperature =
       AGENT_CONFIG.TEMPERATURE
@@ -13090,11 +13641,19 @@ async function executeNkwasibweAgent(
     options || {};
 
 
-  const validatedTask =
-  validateAgentTask(
-    task
-  );
+  // ----------------------------------------------------------
+  // VALIDATE TASK
+  // ----------------------------------------------------------
 
+  const validatedTask =
+    validateAgentTask(
+      task
+    );
+
+
+  // ----------------------------------------------------------
+  // AUTHENTICATION
+  // ----------------------------------------------------------
 
   if (!userId) {
 
@@ -13117,6 +13676,10 @@ async function executeNkwasibweAgent(
   let conversationMessages =
     [];
 
+
+  // ----------------------------------------------------------
+  // LOAD OR CREATE CONVERSATION
+  // ----------------------------------------------------------
 
   if (
     sessionId
@@ -13167,6 +13730,10 @@ async function executeNkwasibweAgent(
   }
 
 
+  // ----------------------------------------------------------
+  // LOAD MEMORY
+  // ----------------------------------------------------------
+
   const memories =
     await loadAgentMemoryContext(
       userId
@@ -13179,6 +13746,20 @@ async function executeNkwasibweAgent(
     );
 
 
+  // ----------------------------------------------------------
+  // DETECT USER LANGUAGE
+  // ----------------------------------------------------------
+
+  const userLanguage =
+    detectAgentLanguage(
+      validatedTask
+    );
+
+
+  // ----------------------------------------------------------
+  // BUILD AGENT CONTEXT
+  // ----------------------------------------------------------
+
   const agentMessages =
     buildAgentMessages(
 
@@ -13190,6 +13771,48 @@ async function executeNkwasibweAgent(
 
     );
 
+
+  // ----------------------------------------------------------
+  // ADD RESPONSE QUALITY POLICY
+  // ----------------------------------------------------------
+
+  const qualityInstruction =
+    buildResponseQualityInstruction(
+
+      userLanguage,
+
+      validatedTask
+
+    );
+
+
+  // Put the quality policy directly into the
+  // system context so the provider receives it
+  // before generating the answer.
+
+  const qualitySystemMessage = {
+
+    role:
+      "system",
+
+    content:
+      qualityInstruction
+
+  };
+
+
+  const finalAgentMessages = [
+
+    qualitySystemMessage,
+
+    ...agentMessages
+
+  ];
+
+
+  // ----------------------------------------------------------
+  // RUNTIME METRICS
+  // ----------------------------------------------------------
 
   AGENT_RUNTIME
     .totalRequests++;
@@ -13206,30 +13829,72 @@ async function executeNkwasibweAgent(
 
   try {
 
-const providerResponse =
-  await executeAIProvider(
-    agentMessages,
-    {
-      model,
-      temperature,
+    // --------------------------------------------------------
+    // AI PROVIDER
+    // --------------------------------------------------------
 
-      // Keep provider requests small enough
-      // for free/on-demand provider limits.
-      maxTokens: 1500,
+    const providerResponse =
+      await executeAIProvider(
 
-      // Explicit provider-specific limits.
-      openaiMaxTokens: 1500,
-      geminiMaxTokens: 1500,
-      groqMaxTokens: 1500
-    }
-  );
+        finalAgentMessages,
+
+        {
+
+          model,
+
+          temperature,
+
+          // Keep provider requests small enough
+          // for free/on-demand provider limits.
+          maxTokens:
+            1500,
+
+          // Explicit provider-specific limits.
+          openaiMaxTokens:
+            1500,
+
+          geminiMaxTokens:
+            1500,
+
+          groqMaxTokens:
+            1500
+
+        }
+
+      );
 
 
-    const answer =
+    // --------------------------------------------------------
+    // EXTRACT RAW AI RESPONSE
+    // --------------------------------------------------------
+
+    const rawAnswer =
       extractAIResponse(
         providerResponse
       );
 
+
+    // --------------------------------------------------------
+    // RESPONSE QUALITY GATE
+    // --------------------------------------------------------
+
+    const qualityResult =
+      applyResponseQuality(
+
+        rawAnswer,
+
+        validatedTask
+
+      );
+
+
+    const answer =
+      qualityResult.answer;
+
+
+    // --------------------------------------------------------
+    // PERSIST USER MESSAGE
+    // --------------------------------------------------------
 
     const userMessage =
       await persistAgentUserMessage(
@@ -13241,6 +13906,10 @@ const providerResponse =
       );
 
 
+    // --------------------------------------------------------
+    // PERSIST QUALITY-CHECKED ASSISTANT MESSAGE
+    // --------------------------------------------------------
+
     const assistantMessage =
       await persistAgentAssistantMessage(
 
@@ -13251,6 +13920,10 @@ const providerResponse =
       );
 
 
+    // --------------------------------------------------------
+    // SUCCESS METRICS
+    // --------------------------------------------------------
+
     AGENT_RUNTIME
       .successfulRequests++;
 
@@ -13260,20 +13933,49 @@ const providerResponse =
         new Date();
 
 
-    console.log(
-  "[AGENT] AI agent task completed:",
-  {
-    userId,
-    conversationId:
-      conversation?.id || null,
-    sessionId:
-      conversation?.session_id || null,
-    model,
-    memoryItems:
-      memories?.length || 0
-  }
-);
+    // --------------------------------------------------------
+    // LOG
+    // --------------------------------------------------------
 
+    console.log(
+
+      "[AGENT] AI agent task completed:",
+
+      {
+
+        userId,
+
+        conversationId:
+          conversation?.id ||
+          null,
+
+        sessionId:
+          conversation?.session_id ||
+          null,
+
+        model,
+
+        language:
+          qualityResult.language,
+
+        originalResponseLength:
+          qualityResult.originalLength,
+
+        finalResponseLength:
+          qualityResult.finalLength,
+
+        memoryItems:
+          memories?.length ||
+          0
+
+      }
+
+    );
+
+
+    // --------------------------------------------------------
+    // RETURN
+    // --------------------------------------------------------
 
     return {
 
@@ -13333,13 +14035,35 @@ const providerResponse =
         version:
           AGENT_CONFIG.VERSION,
 
-        model
+        model,
+
+        language:
+          qualityResult.language,
+
+        responseQuality:
+          {
+
+            enabled:
+              true,
+
+            originalLength:
+              qualityResult.originalLength,
+
+            finalLength:
+              qualityResult.finalLength
+
+          }
 
       }
 
     };
 
+
   } catch (error) {
+
+    // --------------------------------------------------------
+    // FAILURE METRICS
+    // --------------------------------------------------------
 
     AGENT_RUNTIME
       .failedRequests++;
@@ -13350,23 +14074,37 @@ const providerResponse =
         new Date();
 
 
-    
-console.error(
-  "[AGENT] AI agent task failed:",
-  {
-    userId,
-    conversationId:
-      conversation?.id || null,
-    sessionId:
-      conversation?.session_id || null,
-    code:
-      error?.code || "UNKNOWN_ERROR",
-    message:
-      error?.message || "Unknown agent error"
-  }
-);
+    console.error(
+
+      "[AGENT] AI agent task failed:",
+
+      {
+
+        userId,
+
+        conversationId:
+          conversation?.id ||
+          null,
+
+        sessionId:
+          conversation?.session_id ||
+          null,
+
+        code:
+          error?.code ||
+          "UNKNOWN_ERROR",
+
+        message:
+          error?.message ||
+          "Unknown agent error"
+
+      }
+
+    );
+
 
     throw error;
+
 
   } finally {
 
@@ -13377,13 +14115,14 @@ console.error(
           0,
 
           AGENT_RUNTIME
-            .activeRequests - 1
+            .activeRequests -
+          1
 
         );
 
   }
 
-}
+    }
 
 // ============================================================
 // PHASE 4 — AGENT EXECUTOR ADAPTER
