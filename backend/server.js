@@ -12651,90 +12651,141 @@ async function runAgentTask(execution) {
   });
 }
 
-    // ============================================================
-// CHAT ENDPOINT
+  // ============================================================
+// NKWASIBWE IRHCF — AGENT CHAT ENTRY POINT
 // ============================================================
-//
-// NKWASIBWE TASK ORCHESTRATION ENTRY POINT
 //
 // Pipeline:
 //
-// USER MESSAGE
-//      ↓
-// VALIDATE
-//      ↓
-// TASK ANALYSIS
-//      ↓
-// CLASSIFY
-//      ↓
-// CAPABILITY DISCOVERY
-//      ↓
-// EXECUTION STRATEGY
-//      ↓
-// EXISTING NKWASIBWE AGENT
-//      ↓
-// RESULT
+// USER
+//   ↓
+// AUTHENTICATION
+//   ↓
+// TASK NORMALIZATION
+//   ↓
+// TASK UNDERSTANDING
+//   ↓
+// PLANNING
+//   ↓
+// AGENT EXECUTION
+//   ↓
+// MEMORY / CONVERSATION
+//   ↓
+// VERIFICATION METADATA
+//   ↓
+// RESPONSE
 //
 // IMPORTANT:
-// The existing agent executor remains the execution engine.
-// This layer adds structured task intelligence without
-// breaking the current chat contract.
+// This endpoint intentionally performs its own validation.
+// server.js currently contains legacy duplicate
+// validateAgentTask() declarations, so /api/chat must not
+// depend on the return shape of those legacy functions.
 // ============================================================
 
 app.post(
   "/api/chat",
   authenticateToken,
+  chatRateLimit,
   async (req, res) => {
+
+    const requestId =
+      req.requestId ||
+      crypto.randomUUID();
 
     try {
 
-      const task =
+      // --------------------------------------------------------
+      // 1. READ USER TASK
+      // --------------------------------------------------------
+
+      const rawTask =
         req.body?.message ??
         req.body?.task ??
-        req.body?.prompt;
+        req.body?.prompt ??
+        "";
 
-      const validation =
-        validateAgentTask(
-          task
-        );
+      const task =
+        typeof rawTask === "string"
+          ? rawTask
+              .replace(/\u0000/g, "")
+              .trim()
+          : "";
 
-      if (
-        !validation.valid
-      ) {
+      console.log(
+        "[AGENT CHAT] Incoming task:",
+        {
+          requestId,
+          userId: req.user?.id || null,
+          taskLength: task.length,
+          hasSessionId:
+            Boolean(
+              req.body?.sessionId ||
+              req.body?.session_id
+            )
+        }
+      );
 
-        return res.status(
-          400
-        ).json({
-          success:
-            false,
+      // --------------------------------------------------------
+      // 2. VALIDATE TASK
+      // --------------------------------------------------------
 
-          error:
-            validation.error,
+      if (!task) {
 
-          code:
-            validation.code
+        return res.status(400).json({
+          success: false,
+          error: "Task is required",
+          code: "TASK_REQUIRED",
+          requestId
         });
 
       }
 
-      const validatedTask =
-        validation.value;
+      if (
+        task.length >
+        Number(
+          AGENT_CONFIG?.MAX_TASK_LENGTH ||
+          LIMITS.maxTaskLength ||
+          100000
+        )
+      ) {
 
-      const sessionId =
-        normalizeText(
-          req.body?.sessionId ||
-          req.body?.session_id ||
-          ""
-        ) || null;
+        return res.status(400).json({
+          success: false,
+          error: "Task is too long",
+          code: "TASK_TOO_LONG",
+          requestId
+        });
+
+      }
+
+      // --------------------------------------------------------
+      // 3. SESSION NORMALIZATION
+      // --------------------------------------------------------
+
+      const requestedSessionId =
+        typeof req.body?.sessionId === "string"
+          ? req.body.sessionId.trim()
+          : typeof req.body?.session_id === "string"
+            ? req.body.session_id.trim()
+            : "";
 
       /*
-       * --------------------------------------------------------
-       * TASK ORCHESTRATION ANALYSIS
-       * --------------------------------------------------------
+       * The frontend may temporarily have a local session ID.
        *
-       * This does NOT execute tools.
-       * It determines what kind of task the user has submitted.
+       * We only reuse a session if it is a valid UUID.
+       * Otherwise we allow the agent executor to create the
+       * real database conversation.
        */
+
+      const sessionId =
+        requestedSessionId &&
+        isValidSessionId(requestedSessionId)
+          ? requestedSessionId
+          : null;
+
+      // --------------------------------------------------------
+      // 4. TASK UNDERSTANDING
+      // --------------------------------------------------------
 
       let taskAnalysis = null;
 
@@ -12742,92 +12793,81 @@ app.post(
 
         taskAnalysis =
           analyzeTask(
-            validatedTask,
+            task,
             {
               userId:
                 req.user?.id ||
                 null,
 
-              sessionId
+              sessionId,
+
+              requestId
             }
           );
 
         console.log(
-          "[NKWASIBWE TASK ANALYSIS]",
+          "[AGENT] Task understood:",
           summarizePlan(
             taskAnalysis
           )
         );
 
-      } catch (
-        analysisError
-      ) {
-
-        /*
-         * Task analysis must never destroy
-         * the existing chat experience.
-         *
-         * If the new orchestration layer fails,
-         * the established agent still receives
-         * the original validated task.
-         */
+      } catch (analysisError) {
 
         console.warn(
-          "[TASK ORCHESTRATOR WARNING]",
-          analysisError?.message ||
-          analysisError
+          "[AGENT] Task analysis failed; continuing:",
+          {
+            requestId,
+            error:
+              analysisError?.message ||
+              String(analysisError)
+          }
         );
 
       }
 
-      /*
-       * --------------------------------------------------------
-       * EXISTING AGENT EXECUTION
-       * --------------------------------------------------------
-       *
-       * We deliberately keep the existing executor.
-       *
-       * This protects:
-       *
-       * - authentication
-       * - conversation ownership
-       * - memory
-       * - database persistence
-       * - provider routing
-       * - existing tools
-       * - retry protection
-       * - timeout protection
-       */
+      // --------------------------------------------------------
+      // 5. EXECUTE AGENT
+      // --------------------------------------------------------
+
+      console.log(
+        "[AGENT] Starting execution:",
+        {
+          requestId,
+          userId:
+            req.user?.id || null,
+          sessionId,
+          task
+        }
+      );
 
       const result =
         await executeNkwasibweAgent({
           userId:
             req.user.id,
 
-          task:
-            validatedTask,
+          task,
 
           sessionId
         });
 
-      /*
-       * --------------------------------------------------------
-       * RESPONSE ENRICHMENT
-       * --------------------------------------------------------
-       *
-       * Existing response fields are preserved.
-       * New orchestration metadata is additive.
-       */
+      // --------------------------------------------------------
+      // 6. BUILD AGENT RESPONSE
+      // --------------------------------------------------------
 
-      return res.status(
-        200
-      ).json({
+      const response = {
 
         ...result,
+
+        success: true,
+
+        requestId,
 
         orchestration:
           taskAnalysis
             ? {
+                status: "completed",
+
                 engine:
                   taskAnalysis.engine,
 
@@ -12844,48 +12884,127 @@ app.post(
                   taskAnalysis.verification
               }
             : {
+                status:
+                  "execution_completed",
+
                 engine: {
                   name:
-                    "Nkwasibwe Task Orchestration Engine",
+                    "Nkwasibwe Agent Core",
 
                   version:
                     "1.0.0"
-                },
+                }
+              },
 
-                status:
-                  "analysis_unavailable"
-              }
+        agentRuntime: {
 
-      });
+          mode:
+            "agent",
 
-    } catch (
-      error
-    ) {
+          taskUnderstanding:
+            Boolean(
+              taskAnalysis
+            ),
+
+          memory:
+            true,
+
+          conversation:
+            Boolean(
+              result?.conversation
+            ),
+
+          verification:
+            Boolean(
+              taskAnalysis?.verification
+            )
+
+        }
+
+      };
+
+      console.log(
+        "[AGENT] Execution completed:",
+        {
+          requestId,
+
+          userId:
+            req.user?.id || null,
+
+          sessionId:
+            result?.conversation
+              ?.session_id || null
+        }
+      );
+
+      return res
+        .status(200)
+        .json(response);
+
+    } catch (error) {
 
       console.error(
-        "Chat error:",
-        error
+        "[AGENT CHAT ERROR]",
+        {
+          requestId,
+
+          userId:
+            req.user?.id || null,
+
+          code:
+            error?.code ||
+            "UNKNOWN_ERROR",
+
+          status:
+            error?.status ||
+            null,
+
+          message:
+            error?.message ||
+            String(error)
+        }
       );
 
       const normalized =
-        normalizeAIError(
-          error
-        );
+        typeof normalizeAIError ===
+        "function"
+          ? normalizeAIError(
+              error
+            )
+          : {
+              status:
+                Number(error?.status) >= 400
+                  ? Number(error.status)
+                  : 500,
 
-      return res.status(
-        normalized.status
-      ).json({
+              message:
+                error?.message ||
+                "Agent execution failed",
 
-        success:
-          false,
+              code:
+                error?.code ||
+                "AGENT_EXECUTION_FAILED"
+            };
 
-        error:
-          normalized.message,
+      return res
+        .status(
+          normalized.status || 500
+        )
+        .json({
 
-        code:
-          normalized.code
+          success: false,
 
-      });
+          error:
+            normalized.message ||
+            "Agent execution failed",
+
+          code:
+            normalized.code ||
+            "AGENT_EXECUTION_FAILED",
+
+          requestId
+
+        });
 
     }
 
