@@ -10383,54 +10383,82 @@ app.get(
 
 const AGENT_CONFIG = Object.freeze({
 
-  NAME:
-    "Nkwasibwe IRHCF",
+NAME:
+"Nkwasibwe IRHCF",
 
-  VERSION:
-    "1.0.0",
+VERSION:
+"1.0.0",
 
-  MAX_TASK_LENGTH:
-    50000,
+MAX_TASK_LENGTH:
+50000,
 
-  MAX_CONTEXT_MESSAGES:
-    50,
+MAX_CONTEXT_MESSAGES:
+50,
 
-  MAX_MEMORY_ITEMS:
-    30,
+MAX_MEMORY_ITEMS:
+30,
 
-  MAX_OUTPUT_LENGTH:
-    50000,
+MAX_OUTPUT_LENGTH:
+50000,
+    RESPONSE_VERIFICATION_ENABLED:
+    true,
 
-  DEFAULT_MODEL:
-    "gpt-4o-mini",
+  SELF_REPAIR_ENABLED:
+    true,
 
-  REQUEST_TIMEOUT_MS:
-    120000,
+  MAX_SELF_REPAIR_ATTEMPTS:
+    1,
 
-  MAX_RETRIES:
-    2,
+DEFAULT_MODEL:
+"gpt-4o-mini",
 
-  TEMPERATURE:
-    0.2,
+REQUEST_TIMEOUT_MS:
+120000,
 
-  SYSTEM_PROMPT:
+MAX_RETRIES:
+2,
+
+TEMPERATURE:
+0.2,
+
+SYSTEM_PROMPT:
 
 `You are Nkwasibwe IRHCF, an advanced AI agent.
 
 Your responsibilities are to:
 
 1. Understand the user's request accurately.
+
+
 2. Use available conversation context responsibly.
+
+
 3. Use available memory context only when relevant.
+
+
 4. Produce useful, clear and logically structured responses.
+
+
 5. Never invent facts when reliable information is unavailable.
+
+
 6. Protect user privacy and conversation boundaries.
+
+
 7. Never reveal private system information, authentication
-   tokens, secrets, database credentials or internal security data.
+tokens, secrets, database credentials or internal security data.
+
+
 8. Never claim to have performed an action that was not actually
-   performed.
+performed.
+
+
 9. Be transparent about limitations.
+
+
 10. Prefer accurate reasoning over unnecessary verbosity.
+
+
 
 The user may communicate in Kinyarwanda, English, French or
 other languages. Respond in the language most appropriate to
@@ -10442,38 +10470,39 @@ Your responses should be professional, useful and context-aware.`
 
 });
 
-
 // ============================================================
 // AGENT RUNTIME STATE
 // ============================================================
 
 const AGENT_RUNTIME = {
 
-  startedAt:
-    new Date(),
+startedAt:
+new Date(),
 
-  totalRequests:
-    0,
+totalRequests:
+0,
 
-  successfulRequests:
-    0,
+successfulRequests:
+0,
 
-  failedRequests:
-    0,
+failedRequests:
+0,
 
-  activeRequests:
-    0,
+activeRequests:
+0,
 
-  lastRequestAt:
-    null,
+lastRequestAt:
+null,
 
-  lastSuccessAt:
-    null,
+lastSuccessAt:
+null,
 
-  lastFailureAt:
-    null
+lastFailureAt:
+null
 
 };
+
+Ahase?
 
 
 // ============================================================
@@ -13627,6 +13656,635 @@ function applyResponseQuality(
 
 }
 
+// ============================================================
+// RESPONSE VERIFICATION ENGINE
+// ============================================================
+// Verifies an AI response before it is persisted.
+//
+// Checks:
+// - Response exists
+// - Response is relevant to the current task
+// - Response is not obviously repetitive
+// - Response is not excessively large
+// - Response follows the requested language
+// - Response has reasonable structure
+// ============================================================
+
+function verifyAgentResponse(
+  task,
+  answer,
+  expectedLanguage
+) {
+
+  const issues = [];
+
+  const taskText =
+    String(
+      task || ""
+    ).trim();
+
+  const responseText =
+    String(
+      answer || ""
+    ).trim();
+
+
+  // ----------------------------------------------------------
+  // EMPTY RESPONSE
+  // ----------------------------------------------------------
+
+  if (!responseText) {
+
+    issues.push(
+      "EMPTY_RESPONSE"
+    );
+
+  }
+
+
+  // ----------------------------------------------------------
+  // MINIMUM RESPONSE
+  // ----------------------------------------------------------
+
+  if (
+    responseText &&
+    responseText.length < 2
+  ) {
+
+    issues.push(
+      "RESPONSE_TOO_SHORT"
+    );
+
+  }
+
+
+  // ----------------------------------------------------------
+  // MAXIMUM RESPONSE
+  // ----------------------------------------------------------
+
+  const maxOutputLength =
+    Number(
+      AGENT_CONFIG.MAX_OUTPUT_LENGTH
+    ) || 50000;
+
+
+  if (
+    responseText.length >
+    maxOutputLength
+  ) {
+
+    issues.push(
+      "RESPONSE_TOO_LONG"
+    );
+
+  }
+
+
+  // ----------------------------------------------------------
+  // EXACT REPETITION
+  // ----------------------------------------------------------
+
+  const normalizedLines =
+    responseText
+      .split(/\r?\n/)
+      .map(
+        line =>
+          line.trim()
+      )
+      .filter(
+        Boolean
+      );
+
+
+  const repeatedLines = {};
+
+  for (
+    const line
+    of normalizedLines
+  ) {
+
+    if (
+      line.length < 20
+    ) {
+      continue;
+    }
+
+    const key =
+      line.toLowerCase();
+
+    repeatedLines[key] =
+      (
+        repeatedLines[key] ||
+        0
+      ) + 1;
+
+  }
+
+
+  const hasHeavyRepetition =
+    Object.values(
+      repeatedLines
+    ).some(
+      count =>
+        count >= 3
+    );
+
+
+  if (
+    hasHeavyRepetition
+  ) {
+
+    issues.push(
+      "REPETITION"
+    );
+
+  }
+
+
+  // ----------------------------------------------------------
+  // LANGUAGE CONSISTENCY
+  // ----------------------------------------------------------
+  // We only enforce this when the detector has a
+  // reasonably identifiable language.
+  //
+  // Technical words, code, names and URLs are allowed.
+  // ----------------------------------------------------------
+
+  if (
+    expectedLanguage &&
+    expectedLanguage !==
+      "unknown" &&
+    responseText
+  ) {
+
+    const responseLanguage =
+      detectAgentLanguage(
+        responseText
+      );
+
+
+    if (
+      responseLanguage !==
+        "unknown" &&
+      responseLanguage !==
+        expectedLanguage
+    ) {
+
+      issues.push(
+        "LANGUAGE_MISMATCH"
+      );
+
+    }
+
+  }
+
+
+  // ----------------------------------------------------------
+  // GIANT UNSTRUCTURED PARAGRAPH
+  // ----------------------------------------------------------
+
+  const paragraphCount =
+    responseText
+      .split(/\n\s*\n/)
+      .filter(
+        Boolean
+      )
+      .length;
+
+
+  const veryLongSingleParagraph =
+    paragraphCount <= 1 &&
+    responseText.length > 3500 &&
+    !responseText.includes(
+      "\n- "
+    ) &&
+    !responseText.includes(
+      "\n* "
+    ) &&
+    !responseText.includes(
+      "\n1. "
+    ) &&
+    !responseText.includes(
+      "\n#"
+    );
+
+
+  if (
+    veryLongSingleParagraph
+  ) {
+
+    issues.push(
+      "POOR_STRUCTURE"
+    );
+
+  }
+
+
+  // ----------------------------------------------------------
+  // BASIC TASK PRESENCE CHECK
+  // ----------------------------------------------------------
+  // This deliberately does NOT require exact task words because
+  // a good answer may paraphrase the user's question.
+  // ----------------------------------------------------------
+
+  if (
+    taskText &&
+    responseText
+  ) {
+
+    const taskWords =
+      taskText
+        .toLowerCase()
+        .replace(
+          /[^\p{L}\p{N}\s]/gu,
+          " "
+        )
+        .split(/\s+/)
+        .filter(
+          word =>
+            word.length >= 5
+        );
+
+
+    if (
+      taskWords.length >= 3
+    ) {
+
+      const responseLower =
+        responseText
+          .toLowerCase();
+
+
+      const matchedWords =
+        taskWords.filter(
+          word =>
+            responseLower.includes(
+              word
+            )
+        );
+
+
+      const relevanceRatio =
+        matchedWords.length /
+        taskWords.length;
+
+
+      // This is intentionally conservative.
+      // It only flags extremely disconnected answers.
+      if (
+        relevanceRatio <
+          0.05 &&
+        responseText.length <
+          1200
+      ) {
+
+        issues.push(
+          "POSSIBLY_OFF_TOPIC"
+        );
+
+      }
+
+    }
+
+  }
+
+
+  // ----------------------------------------------------------
+  // RESULT
+  // ----------------------------------------------------------
+
+  return {
+
+    valid:
+      issues.length === 0,
+
+    issues,
+
+    issueCount:
+      issues.length,
+
+    language:
+      expectedLanguage ||
+      "unknown",
+
+    responseLength:
+      responseText.length
+
+  };
+
+}
+
+
+// ============================================================
+// SELF-REPAIR ENGINE
+// ============================================================
+// Repairs a failed response by asking the configured AI
+// provider to rewrite the existing answer.
+//
+// Important:
+// - Does NOT create a second conversation.
+// - Does NOT persist the bad answer.
+// - Runs at most MAX_SELF_REPAIR_ATTEMPTS times.
+// ============================================================
+
+async function selfRepairAgentResponse(
+  task,
+  answer,
+  verification,
+  language,
+  model,
+  temperature
+) {
+
+  const maxAttempts =
+    Math.max(
+      0,
+      Number(
+        AGENT_CONFIG.MAX_SELF_REPAIR_ATTEMPTS
+      ) || 1
+    );
+
+
+  if (
+    maxAttempts === 0
+  ) {
+
+    return {
+
+      repaired:
+        false,
+
+      answer,
+
+      attempts:
+        0
+
+    };
+
+  }
+
+
+  let currentAnswer =
+    String(
+      answer || ""
+    ).trim();
+
+
+  let lastVerification =
+    verification;
+
+
+  for (
+    let attempt = 1;
+    attempt <= maxAttempts;
+    attempt++
+  ) {
+
+    console.log(
+      "[AGENT VERIFY] Self-repair attempt:",
+      {
+        attempt,
+        issues:
+          lastVerification?.issues ||
+          []
+      }
+    );
+
+
+    const languageInstruction =
+      language === "rw"
+
+        ? "Write the repaired answer ONLY in Kinyarwanda."
+
+        : language === "en"
+
+          ? "Write the repaired answer ONLY in English."
+
+          : language === "fr"
+
+            ? "Write the repaired answer ONLY in French."
+
+            : language === "sw"
+
+              ? "Write the repaired answer ONLY in Swahili."
+
+              : "Use the same language as the user's task.";
+
+
+    const repairMessages = [
+
+      {
+        role:
+          "system",
+
+        content:
+          [
+            "You are the Nkwasibwe IRHCF response repair engine.",
+
+            languageInstruction,
+
+            "Repair the existing answer instead of changing the user's task.",
+
+            "Keep the answer concise unless the task requires detail.",
+
+            "Remove repetition.",
+
+            "Improve clarity and spacing.",
+
+            "Use clean Markdown when useful.",
+
+            "Keep code, commands, URLs, names and important technical information intact.",
+
+            "Do not mention that a repair was performed.",
+
+            "Do not add information merely to make the answer longer."
+
+          ].join("\n")
+
+      },
+
+      {
+        role:
+          "user",
+
+        content:
+          [
+            "CURRENT USER TASK:",
+
+            task,
+
+            "",
+
+            "CURRENT ANSWER:",
+
+            currentAnswer,
+
+            "",
+
+            "VERIFICATION ISSUES:",
+
+            (
+              lastVerification?.issues ||
+              []
+            ).join(", ") ||
+            "unknown",
+
+            "",
+
+            "Return ONLY the repaired final answer."
+
+          ].join("\n")
+
+      }
+
+    ];
+
+
+    try {
+
+      const repairedProviderResponse =
+        await executeAIProvider(
+
+          repairMessages,
+
+          {
+
+            model,
+
+            temperature:
+
+              Math.min(
+                Number(
+                  temperature
+                ) || 0.2,
+                0.2
+              ),
+
+            maxTokens:
+              1500,
+
+            openaiMaxTokens:
+              1500,
+
+            geminiMaxTokens:
+              1500,
+
+            groqMaxTokens:
+              1500
+
+          }
+
+        );
+
+
+      const repairedRaw =
+        extractAIResponse(
+          repairedProviderResponse
+        );
+
+
+      const qualityResult =
+        applyResponseQuality(
+
+          repairedRaw,
+
+          task
+
+        );
+
+
+      currentAnswer =
+        qualityResult.answer;
+
+
+      lastVerification =
+        verifyAgentResponse(
+
+          task,
+
+          currentAnswer,
+
+          language
+
+        );
+
+
+      if (
+        lastVerification.valid
+      ) {
+
+        console.log(
+          "[AGENT VERIFY] Self-repair successful:",
+          {
+            attempt
+          }
+        );
+
+
+        return {
+
+          repaired:
+            true,
+
+          answer:
+            currentAnswer,
+
+          attempts:
+            attempt,
+
+          verification:
+            lastVerification
+
+        };
+
+      }
+
+    } catch (repairError) {
+
+      console.warn(
+        "[AGENT VERIFY] Self-repair failed:",
+        {
+          attempt,
+
+          code:
+            repairError?.code ||
+            "UNKNOWN_ERROR",
+
+          message:
+            repairError?.message ||
+            "Unknown repair error"
+
+        }
+      );
+
+    }
+
+  }
+
+
+  // ----------------------------------------------------------
+  // If repair could not produce a valid response,
+  // return the best available response rather than inventing
+  // a fake success.
+  // ----------------------------------------------------------
+
+  return {
+
+    repaired:
+      false,
+
+    answer:
+      currentAnswer,
+
+    attempts:
+      maxAttempts,
+
+    verification:
+      lastVerification
+
+  };
+
+      }
 
 // ============================================================
 // CORE AGENT EXECUTION
@@ -13888,21 +14546,128 @@ async function executeNkwasibweAgent(
 
 
     // --------------------------------------------------------
-    // RESPONSE QUALITY GATE
-    // --------------------------------------------------------
+// RESPONSE QUALITY GATE
+// --------------------------------------------------------
 
-    const qualityResult =
-      applyResponseQuality(
+const qualityResult =
+  applyResponseQuality(
 
-        rawAnswer,
+    rawAnswer,
 
-        validatedTask
+    validatedTask
 
-      );
+  );
 
 
-    const answer =
-      qualityResult.answer;
+let answer =
+  qualityResult.answer;
+
+
+// --------------------------------------------------------
+// RESPONSE VERIFICATION
+// --------------------------------------------------------
+
+let verification =
+  verifyAgentResponse(
+
+    validatedTask,
+
+    answer,
+
+    qualityResult.language
+
+  );
+
+
+let selfRepairResult = {
+
+  repaired:
+    false,
+
+  attempts:
+    0
+
+};
+
+
+// --------------------------------------------------------
+// SELF-REPAIR
+// --------------------------------------------------------
+// Only repair when verification finds a problem.
+// This avoids unnecessary extra AI calls for good answers.
+// --------------------------------------------------------
+
+if (
+  !verification.valid &&
+  AGENT_CONFIG.SELF_REPAIR_ENABLED === true
+) {
+
+  selfRepairResult =
+    await selfRepairAgentResponse(
+
+      validatedTask,
+
+      answer,
+
+      verification,
+
+      qualityResult.language,
+
+      model,
+
+      temperature
+
+    );
+
+
+  if (
+    selfRepairResult?.answer
+  ) {
+
+    answer =
+      selfRepairResult.answer;
+
+  }
+
+
+  if (
+    selfRepairResult?.verification
+  ) {
+
+    verification =
+      selfRepairResult.verification;
+
+  }
+
+}
+
+
+// --------------------------------------------------------
+// FINAL VERIFICATION
+// --------------------------------------------------------
+// If the response is still invalid after repair,
+// do NOT pretend everything is perfect.
+// We keep the response but record the verification state.
+// --------------------------------------------------------
+
+console.log(
+  "[AGENT VERIFY] Final response verification:",
+  {
+
+    valid:
+      verification.valid,
+
+    issues:
+      verification.issues,
+
+    repaired:
+      selfRepairResult.repaired,
+
+    repairAttempts:
+      selfRepairResult.attempts
+
+  }
+);
 
 
     // --------------------------------------------------------
@@ -14042,36 +14807,44 @@ async function executeNkwasibweAgent(
 
       agent: {
 
-        name:
-          AGENT_CONFIG.NAME,
+  name:
+    AGENT_CONFIG.NAME,
 
-        version:
-          AGENT_CONFIG.VERSION,
+  version:
+    AGENT_CONFIG.VERSION,
 
-        model,
+  model,
 
-        language:
-          qualityResult.language,
+  language:
+    qualityResult.language,
 
-        responseQuality:
-          {
+  responseQuality:
+    {
 
-            enabled:
-              true,
+      enabled:
+        true,
 
-            originalLength:
-              qualityResult.originalLength,
+      originalLength:
+        qualityResult.originalLength,
 
-            finalLength:
-              qualityResult.finalLength
+      finalLength:
+        answer.length,
 
-          }
+      verified:
+        verification.valid,
+
+      verificationIssues:
+        verification.issues,
+
+      selfRepaired:
+        selfRepairResult.repaired,
+
+      repairAttempts:
+        selfRepairResult.attempts
+
+    }
 
       }
-
-    };
-
-
   } catch (error) {
 
     // --------------------------------------------------------
