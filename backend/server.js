@@ -11794,6 +11794,11 @@ async function callGroqWithTimeout(
 
     const data =
       await response.json();
+    
+    console.log(
+  "[GROQ RAW RESPONSE]",
+  JSON.stringify(data)
+);
 
 
     if (!response.ok) {
