@@ -205,67 +205,36 @@ app.use(
 );
 
 // ============================================================
-// REQUEST ID
+// REQUEST CONTEXT
+// ============================================================
+//
+// Canonical request-context entry point.
+//
+// IMPORTANT:
+//
+// This section intentionally does NOT create a second
+// request-id/timing system.
+//
+// The canonical REQUEST CONTEXT MIDDLEWARE lives in
+// Part 2 and is responsible for:
+//
+//   - request ID
+//   - request start time
+//   - client IP
+//   - active request tracking
+//   - X-Request-ID response header
+//
+// Keeping one request-context implementation prevents:
+//
+//   - duplicate request IDs
+//   - conflicting timers
+//   - inconsistent audit logs
+//   - duplicated active-request state
+//
 // ============================================================
 
-app.use(
-  (req, res, next) => {
-
-    const incomingId =
-      typeof req.headers[
-        "x-request-id"
-      ] === "string"
-        ? req.headers[
-            "x-request-id"
-          ].trim()
-        : "";
-
-    const requestId =
-      incomingId ||
-      crypto.randomUUID();
-
-    req.requestId =
-      requestId;
-
-    res.setHeader(
-      "X-Request-ID",
-      requestId
-    );
-
-    next();
-
-  }
-);
-
-// ============================================================
-// REQUEST TIMING
-// ============================================================
-
-app.use(
-  (req, res, next) => {
-
-    req.startedAt =
-      Date.now();
-
-    res.on(
-      "finish",
-      () => {
-
-        const duration =
-          Date.now() -
-          req.startedAt;
-
-        console.log(
-          `[HTTP] ${req.method} ${req.originalUrl} ${res.statusCode} ${duration}ms [${req.requestId}]`
-        );
-
-      }
-    );
-
-    next();
-
-  }
-);
+// Request context is initialized by the canonical
+// security/request-context middleware in Part 2.
 
 // ============================================================
 // OPENAI PROVIDER
@@ -297,54 +266,168 @@ const GEMINI_MODEL =
 const GROQ_MODEL =
   process.env.GROQ_MODEL ||
   "openai/gpt-oss-20b";
-
 // ============================================================
-// PROVIDER STATE
+// PROVIDER REGISTRY & STATE
+// ============================================================
+//
+// IMPORTANT ARCHITECTURE RULE:
+//
+// Providers are infrastructure.
+// Providers are NOT agents.
+//
+// Agents decide WHAT work must be done.
+// Providers decide WHICH AI service/model can perform
+// a model-generation step.
+//
+// Nkwasibwe must therefore be able to operate with:
+//   - OpenAI
+//   - Gemini
+//   - Groq
+//   - Local/future providers
+//
+// without treating any provider as the Nkwasibwe agent itself.
+//
+// This registry is intentionally centralized so that:
+//   1. health/status can see every provider;
+//   2. routing can inspect provider availability;
+//   3. future agents can request suitable providers;
+//   4. provider failures can be isolated;
+//   5. new providers can be added without creating
+//      another provider-state system.
 // ============================================================
 
-const providerState = {
+const providerState = Object.create(null);
 
-  openai: {
-    configured:
-      Boolean(openai),
+function createProviderState({
+  name,
+  configured = false,
+  available = false,
+  model = null,
+  priority = 100
+} = {}) {
+  return {
+    name,
+    configured: Boolean(configured),
+    available: Boolean(available && configured),
 
-    available:
-      Boolean(openai),
+    model:
+      typeof model === "string" && model.trim()
+        ? model.trim()
+        : null,
 
-    failures:
-      0,
+    priority:
+      Number.isFinite(Number(priority))
+        ? Number(priority)
+        : 100,
 
-    successes:
-      0,
+    failures: 0,
+    successes: 0,
 
-    lastError:
-      null,
+    consecutiveFailures: 0,
 
-    lastSuccess:
-      null
-  },
+    lastError: null,
+    lastSuccess: null,
+    lastAttempt: null,
 
-  local: {
-    configured:
-      true,
+    cooldownUntil: null
+  };
+}
 
-    available:
-      true,
+providerState.openai =
+  createProviderState({
+    name: "openai",
+    configured: Boolean(OPENAI_API_KEY),
+    available: Boolean(openai),
+    model: OPENAI_MODEL,
+    priority: 20
+  });
 
-    failures:
-      0,
+providerState.gemini =
+  createProviderState({
+    name: "gemini",
+    configured: Boolean(GEMINI_API_KEY),
+    available: Boolean(GEMINI_API_KEY),
+    model: GEMINI_MODEL,
+    priority: 30
+  });
 
-    successes:
-      0,
+providerState.groq =
+  createProviderState({
+    name: "groq",
+    configured: Boolean(GROQ_API_KEY),
+    available: Boolean(GROQ_API_KEY),
+    model: GROQ_MODEL,
+    priority: 10
+  });
 
-    lastError:
-      null,
+// Kept for backward compatibility with existing
+// internal code that may still refer to a local
+// intelligence state.
+//
+// This does NOT mean local is an AI agent.
+// It is only an infrastructure/provider slot.
+providerState.local =
+  createProviderState({
+    name: "local",
+    configured: true,
+    available: true,
+    model: null,
+    priority: 1000
+  });
 
-    lastSuccess:
-      null
-  }
+// ------------------------------------------------------------
+// PROVIDER REGISTRY HELPERS
+// ------------------------------------------------------------
 
-};
+function getProviderState(
+  providerName
+) {
+  const name =
+    String(
+      providerName || ""
+    )
+      .trim()
+      .toLowerCase();
+
+  return (
+    providerState[name] ||
+    null
+  );
+}
+
+function getConfiguredProviders() {
+  return Object.values(
+    providerState
+  ).filter(
+    provider =>
+      provider.configured
+  );
+}
+
+function getAvailableProviders() {
+  const now =
+    Date.now();
+
+  return Object.values(
+    providerState
+  )
+    .filter(
+      provider =>
+        provider.configured &&
+        provider.available &&
+        (
+          !provider.cooldownUntil ||
+          new Date(
+            provider.cooldownUntil
+          ).getTime() <= now
+        )
+    )
+    .sort(
+      (a, b) =>
+        a.priority -
+        b.priority
+    );
+}
 
 // ============================================================
 // APPLICATION RUNTIME STATE
@@ -371,9 +454,17 @@ const runtimeState = {
     null
 
 };
-
 // ============================================================
 // FREEZE STATIC CONFIGURATION
+// ============================================================
+//
+// APP_CONFIG contains public/runtime-safe configuration only.
+//
+// IMPORTANT:
+// - Never expose provider API keys here.
+// - Providers are infrastructure, not agents.
+// - The Supervisor/Agent system will use providerState.
+// - Keep legacy OpenAI fields for backward compatibility.
 // ============================================================
 
 const APP_CONFIG =
@@ -397,11 +488,95 @@ const APP_CONFIG =
     jwtConfigured:
       Boolean(JWT_SECRET),
 
+    // ----------------------------------------------------------
+    // PROVIDER COMPATIBILITY
+    // ----------------------------------------------------------
+    //
+    // These legacy fields may still be consumed by existing
+    // code. They remain intentionally available.
+    // ----------------------------------------------------------
+
     openaiConfigured:
-      Boolean(OPENAI_API_KEY),
+      Boolean(
+        providerState.openai?.configured
+      ),
 
     openaiModel:
       OPENAI_MODEL,
+
+    // ----------------------------------------------------------
+    // MULTI-PROVIDER PLATFORM STATE
+    // ----------------------------------------------------------
+    //
+    // Do NOT expose API keys.
+    //
+    // Only safe provider metadata is exposed.
+    // ----------------------------------------------------------
+
+    providers:
+      Object.freeze(
+        Object.fromEntries(
+          Object.entries(
+            providerState
+          ).map(
+            ([
+              providerName,
+              provider
+            ]) => [
+              providerName,
+              Object.freeze({
+                name:
+                  provider.name,
+
+                configured:
+                  Boolean(
+                    provider.configured
+                  ),
+
+                available:
+                  Boolean(
+                    provider.available
+                  ),
+
+                model:
+                  provider.model,
+
+                priority:
+                  provider.priority
+              })
+            ]
+          )
+        )
+      ),
+
+    // ----------------------------------------------------------
+    // PLATFORM IDENTITY
+    // ----------------------------------------------------------
+    //
+    // These values describe the architecture rather than
+    // pretending Nkwasibwe is one single model/agent.
+    // ----------------------------------------------------------
+
+    architecture:
+      Object.freeze({
+        type:
+          "multi_agent",
+
+        orchestration:
+          "supervisor",
+
+        execution:
+          "controlled_dynamic",
+
+        verification:
+          "enabled",
+
+        capabilityExpansion:
+          "controlled",
+
+        providerAbstraction:
+          "enabled"
+      }),
 
     limits:
       LIMITS
@@ -6224,585 +6399,33 @@ app.delete(
   }
 );
 
-
 // ============================================================
-// CREATE LONG-TERM MEMORY
+// LONG-TERM MEMORY API
 // ============================================================
-
-app.post(
-  "/api/long-term-memory",
-  authenticateToken,
-  async (req, res) => {
-
-    try {
-
-      const validation =
-        validateLongTermMemoryContent(
-          req.body?.content
-        );
-
-
-      if (
-        !validation.valid
-      ) {
-
-        return res.status(400).json({
-
-          success:
-            false,
-
-          error:
-            validation.error,
-
-          code:
-            validation.code
-
-        });
-
-      }
-
-
-      const memoryType =
-        normalizeMemoryType(
-          req.body?.type
-        );
-
-
-      const importance =
-        normalizeMemoryImportance(
-          req.body?.importance
-        );
-
-
-      const source =
-        normalizeMemorySource(
-          req.body?.source
-        );
-
-
-      const result =
-        await pool.query(
-
-          `INSERT INTO long_term_memory
-           (
-             user_id,
-             content,
-             memory_type,
-             importance,
-             source
-           )
-           VALUES
-           (
-             $1,
-             $2,
-             $3,
-             $4,
-             $5
-           )
-           RETURNING *`,
-
-          [
-
-            req.user.id,
-
-            validation.value,
-
-            memoryType,
-
-            importance,
-
-            source
-
-          ]
-
-        );
-
-
-      if (
-        result.rows.length ===
-        0
-      ) {
-
-        throw new Error(
-          "Long-term memory creation returned no record"
-        );
-
-      }
-
-
-      const memory =
-        result.rows[0];
-
-
-      await systemLog(
-
-        "info",
-
-        "long_term_memory",
-
-        "Long-term memory created",
-
-        {
-
-          userId:
-            req.user.id,
-
-          memoryId:
-            memory.id,
-
-          memoryType:
-            memory.memory_type,
-
-          importance:
-            memory.importance,
-
-          source:
-            memory.source
-
-        }
-
-      );
-
-
-      return res.status(201).json({
-
-        success:
-          true,
-
-        memory
-
-      });
-
-    } catch (error) {
-
-      console.error(
-        "Create long-term memory error:",
-        error
-      );
-
-
-      return res.status(500).json({
-
-        success:
-          false,
-
-        error:
-          "Could not save long-term memory",
-
-        code:
-          "LONG_TERM_MEMORY_SAVE_FAILED"
-
-      });
-
-    }
-
-  }
-);
-
-
+//
+// IMPORTANT:
+//
+// Long-term memory has ONE canonical API implementation.
+//
+// The actual implementation is registered later in the
+// Advanced Memory Engine section.
+//
+// This section intentionally contains NO duplicate routes.
+//
+// Canonical responsibilities include:
+//
+//   - create long-term memory
+//   - list long-term memory
+//   - retrieve one memory
+//   - delete memory
+//   - memory validation
+//   - memory sanitization
+//   - user isolation
+//
+// Keeping one route owner prevents Express from resolving
+// an older implementation before the advanced memory engine.
+//
 // ============================================================
-// LIST LONG-TERM MEMORY
-// ============================================================
-
-app.get(
-  "/api/long-term-memory",
-  authenticateToken,
-  async (req, res) => {
-
-    try {
-
-      const limit =
-        normalizeMemoryLimit(
-          req.query?.limit
-        );
-
-
-      const type =
-        normalizeMemoryType(
-          req.query?.type
-        );
-
-
-      const search =
-        normalizeMemorySearch(
-          req.query?.search
-        );
-
-
-      const values = [
-        req.user.id
-      ];
-
-
-      let query = `
-
-        SELECT
-          id,
-          content,
-          memory_type,
-          importance,
-          source,
-          created_at,
-          updated_at
-
-        FROM long_term_memory
-
-        WHERE user_id = $1
-
-      `;
-
-
-      if (type) {
-
-        values.push(
-          type
-        );
-
-        query += `
-          AND memory_type = $${values.length}
-        `;
-
-      }
-
-
-      if (search) {
-
-        values.push(
-          `%${search}%`
-        );
-
-        query += `
-          AND content ILIKE $${values.length}
-        `;
-
-      }
-
-
-      values.push(
-        limit
-      );
-
-
-      query += `
-        ORDER BY
-          importance DESC,
-          updated_at DESC,
-          id DESC
-
-        LIMIT $${values.length}
-      `;
-
-
-      const result =
-        await pool.query(
-          query,
-          values
-        );
-
-
-      return res.json({
-
-        success:
-          true,
-
-        memories:
-          result.rows,
-
-        count:
-          result.rows.length
-
-      });
-
-    } catch (error) {
-
-      console.error(
-        "Load long-term memory error:",
-        error
-      );
-
-
-      return res.status(500).json({
-
-        success:
-          false,
-
-        error:
-          "Could not load long-term memory",
-
-        code:
-          "LONG_TERM_MEMORY_LOAD_FAILED"
-
-      });
-
-    }
-
-  }
-);
-
-
-// ============================================================
-// GET LONG-TERM MEMORY BY ID
-// ============================================================
-
-app.get(
-  "/api/long-term-memory/:id",
-  authenticateToken,
-  async (req, res) => {
-
-    try {
-
-      const id =
-        Number(
-          req.params.id
-        );
-
-
-      if (
-        !Number.isInteger(id) ||
-        id <= 0
-      ) {
-
-        return res.status(400).json({
-
-          success:
-            false,
-
-          error:
-            "Invalid memory ID",
-
-          code:
-            "INVALID_MEMORY_ID"
-
-        });
-
-      }
-
-
-      const result =
-        await pool.query(
-
-          `SELECT
-             id,
-             content,
-             memory_type,
-             importance,
-             source,
-             created_at,
-             updated_at
-           FROM long_term_memory
-           WHERE id = $1
-           AND user_id = $2
-           LIMIT 1`,
-
-          [
-
-            id,
-
-            req.user.id
-
-          ]
-
-        );
-
-
-      if (
-        result.rows.length ===
-        0
-      ) {
-
-        return res.status(404).json({
-
-          success:
-            false,
-
-          error:
-            "Long-term memory not found",
-
-          code:
-            "LONG_TERM_MEMORY_NOT_FOUND"
-
-        });
-
-      }
-
-
-      return res.json({
-
-        success:
-          true,
-
-        memory:
-          result.rows[0]
-
-      });
-
-    } catch (error) {
-
-      console.error(
-        "Get long-term memory error:",
-        error
-      );
-
-
-      return res.status(500).json({
-
-        success:
-          false,
-
-        error:
-          "Could not load long-term memory",
-
-        code:
-          "LONG_TERM_MEMORY_GET_FAILED"
-
-      });
-
-    }
-
-  }
-);
-
-
-// ============================================================
-// DELETE LONG-TERM MEMORY
-// ============================================================
-
-app.delete(
-  "/api/long-term-memory/:id",
-  authenticateToken,
-  async (req, res) => {
-
-    try {
-
-      const id =
-        Number(
-          req.params.id
-        );
-
-
-      if (
-        !Number.isInteger(id) ||
-        id <= 0
-      ) {
-
-        return res.status(400).json({
-
-          success:
-            false,
-
-          error:
-            "Invalid memory ID",
-
-          code:
-            "INVALID_MEMORY_ID"
-
-        });
-
-      }
-
-
-      const result =
-        await pool.query(
-
-          `DELETE FROM long_term_memory
-           WHERE id = $1
-           AND user_id = $2
-           RETURNING
-             id,
-             memory_type`,
-
-          [
-
-            id,
-
-            req.user.id
-
-          ]
-
-        );
-
-
-      if (
-        result.rows.length ===
-        0
-      ) {
-
-        return res.status(404).json({
-
-          success:
-            false,
-
-          error:
-            "Long-term memory not found",
-
-          code:
-            "LONG_TERM_MEMORY_NOT_FOUND"
-
-        });
-
-      }
-
-
-      await systemLog(
-
-        "info",
-
-        "long_term_memory",
-
-        "Long-term memory deleted",
-
-        {
-
-          userId:
-            req.user.id,
-
-          memoryId:
-            result.rows[0].id,
-
-          memoryType:
-            result.rows[0].memory_type
-
-        }
-
-      );
-
-
-      return res.json({
-
-        success:
-          true,
-
-        message:
-          "Long-term memory deleted"
-
-      });
-
-    } catch (error) {
-
-      console.error(
-        "Delete long-term memory error:",
-        error
-      );
-
-
-      return res.status(500).json({
-
-        success:
-          false,
-
-        error:
-          "Could not delete long-term memory",
-
-        code:
-          "LONG_TERM_MEMORY_DELETE_FAILED"
-
-      });
-
-    }
-
-  }
-);
-
 
 // ============================================================
 // MEMORY STATISTICS
@@ -7602,18 +7225,77 @@ function normalizeMemorySearchQuery(
 // SAFE MEMORY OBJECT
 // ============================================================
 //
-// Never expose unnecessary internal database information.
+// USER MEMORY DATABASE MODEL
 //
+// The canonical database fields are:
+//
+//   id
+//   user_id
+//   memory_key
+//   memory_value
+//   memory_type
+//   importance
+//   metadata
+//   created_at
+//   updated_at
+//
+// Presentation-level fields such as:
+//
+//   title
+//   source
+//   source_label
+//   tags
+//
+// belong inside metadata when they are needed.
+//
+// This function converts the database representation into
+// a stable API representation without pretending that those
+// presentation fields are PostgreSQL columns.
+//
+// ============================================================
 
 function sanitizeMemoryRecord(
   memory
 ) {
 
   if (!memory) {
-
     return null;
-
   }
+
+
+  const metadata =
+    secureMetadata(
+      memory.metadata
+    );
+
+
+  const title =
+    typeof metadata.title ===
+      "string"
+      ? metadata.title
+      : null;
+
+
+  const source =
+    typeof metadata.source ===
+      "string"
+      ? metadata.source
+      : "user";
+
+
+  const sourceLabel =
+    typeof metadata.source_label ===
+      "string"
+      ? metadata.source_label
+      : null;
+
+
+  const tags =
+    Array.isArray(
+      metadata.tags
+    )
+      ? metadata.tags
+      : [];
 
 
   return {
@@ -7624,38 +7306,55 @@ function sanitizeMemoryRecord(
     user_id:
       memory.user_id,
 
-    title:
-      memory.title ||
-      null,
+    // ----------------------------------------------------------
+    // Canonical database representation
+    // ----------------------------------------------------------
+
+    memory_key:
+      memory.memory_key ||
+      "",
+
+    memory_value:
+      memory.memory_value ||
+      "",
+
+    // ----------------------------------------------------------
+    // Stable API aliases
+    //
+    // These make the memory object easier for the Agent,
+    // Supervisor and frontend to consume without changing
+    // the underlying database model.
+    // ----------------------------------------------------------
+
+    title,
 
     content:
-      memory.content ||
+      memory.memory_value ||
       "",
 
     memory_type:
       memory.memory_type ||
-      "other",
+      "general",
 
     importance:
-      Number(
-        memory.importance ||
-        5
-      ),
+      Number.isFinite(
+        Number(
+          memory.importance
+        )
+      )
+        ? Number(
+            memory.importance
+          )
+        : 1,
 
-    source:
-      memory.source ||
-      "user",
+    source,
 
     source_label:
-      memory.source_label ||
-      null,
+      sourceLabel,
 
-    tags:
-      Array.isArray(
-        memory.tags
-      )
-        ? memory.tags
-        : [],
+    tags,
+
+    metadata,
 
     created_at:
       memory.created_at ||
@@ -7663,16 +7362,11 @@ function sanitizeMemoryRecord(
 
     updated_at:
       memory.updated_at ||
-      null,
-
-    last_accessed_at:
-      memory.last_accessed_at ||
       null
 
   };
 
 }
-
 
 // ============================================================
 // RESOLVE USER MEMORY
@@ -7808,6 +7502,302 @@ async function resolveLongTermMemory(
 
 
 // ============================================================
+// CANONICAL USER MEMORY API
+// ============================================================
+//
+// ONE canonical implementation:
+//
+//   POST   /api/memory
+//   GET    /api/memory
+//   GET    /api/memory/:memoryId
+//   PATCH  /api/memory/:memoryId
+//   DELETE /api/memory/:memoryId
+//
+// DATABASE MODEL:
+//
+//   id
+//   user_id
+//   memory_key
+//   memory_value
+//   memory_type
+//   importance
+//   metadata
+//   created_at
+//   updated_at
+//
+// IMPORTANT:
+//
+// Presentation metadata such as:
+//
+//   title
+//   source
+//   source_label
+//   tags
+//
+// is stored inside metadata JSONB.
+//
+// This keeps the API rich without inventing PostgreSQL
+// columns that do not exist.
+//
+// SECURITY:
+//
+// Every operation is scoped to the authenticated user.
+//
+// ============================================================
+
+
+// ============================================================
+// BUILD USER MEMORY METADATA
+// ============================================================
+
+function buildUserMemoryMetadata(
+  body = {},
+  existingMetadata = {}
+) {
+
+  const metadata =
+    secureMetadata(
+      existingMetadata
+    );
+
+
+  if (
+    body.title !==
+    undefined
+  ) {
+
+    const title =
+      normalizeMemoryTitle(
+        body.title
+      );
+
+    if (title) {
+
+      metadata.title =
+        title;
+
+    } else {
+
+      delete metadata.title;
+
+    }
+
+  }
+
+
+  if (
+    body.source !==
+    undefined
+  ) {
+
+    const source =
+      normalizeMemorySource(
+        body.source
+      );
+
+    metadata.source =
+      source;
+
+  }
+
+
+  if (
+    body.source_label !==
+    undefined
+  ) {
+
+    const sourceLabel =
+      normalizeMemorySourceLabel(
+        body.source_label
+      );
+
+    if (sourceLabel) {
+
+      metadata.source_label =
+        sourceLabel;
+
+    } else {
+
+      delete metadata.source_label;
+
+    }
+
+  }
+
+
+  if (
+    body.tags !==
+    undefined
+  ) {
+
+    metadata.tags =
+      normalizeMemoryTags(
+        body.tags
+      );
+
+  }
+
+
+  if (
+    body.metadata &&
+    typeof body.metadata ===
+      "object"
+  ) {
+
+    const suppliedMetadata =
+      secureMetadata(
+        body.metadata
+      );
+
+    Object.assign(
+      metadata,
+      suppliedMetadata
+    );
+
+  }
+
+
+  return metadata;
+
+}
+
+
+// ============================================================
+// USER MEMORY KEY
+// ============================================================
+//
+// memory_key is required by the database.
+//
+// If the caller provides a key we preserve it.
+//
+// Otherwise generate a stable unique key.
+//
+// ============================================================
+
+function normalizeUserMemoryKey(
+  value
+) {
+
+  const key =
+    normalizeText(
+      value
+    )
+      .slice(
+        0,
+        500
+      );
+
+
+  if (key) {
+
+    return key;
+
+  }
+
+
+  return `memory:${crypto.randomUUID()}`;
+
+}
+
+
+// ============================================================
+// SAFE USER MEMORY RESPONSE
+// ============================================================
+
+function buildUserMemoryResponse(
+  memory
+) {
+
+  if (!memory) {
+
+    return null;
+
+  }
+
+
+  const metadata =
+    secureMetadata(
+      memory.metadata
+    );
+
+
+  return {
+
+    id:
+      memory.id,
+
+    user_id:
+      memory.user_id,
+
+    memory_key:
+      memory.memory_key ||
+      "",
+
+    memory_value:
+      memory.memory_value ||
+      "",
+
+    // Compatibility alias.
+    content:
+      memory.memory_value ||
+      "",
+
+    title:
+      typeof metadata.title ===
+        "string"
+        ? metadata.title
+        : null,
+
+    memory_type:
+      memory.memory_type ||
+      "general",
+
+    importance:
+      Number.isFinite(
+        Number(
+          memory.importance
+        )
+      )
+        ? Number(
+            memory.importance
+          )
+        : 1,
+
+    source:
+      typeof metadata.source ===
+        "string"
+        ? metadata.source
+        : "user",
+
+    source_label:
+      typeof metadata.source_label ===
+        "string"
+        ? metadata.source_label
+        : null,
+
+    tags:
+      Array.isArray(
+        metadata.tags
+      )
+        ? metadata.tags
+        : [],
+
+    metadata,
+
+    created_at:
+      memory.created_at ||
+      null,
+
+    updated_at:
+      memory.updated_at ||
+      null
+
+  };
+
+}
+
+
+// ============================================================
 // CREATE USER MEMORY
 // ============================================================
 
@@ -7823,7 +7813,9 @@ app.post(
 
       const validation =
         validateMemoryContent(
-          req.body?.content
+          req.body?.memory_value ??
+          req.body?.content ??
+          req.body?.value
         );
 
 
@@ -7847,15 +7839,16 @@ app.post(
       }
 
 
-      const title =
-        normalizeMemoryTitle(
-          req.body?.title
+      const memoryKey =
+        normalizeUserMemoryKey(
+          req.body?.memory_key ??
+          req.body?.key
         );
 
 
       const memoryType =
         normalizeMemoryType(
-          req.body?.memory_type ||
+          req.body?.memory_type ??
           req.body?.type
         );
 
@@ -7866,21 +7859,9 @@ app.post(
         );
 
 
-      const source =
-        normalizeMemorySource(
-          req.body?.source
-        );
-
-
-      const sourceLabel =
-        normalizeMemorySourceLabel(
-          req.body?.source_label
-        );
-
-
-      const tags =
-        normalizeMemoryTags(
-          req.body?.tags
+      const metadata =
+        buildUserMemoryMetadata(
+          req.body
         );
 
 
@@ -7890,13 +7871,11 @@ app.post(
           `INSERT INTO user_memory
            (
              user_id,
-             title,
-             content,
+             memory_key,
+             memory_value,
              memory_type,
              importance,
-             source,
-             source_label,
-             tags
+             metadata
            )
            VALUES
            (
@@ -7905,18 +7884,24 @@ app.post(
              $3,
              $4,
              $5,
-             $6,
-             $7,
-             $8
+             $6
            )
            RETURNING
-             *`,
+             id,
+             user_id,
+             memory_key,
+             memory_value,
+             memory_type,
+             importance,
+             metadata,
+             created_at,
+             updated_at`,
 
           [
 
             req.user.id,
 
-            title,
+            memoryKey,
 
             validation.value,
 
@@ -7924,11 +7909,7 @@ app.post(
 
             importance,
 
-            source,
-
-            sourceLabel,
-
-            tags
+            metadata
 
           ]
 
@@ -7941,14 +7922,14 @@ app.post(
       ) {
 
         throw new Error(
-          "Memory creation returned no record"
+          "User memory creation returned no record"
         );
 
       }
 
 
       const memory =
-        sanitizeMemoryRecord(
+        buildUserMemoryResponse(
           result.rows[0]
         );
 
@@ -7968,6 +7949,9 @@ app.post(
 
           memoryId:
             memory.id,
+
+          memoryKey:
+            memory.memory_key,
 
           memoryType:
             memory.memory_type,
@@ -7992,7 +7976,7 @@ app.post(
     } catch (error) {
 
       console.error(
-        "Create memory error:",
+        "Create user memory error:",
         error
       );
 
@@ -8108,13 +8092,16 @@ app.get(
 
       const query =
         normalizeMemorySearchQuery(
-          req.query?.q
+
+          req.query?.q ??
+          req.query?.search
+
         );
 
 
       const conditions = [
 
-        `user_id = $1`
+        "user_id = $1"
 
       ];
 
@@ -8132,7 +8119,8 @@ app.get(
 
       if (
         type &&
-        MEMORY_CONFIG.ALLOWED_TYPES
+        MEMORY_CONFIG
+          .ALLOWED_TYPES
           .includes(type)
       ) {
 
@@ -8150,7 +8138,8 @@ app.get(
 
 
       if (
-        importance !== null
+        importance !==
+        null
       ) {
 
         conditions.push(
@@ -8166,15 +8155,13 @@ app.get(
       }
 
 
-      if (
-        query
-      ) {
+      if (query) {
 
         conditions.push(
 
-          `(content ILIKE $${parameterIndex}
-            OR title ILIKE $${parameterIndex}
-            OR source_label ILIKE $${parameterIndex})`
+          `(memory_key ILIKE $${parameterIndex}
+            OR memory_value ILIKE $${parameterIndex}
+            OR metadata::text ILIKE $${parameterIndex})`
 
         );
 
@@ -8209,7 +8196,15 @@ app.get(
         await pool.query(
 
           `SELECT
-             *
+             id,
+             user_id,
+             memory_key,
+             memory_value,
+             memory_type,
+             importance,
+             metadata,
+             created_at,
+             updated_at
            FROM user_memory
            WHERE ${conditions.join(
              " AND "
@@ -8228,7 +8223,7 @@ app.get(
 
       const memories =
         result.rows.map(
-          sanitizeMemoryRecord
+          buildUserMemoryResponse
         );
 
 
@@ -8255,7 +8250,7 @@ app.get(
     } catch (error) {
 
       console.error(
-        "List memory error:",
+        "List user memory error:",
         error
       );
 
@@ -8280,7 +8275,7 @@ app.get(
 
 
 // ============================================================
-// GET SINGLE MEMORY
+// GET SINGLE USER MEMORY
 // ============================================================
 
 app.get(
@@ -8321,53 +8316,13 @@ app.get(
       }
 
 
-      // Update access timestamp.
-      //
-      // Failure here should NOT prevent returning the memory.
-
-      try {
-
-        await pool.query(
-
-          `UPDATE user_memory
-           SET
-             last_accessed_at =
-               CURRENT_TIMESTAMP
-           WHERE id = $1
-           AND user_id = $2`,
-
-          [
-
-            memory.id,
-
-            req.user.id
-
-          ]
-
-        );
-
-      } catch (
-        accessError
-      ) {
-
-        console.error(
-
-          "Memory access timestamp update failed:",
-
-          accessError
-
-        );
-
-      }
-
-
       return res.json({
 
         success:
           true,
 
         memory:
-          sanitizeMemoryRecord(
+          buildUserMemoryResponse(
             memory
           )
 
@@ -8376,7 +8331,7 @@ app.get(
     } catch (error) {
 
       console.error(
-        "Get memory error:",
+        "Get user memory error:",
         error
       );
 
@@ -8448,17 +8403,56 @@ app.patch(
 
 
       // --------------------------------------------------------
-      // Content
+      // MEMORY KEY
       // --------------------------------------------------------
 
       if (
+        req.body?.memory_key !==
+          undefined ||
+        req.body?.key !==
+          undefined
+      ) {
+
+        const memoryKey =
+          normalizeUserMemoryKey(
+
+            req.body?.memory_key ??
+            req.body?.key
+
+          );
+
+
+        updates.push(
+          `memory_key = $${values.length + 1}`
+        );
+
+        values.push(
+          memoryKey
+        );
+
+      }
+
+
+      // --------------------------------------------------------
+      // MEMORY VALUE
+      // --------------------------------------------------------
+
+      if (
+        req.body?.memory_value !==
+          undefined ||
         req.body?.content !==
-        undefined
+          undefined ||
+        req.body?.value !==
+          undefined
       ) {
 
         const validation =
           validateMemoryContent(
-            req.body.content
+
+            req.body?.memory_value ??
+            req.body?.content ??
+            req.body?.value
+
           );
 
 
@@ -8483,7 +8477,7 @@ app.patch(
 
 
         updates.push(
-          `content = $${values.length + 1}`
+          `memory_value = $${values.length + 1}`
         );
 
         values.push(
@@ -8494,44 +8488,17 @@ app.patch(
 
 
       // --------------------------------------------------------
-      // Title
-      // --------------------------------------------------------
-
-      if (
-        req.body?.title !==
-        undefined
-      ) {
-
-        const title =
-          normalizeMemoryTitle(
-            req.body.title
-          );
-
-
-        updates.push(
-          `title = $${values.length + 1}`
-        );
-
-        values.push(
-          title
-        );
-
-      }
-
-
-      
-      // --------------------------------------------------------
-      // Memory type
+      // MEMORY TYPE
       // --------------------------------------------------------
 
       if (
         req.body?.memory_type !==
-        undefined ||
+          undefined ||
         req.body?.type !==
-        undefined
+          undefined
       ) {
 
-        const type =
+        const memoryType =
           normalizeMemoryType(
 
             req.body?.memory_type ??
@@ -8545,14 +8512,14 @@ app.patch(
         );
 
         values.push(
-          type
+          memoryType
         );
 
       }
 
 
       // --------------------------------------------------------
-      // Importance
+      // IMPORTANCE
       // --------------------------------------------------------
 
       if (
@@ -8578,78 +8545,42 @@ app.patch(
 
 
       // --------------------------------------------------------
-      // Source
+      // METADATA
       // --------------------------------------------------------
 
-      if (
+      const metadataFieldsChanged =
+        req.body?.title !==
+          undefined ||
         req.body?.source !==
-        undefined
-      ) {
-
-        const source =
-          normalizeMemorySource(
-            req.body.source
-          );
-
-
-        updates.push(
-          `source = $${values.length + 1}`
-        );
-
-        values.push(
-          source
-        );
-
-      }
-
-
-      // --------------------------------------------------------
-      // Source label
-      // --------------------------------------------------------
-
-      if (
+          undefined ||
         req.body?.source_label !==
-        undefined
-      ) {
+          undefined ||
+        req.body?.tags !==
+          undefined ||
+        req.body?.metadata !==
+          undefined;
 
-        const sourceLabel =
-          normalizeMemorySourceLabel(
-            req.body.source_label
-          );
-
-
-        updates.push(
-          `source_label = $${values.length + 1}`
-        );
-
-        values.push(
-          sourceLabel
-        );
-
-      }
-
-
-      // --------------------------------------------------------
-      // Tags
-      // --------------------------------------------------------
 
       if (
-        req.body?.tags !==
-        undefined
+        metadataFieldsChanged
       ) {
 
-        const tags =
-          normalizeMemoryTags(
-            req.body.tags
+        const metadata =
+          buildUserMemoryMetadata(
+
+            req.body,
+
+            existing.metadata
+
           );
 
 
         updates.push(
-          `tags = $${values.length + 1}`
+          `metadata = $${values.length + 1}`
         );
 
         values.push(
-          tags
+          metadata
         );
 
       }
@@ -8702,10 +8633,21 @@ app.patch(
 
           `UPDATE user_memory
            SET
-             ${updates.join(",\n             ")}
+             ${updates.join(
+               ",\n             "
+             )}
            WHERE id = $${memoryIdParameter}
            AND user_id = $${userIdParameter}
-           RETURNING *`,
+           RETURNING
+             id,
+             user_id,
+             memory_key,
+             memory_value,
+             memory_type,
+             importance,
+             metadata,
+             created_at,
+             updated_at`,
 
           values
 
@@ -8734,7 +8676,7 @@ app.patch(
 
 
       const memory =
-        sanitizeMemoryRecord(
+        buildUserMemoryResponse(
           result.rows[0]
         );
 
@@ -8753,7 +8695,10 @@ app.patch(
             req.user.id,
 
           memoryId:
-            memory.id
+            memory.id,
+
+          memoryKey:
+            memory.memory_key
 
         }
 
@@ -8772,7 +8717,7 @@ app.patch(
     } catch (error) {
 
       console.error(
-        "Update memory error:",
+        "Update user memory error:",
         error
       );
 
@@ -8795,6 +8740,7 @@ app.patch(
   }
 );
 
+
 // ============================================================
 // DELETE USER MEMORY
 // ============================================================
@@ -8816,7 +8762,8 @@ app.delete(
            WHERE id = $1
            AND user_id = $2
            RETURNING
-             id`,
+             id,
+             memory_key`,
 
           [
 
@@ -8864,7 +8811,10 @@ app.delete(
             req.user.id,
 
           memoryId:
-            result.rows[0].id
+            result.rows[0].id,
+
+          memoryKey:
+            result.rows[0].memory_key
 
         }
 
@@ -8887,7 +8837,7 @@ app.delete(
     } catch (error) {
 
       console.error(
-        "Delete memory error:",
+        "Delete user memory error:",
         error
       );
 
@@ -8910,15 +8860,131 @@ app.delete(
   }
 );
 
+// ============================================================
+// CANONICAL LONG-TERM MEMORY API
+// ============================================================
+//
+// IMPORTANT:
+//
+// This is the ONE canonical implementation of:
+//
+//   POST   /api/long-term-memory
+//   GET    /api/long-term-memory
+//   GET    /api/long-term-memory/:memoryId
+//   DELETE /api/long-term-memory/:memoryId
+//
+// DATABASE COMPATIBILITY:
+//
+// The current production schema provides:
+//
+//   id
+//   user_id
+//   content
+//   memory_type
+//   importance
+//   source
+//   metadata
+//   created_at
+//   updated_at
+//
+// Therefore optional presentation metadata such as:
+//
+//   title
+//   source_label
+//   tags
+//
+// is stored inside the existing JSONB `metadata` column.
+//
+// We do NOT assume columns that do not exist.
+//
+// SECURITY:
+//
+// Every operation is scoped to req.user.id.
+//
+// ============================================================
+
+
+// ============================================================
+// LONG-TERM MEMORY METADATA
+// ============================================================
+
+function normalizeLongTermMemoryMetadata(
+  value
+) {
+
+  const metadata =
+    secureMetadata(
+      value
+    );
+
+  return {
+    ...metadata
+  };
+
+}
+
+
+// ============================================================
+// LONG-TERM MEMORY RESPONSE
+// ============================================================
+
+function sanitizeLongTermMemoryRecord(
+  memory
+) {
+
+  if (!memory) {
+    return null;
+  }
+
+  const metadata =
+    normalizeLongTermMemoryMetadata(
+      memory.metadata
+    );
+
+  return {
+
+    id:
+      memory.id,
+
+    user_id:
+      memory.user_id,
+
+    content:
+      memory.content ||
+      "",
+
+    memory_type:
+      memory.memory_type ||
+      "general",
+
+    importance:
+      Number(
+        memory.importance ||
+        1
+      ),
+
+    source:
+      memory.source ||
+      "user",
+
+    metadata,
+
+    created_at:
+      memory.created_at ||
+      null,
+
+    updated_at:
+      memory.updated_at ||
+      null
+
+  };
+
+}
+
 
 // ============================================================
 // CREATE LONG-TERM MEMORY
 // ============================================================
-//
-// Long-term memory is separated from ordinary user memory so
-// future Agent/AI systems can treat persistent knowledge with
-// stronger retrieval semantics.
-//
 
 app.post(
   "/api/long-term-memory",
@@ -8956,25 +9022,17 @@ app.post(
       }
 
 
-      const title =
-        normalizeMemoryTitle(
-          req.body?.title
-        );
-
-
       const memoryType =
         normalizeMemoryType(
-          req.body?.memory_type ||
+          req.body?.memory_type ??
           req.body?.type
         );
 
 
       const importance =
         normalizeMemoryImportance(
-
           req.body?.importance ??
           7
-
         );
 
 
@@ -8984,16 +9042,59 @@ app.post(
         );
 
 
-      const sourceLabel =
-        normalizeMemorySourceLabel(
-          req.body?.source_label
+      const metadata =
+        normalizeLongTermMemoryMetadata(
+          req.body?.metadata
         );
 
 
-      const tags =
-        normalizeMemoryTags(
-          req.body?.tags
-        );
+      if (
+        req.body?.title !==
+        undefined
+      ) {
+
+        const title =
+          normalizeMemoryTitle(
+            req.body.title
+          );
+
+        if (title) {
+          metadata.title =
+            title;
+        }
+
+      }
+
+
+      if (
+        req.body?.source_label !==
+        undefined
+      ) {
+
+        const sourceLabel =
+          normalizeMemorySourceLabel(
+            req.body.source_label
+          );
+
+        if (sourceLabel) {
+          metadata.source_label =
+            sourceLabel;
+        }
+
+      }
+
+
+      if (
+        req.body?.tags !==
+        undefined
+      ) {
+
+        metadata.tags =
+          normalizeMemoryTags(
+            req.body.tags
+          );
+
+      }
 
 
       const result =
@@ -9002,13 +9103,11 @@ app.post(
           `INSERT INTO long_term_memory
            (
              user_id,
-             title,
              content,
              memory_type,
              importance,
              source,
-             source_label,
-             tags
+             metadata
            )
            VALUES
            (
@@ -9017,17 +9116,22 @@ app.post(
              $3,
              $4,
              $5,
-             $6,
-             $7,
-             $8
+             $6
            )
-           RETURNING *`,
+           RETURNING
+             id,
+             user_id,
+             content,
+             memory_type,
+             importance,
+             source,
+             metadata,
+             created_at,
+             updated_at`,
 
           [
 
             req.user.id,
-
-            title,
 
             validation.value,
 
@@ -9037,9 +9141,7 @@ app.post(
 
             source,
 
-            sourceLabel,
-
-            tags
+            metadata
 
           ]
 
@@ -9059,7 +9161,7 @@ app.post(
 
 
       const memory =
-        sanitizeMemoryRecord(
+        sanitizeLongTermMemoryRecord(
           result.rows[0]
         );
 
@@ -9068,7 +9170,7 @@ app.post(
 
         "info",
 
-        "memory",
+        "long_term_memory",
 
         "Long-term memory created",
 
@@ -9080,8 +9182,14 @@ app.post(
           memoryId:
             memory.id,
 
+          memoryType:
+            memory.memory_type,
+
           importance:
-            memory.importance
+            memory.importance,
+
+          source:
+            memory.source
 
         }
 
@@ -9105,13 +9213,34 @@ app.post(
       );
 
 
+      await systemLog(
+
+        "error",
+
+        "long_term_memory",
+
+        "Long-term memory creation failed",
+
+        {
+
+          userId:
+            req.user?.id,
+
+          message:
+            error?.message
+
+        }
+
+      );
+
+
       return res.status(500).json({
 
         success:
           false,
 
         error:
-          "Could not create long-term memory",
+          "Could not save long-term memory",
 
         code:
           "LONG_TERM_MEMORY_CREATE_FAILED"
@@ -9168,30 +9297,118 @@ app.get(
         );
 
 
+      const type =
+        normalizeText(
+          req.query?.type
+        ).toLowerCase();
+
+
+      const query =
+        normalizeMemorySearchQuery(
+          req.query?.q ??
+          req.query?.search
+        );
+
+
+      const conditions = [
+        "user_id = $1"
+      ];
+
+
+      const values = [
+        req.user.id
+      ];
+
+
+      let parameterIndex =
+        2;
+
+
+      if (
+        type &&
+        MEMORY_CONFIG
+          .ALLOWED_TYPES
+          .includes(type)
+      ) {
+
+        conditions.push(
+          `memory_type = $${parameterIndex}`
+        );
+
+        values.push(
+          type
+        );
+
+        parameterIndex++;
+
+      }
+
+
+      if (query) {
+
+        conditions.push(
+          `content ILIKE $${parameterIndex}`
+        );
+
+        values.push(
+          `%${query}%`
+        );
+
+        parameterIndex++;
+
+      }
+
+
+      values.push(
+        limit
+      );
+
+      const limitParameter =
+        parameterIndex;
+
+      parameterIndex++;
+
+
+      values.push(
+        offset
+      );
+
+      const offsetParameter =
+        parameterIndex;
+
+
       const result =
         await pool.query(
 
           `SELECT
-             *
+             id,
+             user_id,
+             content,
+             memory_type,
+             importance,
+             source,
+             metadata,
+             created_at,
+             updated_at
            FROM long_term_memory
-           WHERE user_id = $1
+           WHERE ${conditions.join(
+             " AND "
+           )}
            ORDER BY
              importance DESC,
              updated_at DESC,
              id DESC
-           LIMIT $2
-           OFFSET $3`,
+           LIMIT $${limitParameter}
+           OFFSET $${offsetParameter}`,
 
-          [
+          values
 
-            req.user.id,
+        );
 
-            limit,
 
-            offset
-
-          ]
-
+      const memories =
+        result.rows.map(
+          sanitizeLongTermMemoryRecord
         );
 
 
@@ -9200,10 +9417,7 @@ app.get(
         success:
           true,
 
-        memories:
-          result.rows.map(
-            sanitizeMemoryRecord
-          ),
+        memories,
 
         pagination: {
 
@@ -9212,7 +9426,7 @@ app.get(
           offset,
 
           returned:
-            result.rows.length
+            memories.length
 
         }
 
@@ -9242,7 +9456,10 @@ app.get(
     }
 
   }
-);// ============================================================
+);
+
+
+// ============================================================
 // GET LONG-TERM MEMORY
 // ============================================================
 
@@ -9284,49 +9501,13 @@ app.get(
       }
 
 
-      try {
-
-        await pool.query(
-
-          `UPDATE long_term_memory
-           SET
-             last_accessed_at =
-               CURRENT_TIMESTAMP
-           WHERE id = $1
-           AND user_id = $2`,
-
-          [
-
-            memory.id,
-
-            req.user.id
-
-          ]
-
-        );
-
-      } catch (
-        accessError
-      ) {
-
-        console.error(
-
-          "Long-term memory access update failed:",
-
-          accessError
-
-        );
-
-      }
-
-
       return res.json({
 
         success:
           true,
 
         memory:
-          sanitizeMemoryRecord(
+          sanitizeLongTermMemoryRecord(
             memory
           )
 
@@ -9379,7 +9560,9 @@ app.delete(
           `DELETE FROM long_term_memory
            WHERE id = $1
            AND user_id = $2
-           RETURNING id`,
+           RETURNING
+             id,
+             memory_type`,
 
           [
 
@@ -9417,7 +9600,7 @@ app.delete(
 
         "info",
 
-        "memory",
+        "long_term_memory",
 
         "Long-term memory deleted",
 
@@ -9427,7 +9610,10 @@ app.delete(
             req.user.id,
 
           memoryId:
-            result.rows[0].id
+            result.rows[0].id,
+
+          memoryType:
+            result.rows[0].memory_type
 
         }
 
@@ -9473,18 +9659,44 @@ app.delete(
   }
 );
 
-
 // ============================================================
 // MEMORY SEARCH
 // ============================================================
 //
-// Searches both memory layers.
+// Canonical memory search endpoint.
 //
-// Ownership remains mandatory.
+// Searches:
+//   1. user_memory
+//   2. long_term_memory
 //
-// This endpoint is intended for the future AI Agent retrieval
-// pipeline.
+// Ownership is ALWAYS enforced through req.user.id.
 //
+// IMPORTANT:
+// user_memory does NOT have:
+//   - content
+//   - title
+//   - source_label
+//
+// Its real columns are:
+//   - memory_key
+//   - memory_value
+//   - memory_type
+//   - importance
+//   - metadata
+//
+// long_term_memory has:
+//   - content
+//   - memory_type
+//   - importance
+//   - source
+//   - metadata
+//
+// Metadata is used for optional presentation fields such as:
+//   - title
+//   - source_label
+//   - tags
+//
+// ============================================================
 
 app.get(
   "/api/memory/search",
@@ -9496,11 +9708,14 @@ app.get(
 
     try {
 
+      // --------------------------------------------------------
+      // QUERY
+      // --------------------------------------------------------
+
       const query =
         normalizeMemorySearchQuery(
           req.query?.q
         );
-
 
       if (!query) {
 
@@ -9520,17 +9735,16 @@ app.get(
       }
 
 
+      // --------------------------------------------------------
+      // LIMIT
+      // --------------------------------------------------------
+
       const limit =
         normalizeMemoryInteger(
-
           req.query?.limit,
-
           20,
-
           1,
-
           50
-
         );
 
 
@@ -9538,95 +9752,200 @@ app.get(
         `%${query}%`;
 
 
+      // --------------------------------------------------------
+      // USER MEMORY SEARCH
+      // --------------------------------------------------------
+      //
+      // Convert the real user_memory schema into the common
+      // memory representation expected by sanitizeMemoryRecord.
+      //
+      // memory_value -> content
+      // memory_key   -> title
+      //
+      // Optional presentation fields are read from metadata.
+      //
+      // --------------------------------------------------------
+
       const userMemoryResult =
         await pool.query(
 
           `SELECT
-             *,
-             1 AS memory_layer
+
+             id,
+
+             user_id,
+
+             memory_key AS title,
+
+             memory_value AS content,
+
+             memory_type,
+
+             importance,
+
+             COALESCE(
+               metadata ->> 'source',
+               'user'
+             ) AS source,
+
+             metadata ->> 'source_label'
+               AS source_label,
+
+             COALESCE(
+               metadata -> 'tags',
+               '[]'::jsonb
+             ) AS tags,
+
+             created_at,
+
+             updated_at
+
            FROM user_memory
+
            WHERE user_id = $1
+
            AND (
-             content ILIKE $2
-             OR title ILIKE $2
-             OR source_label ILIKE $2
+             memory_key ILIKE $2
+
+             OR memory_value ILIKE $2
+
+             OR COALESCE(
+               metadata::text,
+               ''
+             ) ILIKE $2
            )
+
            ORDER BY
              importance DESC,
-             updated_at DESC
+             updated_at DESC,
+             id DESC
+
            LIMIT $3`,
 
           [
-
             req.user.id,
-
             searchPattern,
-
             limit
-
           ]
 
         );
 
+
+      // --------------------------------------------------------
+      // LONG-TERM MEMORY SEARCH
+      // --------------------------------------------------------
 
       const longTermResult =
         await pool.query(
 
           `SELECT
-             *,
-             2 AS memory_layer
+
+             id,
+
+             user_id,
+
+             COALESCE(
+               metadata ->> 'title',
+               NULL
+             ) AS title,
+
+             content,
+
+             memory_type,
+
+             importance,
+
+             COALESCE(
+               source,
+               'user'
+             ) AS source,
+
+             metadata ->> 'source_label'
+               AS source_label,
+
+             COALESCE(
+               metadata -> 'tags',
+               '[]'::jsonb
+             ) AS tags,
+
+             created_at,
+
+             updated_at
+
            FROM long_term_memory
+
            WHERE user_id = $1
+
            AND (
              content ILIKE $2
-             OR title ILIKE $2
-             OR source_label ILIKE $2
+
+             OR COALESCE(
+               metadata::text,
+               ''
+             ) ILIKE $2
            )
+
            ORDER BY
              importance DESC,
-             updated_at DESC
+             updated_at DESC,
+             id DESC
+
            LIMIT $3`,
 
           [
-
             req.user.id,
-
             searchPattern,
-
             limit
-
           ]
 
         );
 
 
+      // --------------------------------------------------------
+      // NORMALIZE RESULTS
+      // --------------------------------------------------------
+
       const results = [
 
         ...userMemoryResult.rows.map(
           memory => ({
+
             ...sanitizeMemoryRecord(
               memory
             ),
+
             memory_layer:
               "user"
+
           })
         ),
 
         ...longTermResult.rows.map(
           memory => ({
+
             ...sanitizeMemoryRecord(
               memory
             ),
+
             memory_layer:
               "long_term"
+
           })
         )
 
       ];
 
 
-      results.sort(
+      // --------------------------------------------------------
+      // GLOBAL SORT
+      // --------------------------------------------------------
+      //
+      // Highest importance first.
+      // If importance is equal, newest memory first.
+      //
+      // --------------------------------------------------------
 
+      results.sort(
         (
           a,
           b
@@ -9667,11 +9986,24 @@ app.get(
             ).getTime();
 
 
-          return bTime - aTime;
+          return (
+            bTime -
+            aTime
+          );
 
         }
-
       );
+
+
+      // --------------------------------------------------------
+      // RESPONSE
+      // --------------------------------------------------------
+
+      const selectedResults =
+        results.slice(
+          0,
+          limit
+        );
 
 
       return res.json({
@@ -9682,24 +10014,36 @@ app.get(
         query,
 
         results:
-          results.slice(
-            0,
-            limit
-          ),
+          selectedResults,
 
         count:
-          Math.min(
-            results.length,
-            limit
-          )
+          selectedResults.length
 
       });
+
 
     } catch (error) {
 
       console.error(
         "Memory search error:",
         error
+      );
+
+
+      await systemLog(
+        "error",
+        "memory",
+        "Memory search failed",
+        {
+          userId:
+            req.user?.id || null,
+
+          query:
+            req.query?.q || null,
+
+          message:
+            error?.message || null
+        }
       );
 
 
@@ -9725,6 +10069,7 @@ app.get(
 // ============================================================
 // MEMORY STATISTICS
 // ============================================================
+
 
 app.get(
   "/api/memory/statistics",
@@ -18327,241 +18672,8 @@ app.delete(
   }
 );
 
-// ============================================================
-// MEMORY SEARCH API
-// ============================================================
-
-app.get(
-  "/api/memory/search",
-  authenticateToken,
-  async (req, res) => {
-
-    try {
-
-      const query =
-        normalizeMemoryText(
-          req.query?.q
-        );
-
-
-      if (!query) {
-
-        return res.status(400).json({
-
-          success:
-            false,
-
-          error:
-            "Search query is required",
-
-          code:
-            "MEMORY_SEARCH_QUERY_REQUIRED"
-
-        });
-
-      }
-
-
-      const limit =
-        Math.min(
-
-          Math.max(
-
-            Number(
-              req.query?.limit
-            ) || 10,
-
-            1
-
-          ),
-
-          MEMORY_CONFIG
-            .MAX_MEMORY_CONTEXT_ITEMS
-
-        );
-
-
-      const [
-
-        memories,
-
-        longTermMemories
-
-      ] = await Promise.all([
-
-        searchUserMemory(
-
-          req.user.id,
-
-          query,
-
-          limit
-
-        ),
-
-        searchLongTermMemory(
-
-          req.user.id,
-
-          query,
-
-          limit
-
-        )
-
-      ]);
-
-
-      return res.json({
-
-        success:
-          true,
-
-        query,
-
-        memories,
-
-        longTermMemories
-
-      });
-
-    } catch (error) {
-
-      MEMORY_RUNTIME.failures++;
-
-      console.error(
-        "Memory search error:",
-        error
-      );
-
-
-      return res.status(500).json({
-
-        success:
-          false,
-
-        error:
-          "Could not search memory",
-
-        code:
-          "MEMORY_SEARCH_FAILED"
-
-      });
-
-    }
-
-  }
-);
-
-
-// ============================================================
-// MEMORY STATISTICS
-// ============================================================
-
-app.get(
-  "/api/memory/stats",
-  authenticateToken,
-  async (req, res) => {
-
-    try {
-
-      const [
-
-        userCount,
-
-        longTermCount
-
-      ] = await Promise.all([
-
-        pool.query(
-
-          `SELECT
-             COUNT(*)::integer AS total
-           FROM user_memory
-           WHERE user_id = $1`,
-
-          [
-            req.user.id
-          ]
-
-        ),
-
-        pool.query(
-
-          `SELECT
-             COUNT(*)::integer AS total
-           FROM long_term_memory
-           WHERE user_id = $1`,
-
-          [
-            req.user.id
-          ]
-
-        )
-
-      ]);
-
-
-      return res.json({
-
-        success:
-          true,
-
-        statistics: {
-
-          userMemory:
-            Number(
-              userCount
-                .rows[0]
-                ?.total || 0
-            ),
-
-          longTermMemory:
-            Number(
-              longTermCount
-                .rows[0]
-                ?.total || 0
-            ),
-
-          maximumUserMemory:
-            MEMORY_CONFIG
-              .MAX_USER_MEMORY_ITEMS,
-
-          maximumLongTermMemory:
-            MEMORY_CONFIG
-              .MAX_LONG_TERM_MEMORY_ITEMS
-
-        }
-
-      });
-
-    } catch (error) {
-
-      console.error(
-        "Memory statistics error:",
-        error
-      );
-
-
-      return res.status(500).json({
-
-        success:
-          false,
-
-        error:
-          "Could not load memory statistics",
-
-        code:
-          "MEMORY_STATS_FAILED"
-
-      });
-
-    }
-
-  }
-);
-
-
+        
+        
 // ============================================================
 // MEMORY RUNTIME API
 // ============================================================
@@ -20721,1001 +20833,7 @@ registerAgentAction(
   }
 
 );
-// ============================================================
-// AGENT ACTION EXECUTOR
-// ============================================================
 
-async function executeAgentAction(
-  userId,
-  actionName,
-  input = {},
-  options = {}
-) {
-
-  AGENT_ACTION_RUNTIME
-    .totalExecutions++;
-
-
-  const executionId =
-    crypto.randomUUID();
-
-
-  const startedAt =
-    Date.now();
-
-
-  const action =
-    getAgentAction(
-      actionName
-    );
-
-
-  if (!action) {
-
-    AGENT_ACTION_RUNTIME
-      .rejectedExecutions++;
-
-
-    throw createAgentActionError(
-
-      "Unknown agent action",
-
-      "UNKNOWN_AGENT_ACTION"
-
-    );
-
-  }
-
-
-  if (
-    action.requiresAuthentication &&
-    !userId
-  ) {
-
-    AGENT_ACTION_RUNTIME
-      .rejectedExecutions++;
-
-
-    throw createAgentActionError(
-
-      "Authentication required",
-
-      "AUTHENTICATION_REQUIRED"
-
-    );
-
-  }
-
-
-  const normalizedInput =
-    normalizeAgentActionInput(
-      input
-    );
-
-
-  if (
-    normalizedInput === null
-  ) {
-
-    AGENT_ACTION_RUNTIME
-      .rejectedExecutions++;
-
-
-    throw createAgentActionError(
-
-      "Invalid or oversized action input",
-
-      "INVALID_ACTION_INPUT"
-
-    );
-
-  }
-
-
-  const rateLimit =
-    checkAgentActionRateLimit(
-      userId
-    );
-
-
-  if (
-    !rateLimit.allowed
-  ) {
-
-    AGENT_ACTION_RUNTIME
-      .rejectedExecutions++;
-
-
-    throw createAgentActionError(
-
-      rateLimit.reason,
-
-      rateLimit.code ||
-        "ACTION_RATE_LIMITED"
-
-    );
-
-  }
-
-
-  recordAgentActionRateLimit(
-    userId
-  );
-
-
-  if (
-    !options.allowDuplicate &&
-    hasRecentDuplicateAction(
-
-      userId,
-
-      actionName,
-
-      normalizedInput
-
-    )
-  ) {
-
-    AGENT_ACTION_RUNTIME
-      .rejectedExecutions++;
-
-
-    throw createAgentActionError(
-
-      "Duplicate action blocked",
-
-      "DUPLICATE_ACTION"
-
-    );
-
-  }
-
-
-  const context = {
-
-    userId,
-
-    action:
-      actionName,
-
-    input:
-      normalizedInput,
-
-    executionId,
-
-    requestedAt:
-      new Date(),
-
-    metadata:
-      options.metadata || {}
-
-  };
-
-
-  try {
-
-    const data =
-      await executeAgentActionWithTimeout(
-
-        () =>
-          action.handler(
-            context
-          ),
-
-        action.timeoutMs
-
-      );
-
-
-    const durationMs =
-      Date.now() -
-      startedAt;
-
-
-    AGENT_ACTION_RUNTIME
-      .successfulExecutions++;
-
-
-    AGENT_ACTION_RUNTIME
-      .lastExecutionAt =
-      new Date();
-
-
-    AGENT_ACTION_RUNTIME
-      .lastAction =
-      actionName;
-
-
-    const serializedInput =
-      safeAgentSerialize(
-
-        normalizedInput,
-
-        10000
-
-      );
-
-
-    recordAgentActionHistory({
-
-      executionId,
-
-      userId,
-
-      action:
-        actionName,
-
-      input:
-        serializedInput,
-
-      success:
-        true,
-
-      durationMs
-
-    });
-
-
-    await systemLog(
-
-      "info",
-
-      "agent-actions",
-
-      "Agent action executed",
-
-      {
-
-        userId,
-
-        action:
-          actionName,
-
-        executionId,
-
-        durationMs
-
-      }
-
-    );
-
-
-    return buildAgentActionResult(
-
-      actionName,
-
-      true,
-
-      data,
-
-      null,
-
-      {
-
-        executionId,
-
-        durationMs
-
-      }
-
-    );
-
-  } catch (error) {
-
-    const durationMs =
-      Date.now() -
-      startedAt;
-
-
-    AGENT_ACTION_RUNTIME
-      .failedExecutions++;
-
-
-    AGENT_ACTION_RUNTIME
-      .lastFailureAt =
-      new Date();
-
-
-    if (
-      error?.code ===
-      "ACTION_TIMEOUT"
-    ) {
-
-      AGENT_ACTION_RUNTIME
-        .timedOutExecutions++;
-
-    }
-
-
-    recordAgentActionHistory({
-
-      executionId,
-
-      userId,
-
-      action:
-        actionName,
-
-      input:
-        safeAgentSerialize(
-
-          normalizedInput,
-
-          10000
-
-        ),
-
-      success:
-        false,
-
-      durationMs,
-
-      errorCode:
-        error?.code ||
-        "ACTION_FAILED"
-
-    });
-
-
-    await systemLog(
-
-      "error",
-
-      "agent-actions",
-
-      "Agent action failed",
-
-      {
-
-        userId,
-
-        action:
-          actionName,
-
-        executionId,
-
-        durationMs,
-
-        code:
-          error?.code,
-
-        message:
-          error?.message
-
-      }
-
-    );
-
-
-    throw error;
-
-  }
-
-}
-
-
-// ============================================================
-// GET AGENT ACTIONS API
-// ============================================================
-//
-// This endpoint exposes only metadata.
-// It never exposes handler implementation.
-//
-
-app.get(
-
-  "/api/agent/actions",
-
-  authenticateToken,
-
-  async (
-    req,
-    res
-  ) => {
-
-    try {
-
-      return res.json({
-
-        success:
-          true,
-
-        actions:
-          listAgentActions()
-
-      });
-
-    } catch (error) {
-
-      console.error(
-
-        "List agent actions error:",
-
-        error
-
-      );
-
-
-      return res.status(500).json({
-
-        success:
-          false,
-
-        error:
-          "Could not load agent actions",
-
-        code:
-          "AGENT_ACTION_LIST_FAILED"
-
-      });
-
-    }
-
-  }
-
-);
-
-
-// ============================================================
-// EXECUTE AGENT ACTION API
-// ============================================================
-
-app.post(
-
-  "/api/agent/actions/execute",
-
-  authenticateToken,
-
-  async (
-    req,
-    res
-  ) => {
-
-    try {
-
-      const action =
-        normalizeText(
-
-          req.body?.action
-
-        );
-
-
-      if (
-        !isValidAgentActionName(
-          action
-        )
-      ) {
-
-        return res.status(400).json({
-
-          success:
-            false,
-
-          error:
-            "Valid action name is required",
-
-          code:
-            "INVALID_ACTION_NAME"
-
-        });
-
-      }
-
-
-      const input =
-        normalizeAgentActionInput(
-
-          req.body?.input
-
-        );
-
-
-      if (
-        input === null
-      ) {
-
-        return res.status(400).json({
-
-          success:
-            false,
-
-          error:
-            "Invalid or oversized action input",
-
-          code:
-            "INVALID_ACTION_INPUT"
-
-        });
-
-      }
-
-
-      const result =
-        await executeAgentAction(
-
-          req.user.id,
-
-          action,
-
-          input,
-
-          {
-
-            metadata: {
-
-              source:
-                "api",
-
-              ip:
-                req.ip,
-
-              userAgent:
-                req.get(
-                  "user-agent"
-                ) ||
-                null
-
-            }
-
-          }
-
-        );
-
-
-      return res.json(
-
-        result
-
-      );
-
-    } catch (error) {
-
-      console.error(
-
-        "Agent action execution error:",
-
-        error
-
-      );
-
-      let status = 500;
-
-      if (
-        error?.code ===
-        "AUTHENTICATION_REQUIRED"
-      ) {
-
-        status = 401;
-
-      } else if (
-        error?.code ===
-        "UNKNOWN_AGENT_ACTION"
-      ) {
-
-        status = 404;
-
-      } else if (
-        error?.code ===
-          "ACTION_RATE_LIMIT_MINUTE" ||
-        error?.code ===
-          "ACTION_RATE_LIMIT_HOUR"
-      ) {
-
-        status = 429;
-
-      } else if (
-        error?.code ===
-          "INVALID_ACTION_INPUT" ||
-        error?.code ===
-          "INVALID_ACTION_NAME"
-      ) {
-
-        status = 400;
-
-      } else if (
-        error?.code ===
-          "CONVERSATION_NOT_FOUND" ||
-        error?.code ===
-          "MEMORY_NOT_FOUND" ||
-        error?.code ===
-          "LONG_TERM_MEMORY_NOT_FOUND"
-      ) {
-
-        status = 404;
-
-      } else if (
-        error?.code ===
-        "DUPLICATE_ACTION"
-      ) {
-
-        status = 409;
-
-      } else if (
-        error?.code ===
-        "ACTION_TIMEOUT"
-      ) {
-
-        status = 504;
-
-      }
-      
-      return res.status(
-        status
-      ).json({
-
-        success:
-          false,
-
-        error:
-          error?.message ||
-          "Agent action failed",
-
-        code:
-          error?.code ||
-          "AGENT_ACTION_FAILED"
-
-      });
-
-    }
-
-  }
-
-);
-
-// ============================================================
-// BATCH AGENT ACTION EXECUTION
-// ============================================================
-//
-// Batch execution is deliberately limited.
-//
-// Each action is still independently authenticated,
-// rate-limited and audited.
-//
-
-app.post(
-
-  "/api/agent/actions/batch",
-
-  authenticateToken,
-
-  async (
-    req,
-    res
-  ) => {
-
-    try {
-
-      const actions =
-        req.body?.actions;
-
-
-      if (
-        !Array.isArray(
-          actions
-        )
-      ) {
-
-        return res.status(400).json({
-
-          success:
-            false,
-
-          error:
-            "Actions must be an array",
-
-          code:
-            "INVALID_ACTION_BATCH"
-
-        });
-
-      }
-
-
-      if (
-        actions.length ===
-          0 ||
-        actions.length >
-          AGENT_ACTION_CONFIG
-            .MAX_BATCH_ACTIONS
-      ) {
-
-        return res.status(400).json({
-
-          success:
-            false,
-
-          error:
-            `Batch must contain between 1 and ${AGENT_ACTION_CONFIG.MAX_BATCH_ACTIONS} actions`,
-
-          code:
-            "ACTION_BATCH_LIMIT"
-
-        });
-
-      }
-
-
-      const results = [];
-
-
-      for (
-        const item
-        of actions
-      ) {
-
-        const action =
-          normalizeText(
-            item?.action
-          );
-
-
-        const input =
-          normalizeAgentActionInput(
-            item?.input
-          );
-
-
-        if (
-          !isValidAgentActionName(
-            action
-          ) ||
-          input === null
-        ) {
-
-          results.push({
-
-            success:
-              false,
-
-            action:
-              action || null,
-
-            error:
-              "Invalid action or input",
-
-            code:
-              "INVALID_BATCH_ACTION"
-
-          });
-
-
-          continue;
-
-        }
-
-
-        try {
-
-          const result =
-            await executeAgentAction(
-
-              req.user.id,
-
-              action,
-
-              input,
-
-              {
-
-                metadata: {
-
-                  source:
-                    "batch_api"
-
-                }
-
-              }
-
-            );
-
-
-          results.push(
-            result
-          );
-
-        } catch (error) {
-
-          results.push({
-
-            success:
-              false,
-
-            action,
-
-            error:
-              error?.message ||
-              "Action failed",
-
-            code:
-              error?.code ||
-              "ACTION_FAILED"
-
-          });
-
-        }
-
-      }
-
-
-      return res.json({
-
-        success:
-          true,
-
-        count:
-          results.length,
-
-        results
-
-      });
-
-    } catch (error) {
-
-      console.error(
-
-        "Batch agent action error:",
-
-        error
-
-      );
-
-
-      return res.status(500).json({
-
-        success:
-          false,
-
-        error:
-          "Batch agent action execution failed",
-
-        code:
-          "BATCH_ACTION_FAILED"
-
-      });
-
-    }
-
-  }
-
-);
-
-
-// ============================================================
-// AGENT ACTION RUNTIME STATUS
-// ============================================================
-//
-// Operational endpoint for the authenticated user.
-//
-// It exposes only aggregate runtime information.
-//
-
-app.get(
-
-  "/api/agent/actions/status",
-
-  authenticateToken,
-
-  async (
-    req,
-    res
-  ) => {
-
-    try {
-
-      return res.json({
-
-        success:
-          true,
-
-        runtime: {
-
-          totalExecutions:
-            AGENT_ACTION_RUNTIME
-              .totalExecutions,
-
-          successfulExecutions:
-            AGENT_ACTION_RUNTIME
-              .successfulExecutions,
-
-          failedExecutions:
-            AGENT_ACTION_RUNTIME
-              .failedExecutions,
-
-          rejectedExecutions:
-            AGENT_ACTION_RUNTIME
-              .rejectedExecutions,
-
-          timedOutExecutions:
-            AGENT_ACTION_RUNTIME
-              .timedOutExecutions,
-
-          lastExecutionAt:
-            AGENT_ACTION_RUNTIME
-              .lastExecutionAt,
-
-          lastFailureAt:
-            AGENT_ACTION_RUNTIME
-              .lastFailureAt,
-
-          lastAction:
-            AGENT_ACTION_RUNTIME
-              .lastAction,
-
-          registeredActions:
-            AGENT_ACTION_REGISTRY
-              .size
-
-        }
-
-      });
-
-    } catch (error) {
-
-      console.error(
-
-        "Agent action status error:",
-
-        error
-
-      );
-
-
-      return res.status(500).json({
-
-        success:
-          false,
-
-        error:
-          "Could not load agent action status",
-
-        code:
-          "AGENT_ACTION_STATUS_FAILED"
-
-      });
-
-    }
-
-  }
-
-);
-
-
-// ============================================================
-// INTERNAL ACTION HELPER
-// ============================================================
-//
-// Other backend modules can safely call this instead of
-// directly accessing memory/conversation functions.
-//
-
-async function runAgentAction(
-  userId,
-  action,
-  input = {},
-  metadata = {}
-) {
-
-  return await executeAgentAction(
-
-    userId,
-
-    action,
-
-    input,
-
-    {
-
-      metadata,
-
-      allowDuplicate:
-        false
-
-    }
-
-  );
-
-}
 
 
 // ============================================================
