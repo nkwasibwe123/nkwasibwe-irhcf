@@ -11167,11 +11167,23 @@ async function loadAgentConversationContext(
 // LOAD USER MEMORY CONTEXT
 // ============================================================
 //
-// Memory is optional.
+// Canonical Part 7 memory loader.
 //
-// Failure to load memory must NOT automatically destroy
-// the AI request.
+// IMPORTANT:
+// user_memory uses:
+//   - memory_key
+//   - memory_value
+//   - memory_type
+//   - importance
+//   - metadata
 //
+// It does NOT use a `memory` column.
+//
+// The returned object intentionally exposes
+// `memory` as a normalized application-level field
+// so existing context formatting does not need
+// another memory engine.
+// ============================================================
 
 async function loadAgentMemoryContext(
   userId
@@ -11183,27 +11195,28 @@ async function loadAgentMemoryContext(
 
   }
 
-
   try {
 
     const result =
       await pool.query(
-
         `SELECT
            id,
-           memory,
+           memory_key,
+           memory_value,
+           memory_type,
            importance,
+           metadata,
            created_at,
            updated_at
          FROM user_memory
          WHERE user_id = $1
          ORDER BY
            importance DESC,
-           updated_at DESC
+           updated_at DESC,
+           id DESC
          LIMIT $2`,
 
         [
-
           userId,
 
           AGENT_CONFIG
@@ -11213,7 +11226,6 @@ async function loadAgentMemoryContext(
 
       );
 
-
     return result.rows.map(
       item => ({
 
@@ -11222,14 +11234,29 @@ async function loadAgentMemoryContext(
 
         memory:
           safeAgentString(
-            item.memory,
+            item.memory_value,
             5000
+          ),
+
+        memory_key:
+          safeAgentString(
+            item.memory_key,
+            500
+          ),
+
+        memory_type:
+          safeAgentString(
+            item.memory_type,
+            100
           ),
 
         importance:
           Number(
             item.importance || 1
           ),
+
+        metadata:
+          item.metadata || {},
 
         created_at:
           item.created_at,
@@ -11242,38 +11269,21 @@ async function loadAgentMemoryContext(
 
   } catch (error) {
 
+    // Memory is optional.
+    //
+    // A memory failure must NEVER turn
+    // a normal AI chat request into HTTP 500.
+
     console.error(
       "Agent memory loading error:",
       error
     );
-
-
-    await systemLog(
-
-      "error",
-
-      "agent",
-
-      "Memory context loading failed",
-
-      {
-
-        userId,
-
-        message:
-          error?.message
-
-      }
-
-    );
-
 
     return [];
 
   }
 
 }
-
 
 // ============================================================
 // FORMAT MEMORY CONTEXT
