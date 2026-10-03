@@ -15055,7 +15055,8 @@ async function selfRepairAgentResponse(
 // It is NOT a second AI engine.
 // ============================================================
 
-function taskNeedsLiveResearch(task) {
+
+  function taskNeedsLiveResearch(task) {
   const text =
     String(task || "")
       .trim()
@@ -15065,10 +15066,17 @@ function taskNeedsLiveResearch(task) {
     return false;
   }
 
-  const currentSignals = [
+  const researchSignals = [
+    // ----------------------------------------------------------
+    // CURRENT / TIME-SENSITIVE
+    // ----------------------------------------------------------
     "ubu",
     "uyu munsi",
     "ubu ngubu",
+    "uyu mwaka",
+    "umwaka wa",
+    "muri iki gihe",
+    "vuba aha",
     "latest",
     "current",
     "today",
@@ -15078,11 +15086,18 @@ function taskNeedsLiveResearch(task) {
     "latest news",
     "amakuru mashya",
     "amakuru agezweho",
-    "muri iki gihe",
-    "umwaka wa",
-    "2026",
-    "2025",
+
+    // ----------------------------------------------------------
+    // DATES / YEARS
+    // ----------------------------------------------------------
     "2024",
+    "2025",
+    "2026",
+    "2027",
+
+    // ----------------------------------------------------------
+    // GOVERNMENT / PUBLIC INSTITUTIONS
+    // ----------------------------------------------------------
     "president",
     "perezida",
     "minister",
@@ -15091,42 +15106,137 @@ function taskNeedsLiveResearch(task) {
     "commander",
     "umuyobozi",
     "umuyobozi mukuru",
+    "government",
+    "leta",
+
+    // ----------------------------------------------------------
+    // RWANDA INSTITUTIONS
+    // ----------------------------------------------------------
     "rnp",
     "rcs",
     "rdf",
     "police",
     "defence force",
-    "government",
-    "leta",
+    "defense force",
+    "mineduc",
+    "reb",
+    "irembo",
+    "mifotra",
+
+    // ----------------------------------------------------------
+    // EDUCATION / EXAM RESULTS
+    // ----------------------------------------------------------
+    "amanota",
+    "amanota yanjye",
+    "amanota yawe",
+    "results",
+    "result",
+    "exam results",
+    "exam",
+    "examination",
+    "national examination",
+    "national exams",
+    "senior six",
+    "senior 6",
+    "s6",
+    "ordinary level",
+    "o level",
+    "a level",
+    "secondary school",
+    "school results",
+    "marks",
+    "grades",
+    "grade",
+    "marksheet",
+    "certificate",
+    "transcript",
+    "student results",
+
+    // ----------------------------------------------------------
+    // MONEY / CURRENCY / PRICES
+    // ----------------------------------------------------------
     "salary",
     "umushahara",
     "price",
     "igiciro",
+    "amafaranga",
+    "frw",
+    "rwf",
+    "usd",
+    "dollar",
+    "dollars",
+    "euro",
+    "eur",
+    "pound",
+    "exchange rate",
+    "exchange",
+    "rate",
+    "conversion",
+    "convert",
+    "currency",
+
+    // ----------------------------------------------------------
+    // LAW / POLITICS / PUBLIC POLICY
+    // ----------------------------------------------------------
     "law",
+    "laws",
     "amategeko",
-    "election",
-    "amatora",
+    "regulation",
+    "regulations",
+    "policy",
     "politics",
     "politiki",
+    "election",
+    "elections",
+    "amatora",
+
+    // ----------------------------------------------------------
+    // WEB / SOURCES
+    // ----------------------------------------------------------
     "website",
+    "web site",
     "link",
     "source",
+    "sources",
     "official",
     "official website",
     "official source",
+    "urubuga",
+    "amakuru",
+
+    // ----------------------------------------------------------
+    // EXPLICIT RESEARCH REQUESTS
+    // ----------------------------------------------------------
+    "search",
+    "shakisha",
+    "recherche",
+    "research",
+    "investigate",
+    "iperereza",
+    "verify",
+    "verification",
+    "genzura",
+    "gushakisha",
+    "gushaka amakuru",
+
+    // ----------------------------------------------------------
+    // COMPARISON OF CURRENT / EXTERNAL ENTITIES
+    // ----------------------------------------------------------
     "compare",
     "comparison",
+    "compare them",
     "agereranya",
-    "amakuru"
+    "gereranya",
+    "itandukaniro",
+    "difference between"
   ];
 
-  return currentSignals.some(
+  return researchSignals.some(
     signal =>
       text === signal ||
       text.includes(signal)
   );
-}
-
+  }
 
 // ============================================================
 // LIVE WEB RESEARCH
@@ -15466,28 +15576,57 @@ async function executeNkwasibweAgent(
 // Simple tasks continue directly to the normal AI path.
 // ----------------------------------------------------------
 
-let liveResearch =
-  {
-    performed:
-      false,
-    reason:
-      "NOT_REQUIRED",
-    sources:
-      [],
-    context:
-      ""
-  };
+let liveResearch = {
+  required: false,
+  performed: false,
+  reason: "NOT_REQUIRED",
+  sources: [],
+  context: ""
+};
 
-if (
+const researchRequired =
   taskNeedsLiveResearch(
     validatedTask
-  )
-) {
+  );
+
+liveResearch.required =
+  researchRequired;
+
+if (researchRequired) {
+  console.log(
+    "[RESEARCH] Current/external information detected:",
+    {
+      task:
+        validatedTask.slice(0, 200)
+    }
+  );
+
   liveResearch =
     await performLiveResearch(
       validatedTask,
       userLanguage
     );
+
+  liveResearch.required =
+    true;
+
+  console.log(
+    "[RESEARCH] Research gate result:",
+    {
+      required:
+        liveResearch.required,
+      performed:
+        liveResearch.performed,
+      reason:
+        liveResearch.reason,
+      sources:
+        Array.isArray(
+          liveResearch.sources
+        )
+          ? liveResearch.sources.length
+          : 0
+    }
+  );
 }
 
 // ----------------------------------------------------------
@@ -15575,6 +15714,76 @@ if (
 
 
   try {
+
+    // --------------------------------------------------------
+// MANDATORY RESEARCH SAFETY GATE
+// --------------------------------------------------------
+//
+// If a task requires current/external information but
+// live research could not be completed, do not allow a
+// normal provider to invent or guess current facts.
+//
+// This is especially important for:
+// - current officials
+// - government information
+// - exam results
+// - prices
+// - currency rates
+// - laws
+// - elections
+// - current institutional information
+//
+// --------------------------------------------------------
+
+if (
+  liveResearch.required === true &&
+  liveResearch.performed !== true
+) {
+  console.warn(
+    "[RESEARCH] Required research unavailable. Blocking unverified factual generation.",
+    {
+      reason:
+        liveResearch.reason
+    }
+  );
+
+  const researchUnavailableMessage =
+    userLanguage === "rw"
+      ? "Ntabwo nshoboye kugenzura amakuru agezweho kuri ubu kuko serivisi yo gushakisha amakuru ntabwo iboneka. Sinshaka kuguhaye amakuru nshingiye ku gukeka. Ongera ugerageze nyuma cyangwa mpa urubuga/inyandiko yemewe ushaka ko nishingiraho."
+      : userLanguage === "fr"
+        ? "Je ne peux pas vérifier les informations actuelles pour le moment, car le service de recherche n'est pas disponible. Je préfère ne pas fournir une information non vérifiée."
+        : "I cannot verify the current information right now because the live research service is unavailable. I do not want to present an unverified guess as fact.";
+
+  return {
+    success: false,
+
+    answer:
+      researchUnavailableMessage,
+
+    language:
+      userLanguage,
+
+    verification: {
+      valid: false,
+      requiredResearch: true,
+      researchPerformed: false,
+      issues: [
+        "RESEARCH_REQUIRED_BUT_UNAVAILABLE"
+      ]
+    },
+
+    research: {
+      required: true,
+      performed: false,
+      reason:
+        liveResearch.reason || "UNKNOWN",
+      sources: []
+    },
+
+    repaired: false,
+    repairAttempts: 0
+  };
+}
 
     // --------------------------------------------------------
     // AI PROVIDER
