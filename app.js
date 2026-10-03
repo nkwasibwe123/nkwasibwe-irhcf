@@ -99,7 +99,25 @@ const sendButton =
     "sendButton"
   );
 
+const attachButton =
+  document.getElementById(
+    "attachButton"
+  );
 
+const fileInput =
+  document.getElementById(
+    "fileInput"
+  );
+
+const voiceButton =
+  document.getElementById(
+    "voiceButton"
+  );
+
+const attachmentPreview =
+  document.getElementById(
+    "attachmentPreview"
+  );
 const messages =
   document.getElementById(
     "messages"
@@ -6716,6 +6734,491 @@ function removeTypingIndicator(
     );
 
   }
+}
+
+// ============================================================
+// COMPOSER MEDIA INPUT
+// ============================================================
+//
+// Frontend media selection layer.
+//
+// Supported:
+// - images
+// - videos
+// - audio
+// - documents
+// - multiple files
+//
+// Upload/transmission to the backend will be connected
+// by the media API layer without changing sendMessage()
+// into a second message engine.
+//
+// ============================================================
+
+const composerState = {
+  attachments: [],
+  mediaRecorder: null,
+  recordingChunks: [],
+  recording: false
+};
+
+
+// ============================================================
+// FILE SIZE LIMIT
+// ============================================================
+
+const MAX_ATTACHMENT_SIZE =
+  25 * 1024 * 1024;
+
+
+// ============================================================
+// FILE SELECTION
+// ============================================================
+
+function handleFileSelection(
+  event
+) {
+
+  const files =
+    Array.from(
+      event.target.files || []
+    );
+
+  if (!files.length) {
+    return;
+  }
+
+  files.forEach(
+    file => {
+
+      if (
+        file.size >
+        MAX_ATTACHMENT_SIZE
+      ) {
+
+        showToast(
+          `${file.name} irarenze 25 MB.`,
+          "warning"
+        );
+
+        return;
+      }
+
+      const exists =
+        composerState.attachments
+          .some(
+            item =>
+              item.name === file.name &&
+              item.size === file.size &&
+              item.lastModified ===
+                file.lastModified
+          );
+
+      if (!exists) {
+
+        composerState.attachments.push(
+          file
+        );
+
+      }
+
+    }
+  );
+
+  renderAttachmentPreview();
+
+  event.target.value = "";
+
+}
+
+
+// ============================================================
+// RENDER ATTACHMENT PREVIEW
+// ============================================================
+
+function renderAttachmentPreview() {
+
+  if (!attachmentPreview) {
+    return;
+  }
+
+  attachmentPreview.innerHTML =
+    "";
+
+  composerState.attachments
+    .forEach(
+      (
+        file,
+        index
+      ) => {
+
+        const item =
+          document.createElement(
+            "div"
+          );
+
+        item.className =
+          "attachment-item";
+
+        const info =
+          document.createElement(
+            "div"
+          );
+
+        info.className =
+          "attachment-info";
+
+        const icon =
+          document.createElement(
+            "span"
+          );
+
+        icon.className =
+          "attachment-icon";
+
+        icon.textContent =
+          getAttachmentIcon(
+            file
+          );
+
+        const name =
+          document.createElement(
+            "span"
+          );
+
+        name.className =
+          "attachment-name";
+
+        name.textContent =
+          file.name;
+
+        info.appendChild(
+          icon
+        );
+
+        info.appendChild(
+          name
+        );
+
+        const remove =
+          document.createElement(
+            "button"
+          );
+
+        remove.type =
+          "button";
+
+        remove.className =
+          "attachment-remove";
+
+        remove.textContent =
+          "×";
+
+        remove.title =
+          "Remove file";
+
+        remove.addEventListener(
+          "click",
+          () => {
+
+            composerState
+              .attachments
+              .splice(
+                index,
+                1
+              );
+
+            renderAttachmentPreview();
+
+          }
+        );
+
+        item.appendChild(
+          info
+        );
+
+        item.appendChild(
+          remove
+        );
+
+        attachmentPreview
+          .appendChild(
+            item
+          );
+
+      }
+    );
+
+}
+
+
+// ============================================================
+// ATTACHMENT ICON
+// ============================================================
+
+function getAttachmentIcon(
+  file
+) {
+
+  if (
+    file.type.startsWith(
+      "image/"
+    )
+  ) {
+    return "🖼️";
+  }
+
+  if (
+    file.type.startsWith(
+      "video/"
+    )
+  ) {
+    return "🎥";
+  }
+
+  if (
+    file.type.startsWith(
+      "audio/"
+    )
+  ) {
+    return "🎵";
+  }
+
+  if (
+    file.type ===
+    "application/pdf"
+  ) {
+    return "📕";
+  }
+
+  return "📄";
+
+}
+
+
+// ============================================================
+// CLEAR ATTACHMENTS
+// ============================================================
+
+function clearComposerAttachments() {
+
+  composerState.attachments =
+    [];
+
+  renderAttachmentPreview();
+
+}
+
+
+// ============================================================
+// VOICE RECORDING
+// ============================================================
+
+async function toggleVoiceRecording() {
+
+  if (
+    composerState.recording
+  ) {
+
+    stopVoiceRecording();
+
+    return;
+
+  }
+
+  if (
+    !navigator.mediaDevices ||
+    !navigator.mediaDevices
+      .getUserMedia
+  ) {
+
+    showToast(
+      "Iyi browser ntabwo yemera voice recording.",
+      "warning"
+    );
+
+    return;
+
+  }
+
+  try {
+
+    const stream =
+      await navigator.mediaDevices
+        .getUserMedia({
+          audio: true
+        });
+
+    composerState
+      .recordingChunks =
+      [];
+
+    const recorder =
+      new MediaRecorder(
+        stream
+      );
+
+    composerState.mediaRecorder =
+      recorder;
+
+    composerState.recording =
+      true;
+
+    recorder.ondataavailable =
+      event => {
+
+        if (
+          event.data &&
+          event.data.size > 0
+        ) {
+
+          composerState
+            .recordingChunks
+            .push(
+              event.data
+            );
+
+        }
+
+      };
+
+    recorder.onstop =
+      () => {
+
+        const blob =
+          new Blob(
+            composerState
+              .recordingChunks,
+            {
+              type:
+                recorder.mimeType ||
+                "audio/webm"
+            }
+          );
+
+        const voiceFile =
+          new File(
+            [
+              blob
+            ],
+            `voice-${Date.now()}.webm`,
+            {
+              type:
+                blob.type
+            }
+          );
+
+        composerState
+          .attachments
+          .push(
+            voiceFile
+          );
+
+        stream
+          .getTracks()
+          .forEach(
+            track =>
+              track.stop()
+          );
+
+        composerState.recording =
+          false;
+
+        composerState.mediaRecorder =
+          null;
+
+        renderAttachmentPreview();
+
+        updateVoiceButton();
+
+      };
+
+    recorder.start();
+
+    updateVoiceButton();
+
+    showToast(
+      "Voice recording yatangiye.",
+      "normal"
+    );
+
+  } catch (error) {
+
+    console.error(
+      "Voice recording error:",
+      error
+    );
+
+    composerState.recording =
+      false;
+
+    showToast(
+      "Ntabwo nabashije gufungura microphone.",
+      "warning"
+    );
+
+  }
+
+}
+
+
+// ============================================================
+// STOP VOICE RECORDING
+// ============================================================
+
+function stopVoiceRecording() {
+
+  if (
+    composerState.mediaRecorder &&
+    composerState.mediaRecorder
+      .state !== "inactive"
+  ) {
+
+    composerState.mediaRecorder.stop();
+
+  }
+
+}
+
+
+// ============================================================
+// VOICE BUTTON STATE
+// ============================================================
+
+function updateVoiceButton() {
+
+  if (!voiceButton) {
+    return;
+  }
+
+  if (
+    composerState.recording
+  ) {
+
+    voiceButton.textContent =
+      "⏹";
+
+    voiceButton.classList.add(
+      "recording"
+    );
+
+    voiceButton.title =
+      "Stop recording";
+
+  } else {
+
+    voiceButton.textContent =
+      "🎤";
+
+    voiceButton.classList.remove(
+      "recording"
+    );
+
+    voiceButton.title =
+      "Voice";
+
+  }
+
 }
 
 // ============================================================
