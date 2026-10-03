@@ -24716,13 +24716,25 @@ function buildToolResultMessage(
   result
 ) {
 
+  const toolName =
+    normalizeAgentActionName(
+      toolCall?.function?.name ||
+      toolCall?.name ||
+      ""
+    );
+
   return {
 
     role:
       "tool",
 
     tool_call_id:
-      toolCall.id,
+      toolCall?.id ||
+      null,
+
+    name:
+      toolName ||
+      "unknown_tool",
 
     content:
       safeJSONStringify(
