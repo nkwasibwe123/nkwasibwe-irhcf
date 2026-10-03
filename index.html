@@ -495,39 +495,88 @@
            INPUT
            ============================================== -->
 
-      <div class="input-container">
+<!-- ==============================================
+     SMART AI COMPOSER
+     ============================================== -->
 
+<div class="input-container">
 
-        <div class="input-area">
+  <div
+    id="attachmentPreview"
+    class="attachment-preview"
+    aria-live="polite"
+  ></div>
 
+  <div class="input-area">
 
-          <textarea
-            id="userInput"
-            rows="1"
-            placeholder="Andika icyo ushaka gukora..."
-            autocomplete="off"
-            aria-label="Message"
-          ></textarea>
+    <!-- ADD FILE -->
+    <button
+      id="attachButton"
+      class="composer-button"
+      type="button"
+      aria-label="Add file"
+      title="Add file"
+    >
+      📎
+    </button>
 
+    <input
+      id="fileInput"
+      type="file"
+      hidden
+      multiple
+      accept="
+        image/*,
+        video/*,
+        audio/*,
+        application/pdf,
+        text/*,
+        application/msword,
+        application/vnd.openxmlformats-officedocument.wordprocessingml.document,
+        application/vnd.ms-excel,
+        application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+      "
+    >
 
-          <button
-            id="sendButton"
-            type="button"
-            aria-label="Send message"
-            title="Send message"
-          >
-            <span class="send-text">
-              Send
-            </span>
+    <!-- VOICE -->
+    <button
+      id="voiceButton"
+      class="composer-button"
+      type="button"
+      aria-label="Voice"
+      title="Voice"
+    >
+      🎤
+    </button>
 
-            <span class="send-icon">
-              ➤
-            </span>
+    <!-- MESSAGE -->
+    <textarea
+      id="userInput"
+      rows="1"
+      placeholder="Andika icyo ushaka..."
+      autocomplete="off"
+      aria-label="Message"
+    ></textarea>
 
-          </button>
+    <!-- SEND -->
+    <button
+      id="sendButton"
+      type="button"
+      aria-label="Send message"
+      title="Send message"
+    >
 
-        </div>
+      <span class="send-text">
+        Send
+      </span>
 
+      <span class="send-icon">
+        ➤
+      </span>
+
+    </button>
+
+  </div>
 
 <!--
 STATUS BAR
