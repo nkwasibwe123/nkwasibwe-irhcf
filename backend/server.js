@@ -15038,6 +15038,267 @@ async function selfRepairAgentResponse(
 
       }
 
+
+// ============================================================
+// NKWASIBWE IRHCF — LIVE RESEARCH GATE
+// ============================================================
+//
+// Purpose:
+// - Detect questions that require current/external information.
+// - Use OpenAI Responses API web search when available.
+// - Return grounded research context to the main agent.
+// - Never invent research results.
+// - Never expose internal research metadata to the user.
+//
+// IMPORTANT:
+// This is a capability inside the existing agent engine.
+// It is NOT a second AI engine.
+// ============================================================
+
+function taskNeedsLiveResearch(task) {
+  const text =
+    String(task || "")
+      .trim()
+      .toLowerCase();
+
+  if (!text) {
+    return false;
+  }
+
+  const currentSignals = [
+    "ubu",
+    "uyu munsi",
+    "ubu ngubu",
+    "latest",
+    "current",
+    "today",
+    "now",
+    "recent",
+    "recently",
+    "latest news",
+    "amakuru mashya",
+    "amakuru agezweho",
+    "muri iki gihe",
+    "umwaka wa",
+    "2026",
+    "2025",
+    "2024",
+    "president",
+    "perezida",
+    "minister",
+    "minisitiri",
+    "chief",
+    "commander",
+    "umuyobozi",
+    "umuyobozi mukuru",
+    "rnp",
+    "rcs",
+    "rdf",
+    "police",
+    "defence force",
+    "government",
+    "leta",
+    "salary",
+    "umushahara",
+    "price",
+    "igiciro",
+    "law",
+    "amategeko",
+    "election",
+    "amatora",
+    "politics",
+    "politiki",
+    "website",
+    "link",
+    "source",
+    "official",
+    "official website",
+    "official source",
+    "compare",
+    "comparison",
+    "agereranya",
+    "amakuru"
+  ];
+
+  return currentSignals.some(
+    signal =>
+      text === signal ||
+      text.includes(signal)
+  );
+}
+
+
+// ============================================================
+// LIVE WEB RESEARCH
+// ============================================================
+
+async function performLiveResearch(
+  task,
+  language = "unknown"
+) {
+  const researchTask =
+    String(task || "")
+      .trim();
+
+  if (!researchTask) {
+    return {
+      performed: false,
+      reason: "EMPTY_TASK",
+      sources: [],
+      context: ""
+    };
+  }
+
+  if (!openai) {
+    return {
+      performed: false,
+      reason: "OPENAI_PROVIDER_UNAVAILABLE",
+      sources: [],
+      context: ""
+    };
+  }
+
+  const languageInstruction =
+    language === "rw"
+      ? "Return the research synthesis in Kinyarwanda."
+      : language === "fr"
+        ? "Return the research synthesis in French."
+        : language === "sw"
+          ? "Return the research synthesis in Swahili."
+          : "Return the research synthesis in English.";
+
+  try {
+    console.log(
+      "[RESEARCH] Starting live web research:",
+      {
+        taskLength:
+          researchTask.length
+      }
+    );
+
+    const researchResponse =
+      await openai.responses.create({
+        model:
+          process.env.OPENAI_RESEARCH_MODEL ||
+          OPENAI_MODEL ||
+          "gpt-4o-mini",
+
+        tools: [
+          {
+            type: "web_search"
+          }
+        ],
+
+        input: [
+          {
+            role: "system",
+            content: [
+              "You are the Nkwasibwe IRHCF live research agent.",
+              "Research the user's question using web search.",
+              "Prefer primary and official sources whenever available.",
+              "For government, public officials, laws, elections, institutions, salaries, and current events, prefer official government or institutional sources.",
+              "Do not invent facts, names, dates, ranks, salaries, or positions.",
+              "If sources disagree, report the disagreement instead of silently choosing a fact.",
+              "Separate confirmed facts from inference.",
+              "Include the source title and URL for important claims.",
+              languageInstruction
+            ].join("\n")
+          },
+          {
+            role: "user",
+            content: researchTask
+          }
+        ]
+      });
+
+    const researchText =
+      typeof researchResponse?.output_text === "string"
+        ? researchResponse.output_text.trim()
+        : "";
+
+    if (!researchText) {
+      console.warn(
+        "[RESEARCH] Web research returned no usable text."
+      );
+
+      return {
+        performed: true,
+        reason: "NO_RESEARCH_TEXT",
+        sources: [],
+        context: ""
+      };
+    }
+
+    const sources = [];
+
+    const urlPattern =
+      /https?:\/\/[^\s)\]}>,]+/gi;
+
+    const matches =
+      researchText.match(
+        urlPattern
+      ) || [];
+
+    for (
+      const rawUrl of matches
+    ) {
+      const url =
+        String(rawUrl)
+          .replace(
+            /[.,;:]+$/,
+            ""
+          );
+
+      if (
+        !sources.includes(url) &&
+        sources.length < 10
+      ) {
+        sources.push(url);
+      }
+    }
+
+    console.log(
+      "[RESEARCH] Live research completed:",
+      {
+        sources:
+          sources.length
+      }
+    );
+
+    return {
+      performed: true,
+      reason: "SUCCESS",
+      sources,
+      context:
+        researchText.slice(
+          0,
+          12000
+        )
+    };
+
+  } catch (error) {
+    console.warn(
+      "[RESEARCH] Live research failed:",
+      {
+        code:
+          error?.code ||
+          "RESEARCH_ERROR",
+        message:
+          error?.message ||
+          String(error)
+      }
+    );
+
+    return {
+      performed: false,
+      reason:
+        error?.code ||
+        "RESEARCH_ERROR",
+      sources: [],
+      context: ""
+    };
+  }
+}
 // ============================================================
 // CORE AGENT EXECUTION
 // ============================================================
@@ -15194,6 +15455,69 @@ async function executeNkwasibweAgent(
 
     );
 
+
+  // ----------------------------------------------------------
+// LIVE RESEARCH
+// ----------------------------------------------------------
+//
+// Only research tasks that materially require current/
+// external information.
+//
+// Simple tasks continue directly to the normal AI path.
+// ----------------------------------------------------------
+
+let liveResearch =
+  {
+    performed:
+      false,
+    reason:
+      "NOT_REQUIRED",
+    sources:
+      [],
+    context:
+      ""
+  };
+
+if (
+  taskNeedsLiveResearch(
+    validatedTask
+  )
+) {
+  liveResearch =
+    await performLiveResearch(
+      validatedTask,
+      userLanguage
+    );
+}
+
+// ----------------------------------------------------------
+// ADD RESEARCH CONTEXT
+// ----------------------------------------------------------
+
+if (
+  liveResearch.performed &&
+  liveResearch.context
+) {
+  agentMessages.push({
+    role:
+      "system",
+
+    content:
+      [
+        "LIVE RESEARCH CONTEXT:",
+        "",
+        liveResearch.context,
+        "",
+        "RESEARCH RULES:",
+        "- Treat the research context as evidence, not as unquestionable truth.",
+        "- Prefer primary/official sources.",
+        "- Do not invent facts that are absent from the research.",
+        "- If the evidence is insufficient, say so.",
+        "- For current facts, use the researched information instead of relying only on model memory.",
+        "- Do not mention internal research machinery unless the user asks."
+      ].join("\n")
+  });
+        }
 
   // ----------------------------------------------------------
   // ADD RESPONSE QUALITY POLICY
