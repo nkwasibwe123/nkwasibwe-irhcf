@@ -5514,12 +5514,18 @@ async function displayConversationHistory() {
 
 
         addMessage(
+  normalizedMessage.content,
+  normalizedMessage.role,
+  {
+    id:
+      historyMessage?.id,
 
-          normalizedMessage.content,
-
-          normalizedMessage.role
-
-        );
+    created_at:
+      historyMessage?.created_at ||
+      historyMessage?.createdAt ||
+      null
+  }
+);
 
       }
 
@@ -6161,9 +6167,14 @@ await delay(
 
 }
 
-
 // ============================================================
 // GET AI RESPONSE
+// ============================================================
+//
+// The UI must display the actual AI answer only.
+// Backend metadata such as id, role and created_at
+// must never be rendered as JSON.
+//
 // ============================================================
 
 function extractAIResponse(
@@ -6171,69 +6182,104 @@ function extractAIResponse(
 ) {
 
   if (!data) {
-
     return null;
-
   }
 
-
-  const possibleResponse =
-
+  let response =
     data.response ??
-
     data.reply ??
-
     data.result ??
-
     data.answer ??
-
     data.output ??
-
     data.message?.content ??
-
     data.data?.response ??
-
     data.data?.reply ??
-
     data.data?.result ??
-
+    data.data?.answer ??
+    data.data?.output ??
     data.data?.message?.content ??
-
     data.message;
 
-
   if (
-
-    possibleResponse ===
-    undefined ||
-
-    possibleResponse ===
-    null
-
+    response === undefined ||
+    response === null
   ) {
-
     return null;
-
   }
 
+  // ----------------------------------------------------------
+  // MESSAGE OBJECT
+  // ----------------------------------------------------------
 
   if (
-    typeof possibleResponse ===
-    "string"
+    typeof response === "object" &&
+    !Array.isArray(response)
   ) {
 
-    return possibleResponse;
+    response =
+      response.content ??
+      response.text ??
+      response.answer ??
+      response.message ??
+      "";
 
   }
 
+  // ----------------------------------------------------------
+  // ARRAY RESPONSE
+  // ----------------------------------------------------------
 
-  return safeJsonStringify(
-    possibleResponse,
-    "Ntabwo habonetse igisubizo cya AI."
-  );
+  if (
+    Array.isArray(response)
+  ) {
+
+    response =
+      response
+        .map(item => {
+
+          if (
+            typeof item === "string"
+          ) {
+            return item;
+          }
+
+          if (
+            item &&
+            typeof item === "object"
+          ) {
+
+            return (
+              item.content ??
+              item.text ??
+              ""
+            );
+
+          }
+
+          return "";
+
+        })
+        .filter(Boolean)
+        .join("\n");
+
+  }
+
+  // ----------------------------------------------------------
+  // FINAL CLEAN TEXT
+  // ----------------------------------------------------------
+
+  if (
+    typeof response !== "string"
+  ) {
+    return null;
+  }
+
+  const clean =
+    response.trim();
+
+  return clean || null;
 
 }
-
 
 // ============================================================
 // GET RESPONSE SESSION ID
@@ -6475,59 +6521,130 @@ function addSystemMessage(
   return messageElement;
 
 }
+
 // ============================================================
 // ADD CHAT MESSAGE
+// ============================================================
+//
+// Clean conversation renderer.
+// Only human-readable content is displayed.
+//
 // ============================================================
 
 function addMessage(
   content,
-  type = "user"
+  type = "user",
+  options = {}
 ) {
 
   if (!messages) {
-
     console.error(
       "Messages container not found."
     );
-
     return null;
   }
 
-  const messageElement =
-    document.createElement("div");
-
-  messageElement.classList.add(
-    "message",
-    type
-  );
-
-  const contentElement =
-    document.createElement("div");
-
-  contentElement.classList.add(
-    "message-content"
-  );
-
-  contentElement.textContent =
+  const text =
     content == null
       ? ""
-      : String(content);
+      : String(content).trim();
 
-  messageElement.appendChild(
-    contentElement
+  if (!text) {
+    return null;
+  }
+
+  const role =
+    type === "user"
+      ? "user"
+      : type === "system"
+        ? "system"
+        : "ai";
+
+  const row =
+    document.createElement("div");
+
+  row.className =
+    `message-row ${role}`;
+
+  const avatar =
+    document.createElement("div");
+
+  avatar.className =
+    "message-avatar";
+
+  avatar.textContent =
+    role === "user"
+      ? "You"
+      : "N";
+
+  const body =
+    document.createElement("div");
+
+  body.className =
+    "message-content-wrapper";
+
+  const message =
+    document.createElement("div");
+
+  message.className =
+    `message ${role}`;
+
+  message.textContent =
+    text;
+
+  const meta =
+    document.createElement("div");
+
+  meta.className =
+    "message-meta";
+
+  meta.textContent =
+    formatMessageTime(
+      options.created_at ||
+      getCurrentTimestamp()
+    );
+
+  body.appendChild(
+    message
   );
 
+  body.appendChild(
+    meta
+  );
+
+  if (role === "user") {
+
+    row.appendChild(
+      body
+    );
+
+    row.appendChild(
+      avatar
+    );
+
+  } else {
+
+    row.appendChild(
+      avatar
+    );
+
+    row.appendChild(
+      body
+    );
+
+  }
+
   messages.appendChild(
-    messageElement
+    row
   );
 
   updateWelcomeVisibility();
   scrollToBottom();
 
-  return messageElement;
+  return row;
+
 }
-
-
+    
 // ============================================================
 // SCROLL CHAT TO BOTTOM
 // ============================================================
