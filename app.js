@@ -5370,6 +5370,11 @@ async function loadConversation(
 // ============================================================
 // NORMALIZE HISTORY MESSAGE
 // ============================================================
+//
+// Conversation history must use the same clean-response
+// normalization as live AI responses.
+//
+// ============================================================
 
 function normalizeHistoryMessage(
   message
@@ -5385,68 +5390,210 @@ function normalizeHistoryMessage(
 
   }
 
-
-  const content =
-
+  let content =
     message.content ??
-
     message.text ??
-
     message.message ??
-
     message.response ??
-
     "";
 
+  // ----------------------------------------------------------
+  // OBJECT CONTENT
+  // ----------------------------------------------------------
 
   if (
+    content &&
+    typeof content ===
+      "object" &&
+    !Array.isArray(content)
+  ) {
 
-    content === null ||
+    content =
+      content.content ??
+      content.text ??
+      content.answer ??
+      content.response ??
+      content.message ??
+      "";
 
-    content === undefined
+  }
 
+  // ----------------------------------------------------------
+  // JSON STRING CONTENT
+  // ----------------------------------------------------------
+
+  if (
+    typeof content ===
+    "string"
+  ) {
+
+    let cleaned =
+      content.trim();
+
+    for (
+      let attempt = 0;
+      attempt < 2;
+      attempt++
+    ) {
+
+      const looksLikeJson =
+        (
+          cleaned.startsWith("{") &&
+          cleaned.endsWith("}")
+        ) ||
+        (
+          cleaned.startsWith("[") &&
+          cleaned.endsWith("]")
+        );
+
+      if (!looksLikeJson) {
+        break;
+      }
+
+      try {
+
+        const parsed =
+          JSON.parse(
+            cleaned
+          );
+
+        if (
+          parsed &&
+          typeof parsed ===
+            "object" &&
+          !Array.isArray(parsed)
+        ) {
+
+          const nested =
+            parsed.content ??
+            parsed.text ??
+            parsed.answer ??
+            parsed.response ??
+            parsed.message;
+
+          if (
+            nested !==
+              undefined &&
+            nested !==
+              null
+          ) {
+
+            if (
+              typeof nested ===
+              "string"
+            ) {
+
+              cleaned =
+                nested.trim();
+
+              continue;
+
+            }
+
+            content =
+              nested;
+
+            break;
+
+          }
+
+        }
+
+        break;
+
+      } catch (
+        jsonError
+      ) {
+
+        break;
+
+      }
+
+    }
+
+    content =
+      cleaned;
+
+  }
+
+  // ----------------------------------------------------------
+  // ARRAY CONTENT
+  // ----------------------------------------------------------
+
+  if (
+    Array.isArray(content)
+  ) {
+
+    content =
+      content
+        .map(
+          item => {
+
+            if (
+              typeof item ===
+              "string"
+            ) {
+
+              return item;
+
+            }
+
+            if (
+              item &&
+              typeof item ===
+              "object"
+            ) {
+
+              return (
+                item.content ??
+                item.text ??
+                item.answer ??
+                ""
+              );
+
+            }
+
+            return "";
+
+          }
+        )
+        .filter(Boolean)
+        .join("\n");
+
+  }
+
+  if (
+    typeof content !==
+      "string"
   ) {
 
     return null;
 
   }
 
+  const cleanContent =
+    content.trim();
+
+  if (!cleanContent) {
+    return null;
+  }
 
   const role =
-
     String(
-
       message.role ||
-
       message.type ||
-
       "assistant"
-
     ).toLowerCase();
-
 
   return {
 
     role:
-
       role === "user"
-
         ? "user"
-
         : "ai",
 
-
     content:
-
-      typeof content ===
-      "string"
-
-        ? content
-
-        : safeJsonStringify(
-            content,
-            String(content)
-          )
+      cleanContent
 
   };
 
@@ -6189,9 +6336,13 @@ await delay(
 // GET AI RESPONSE
 // ============================================================
 //
-// The UI must display the actual AI answer only.
-// Backend metadata such as id, role and created_at
-// must never be rendered as JSON.
+// IMPORTANT:
+// The backend may return the assistant message as:
+// 1. an object
+// 2. a JSON string
+// 3. a normal text string
+//
+// The UI must ALWAYS receive the real answer text only.
 //
 // ============================================================
 
@@ -6226,7 +6377,7 @@ function extractAIResponse(
   }
 
   // ----------------------------------------------------------
-  // MESSAGE OBJECT
+  // UNWRAP OBJECTS
   // ----------------------------------------------------------
 
   if (
@@ -6238,8 +6389,129 @@ function extractAIResponse(
       response.content ??
       response.text ??
       response.answer ??
+      response.response ??
       response.message ??
       "";
+
+  }
+
+  // ----------------------------------------------------------
+  // UNWRAP JSON STRING
+  // ----------------------------------------------------------
+  //
+  // This fixes cases such as:
+  //
+  // "{\"id\":208,\"role\":\"assistant\",\"content\":\"Hello\"}"
+  //
+  // The user must see:
+  //
+  // Hello
+  //
+  // ----------------------------------------------------------
+
+  if (
+    typeof response === "string"
+  ) {
+
+    let cleaned =
+      response.trim();
+
+    for (
+      let attempt = 0;
+      attempt < 2;
+      attempt++
+    ) {
+
+      if (
+        !cleaned
+      ) {
+        return null;
+      }
+
+      const looksLikeJson =
+        (
+          cleaned.startsWith("{") &&
+          cleaned.endsWith("}")
+        ) ||
+        (
+          cleaned.startsWith("[") &&
+          cleaned.endsWith("]")
+        );
+
+      if (!looksLikeJson) {
+        break;
+      }
+
+      try {
+
+        const parsed =
+          JSON.parse(
+            cleaned
+          );
+
+        if (
+          parsed &&
+          typeof parsed === "object" &&
+          !Array.isArray(parsed)
+        ) {
+
+          const nested =
+            parsed.content ??
+            parsed.text ??
+            parsed.answer ??
+            parsed.response ??
+            parsed.message;
+
+          if (
+            nested !== undefined &&
+            nested !== null
+          ) {
+
+            if (
+              typeof nested === "string"
+            ) {
+
+              cleaned =
+                nested.trim();
+
+              continue;
+
+            }
+
+            response =
+              nested;
+
+            break;
+
+          }
+
+        }
+
+        response =
+          parsed;
+
+        break;
+
+      } catch (
+        jsonError
+      ) {
+
+        break;
+
+      }
+
+    }
+
+    if (
+      typeof response === "string"
+    ) {
+
+      return (
+        response.trim() ||
+        null
+      );
+
+    }
 
   }
 
@@ -6251,51 +6523,73 @@ function extractAIResponse(
     Array.isArray(response)
   ) {
 
-    response =
+    const parts =
       response
-        .map(item => {
+        .map(
+          item => {
 
-          if (
-            typeof item === "string"
-          ) {
-            return item;
+            if (
+              typeof item ===
+              "string"
+            ) {
+
+              return item;
+
+            }
+
+            if (
+              item &&
+              typeof item ===
+              "object"
+            ) {
+
+              return (
+                item.content ??
+                item.text ??
+                item.answer ??
+                ""
+              );
+
+            }
+
+            return "";
+
           }
+        )
+        .filter(
+          part =>
+            typeof part ===
+              "string" &&
+            part.trim()
+        );
 
-          if (
-            item &&
-            typeof item === "object"
-          ) {
-
-            return (
-              item.content ??
-              item.text ??
-              ""
-            );
-
-          }
-
-          return "";
-
-        })
-        .filter(Boolean)
-        .join("\n");
+    return (
+      parts.join("\n").trim() ||
+      null
+    );
 
   }
 
   // ----------------------------------------------------------
-  // FINAL CLEAN TEXT
+  // FINAL NORMALIZATION
   // ----------------------------------------------------------
 
   if (
-    typeof response !== "string"
+    typeof response !==
+    "string"
   ) {
+
     return null;
+
   }
 
-  const clean =
+  const finalText =
     response.trim();
 
-  return clean || null;
+  return (
+    finalText ||
+    null
+  );
 
 }
 
@@ -7831,7 +8125,44 @@ if (userInput) {
 
   );
 
+// ============================================================
+// FILE ATTACHMENT BUTTON
+// ============================================================
 
+if (
+  attachButton &&
+  fileInput
+) {
+
+  attachButton.addEventListener(
+    "click",
+    () => {
+
+      fileInput.click();
+
+    }
+  );
+
+  fileInput.addEventListener(
+    "change",
+    handleFileSelection
+  );
+
+}
+
+
+// ============================================================
+// VOICE BUTTON
+// ============================================================
+
+if (voiceButton) {
+
+  voiceButton.addEventListener(
+    "click",
+    toggleVoiceRecording
+  );
+
+}
   // ----------------------------------------------------------
   // ENTER TO SEND
   // SHIFT + ENTER FOR NEW LINE
