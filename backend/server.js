@@ -26295,6 +26295,54 @@ app.get(
 
     try {
 
+      const providers =
+        getConfiguredProviders()
+          .map(
+            provider => ({
+
+              name:
+                provider.name,
+
+              configured:
+                Boolean(
+                  provider.configured
+                ),
+
+              available:
+                Boolean(
+                  provider.available
+                ),
+
+              model:
+                provider.model,
+
+              priority:
+                provider.priority,
+
+              failures:
+                provider.failures,
+
+              successes:
+                provider.successes,
+
+              consecutiveFailures:
+                provider.consecutiveFailures,
+
+              cooldownUntil:
+                provider.cooldownUntil,
+
+              lastError:
+                provider.lastError,
+
+              lastSuccess:
+                provider.lastSuccess,
+
+              lastAttempt:
+                provider.lastAttempt
+
+            })
+          );
+
       return res.json({
 
         success:
@@ -26303,11 +26351,58 @@ app.get(
         provider: {
 
           configured:
-            isAIProviderAvailable(),
+            getAvailableProviders()
+              .length > 0,
 
-          model:
+          providers,
+
+          availableProviders:
+            getAvailableProviders()
+              .map(
+                provider =>
+                  provider.name
+              ),
+
+          defaultModel:
             AI_ORCHESTRATION_CONFIG
-              .DEFAULT_MODEL,
+              .DEFAULT_MODEL
+
+        },
+
+        timestamp:
+          new Date()
+            .toISOString()
+
+      });
+
+    } catch (
+      error
+    ) {
+
+      console.error(
+        "AI provider status error:",
+        error
+      );
+
+      return res.status(
+        500
+      ).json({
+
+        success:
+          false,
+
+        code:
+          "AI_PROVIDER_STATUS_FAILED",
+
+        error:
+          "Could not load AI provider status"
+
+      });
+
+    }
+
+  }
+);
 
           
 // NEXT:
