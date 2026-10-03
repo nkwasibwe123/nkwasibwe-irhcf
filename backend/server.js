@@ -11665,6 +11665,8 @@ function buildAgentMessages(
   return compactMessages;
 }
       
+
+
 // ============================================================
 // OPENAI REQUEST WITH TIMEOUT
 // ============================================================
@@ -11675,8 +11677,7 @@ async function callOpenAIWithTimeout(
 ) {
 
   if (
-    typeof openai ===
-      "undefined" ||
+    typeof openai === "undefined" ||
     !openai
   ) {
 
@@ -11692,66 +11693,70 @@ async function callOpenAIWithTimeout(
 
   }
 
-
   const model =
+    options.openaiModel ||
     options.model ||
+    OPENAI_MODEL ||
     AGENT_CONFIG.DEFAULT_MODEL;
 
-
   const temperature =
-    typeof options.temperature ===
-      "number"
+    typeof options.temperature === "number"
       ? options.temperature
       : AGENT_CONFIG.TEMPERATURE;
 
+  const request = {
+
+    model,
+
+    messages,
+
+    temperature,
+
+    max_tokens:
+      options.maxTokens ||
+      1500
+
+  };
+
+  // ----------------------------------------------------------
+  // TOOL CALLING
+  // ----------------------------------------------------------
+
+  if (
+    Array.isArray(options.tools) &&
+    options.tools.length > 0
+  ) {
+
+    request.tools =
+      options.tools;
+
+    request.tool_choice =
+      options.toolChoice ||
+      "auto";
+
+  }
 
   const controller =
     new AbortController();
 
-
   const timeout =
     setTimeout(
-
       () => {
-
         controller.abort();
-
       },
-
-      AGENT_CONFIG
-        .REQUEST_TIMEOUT_MS
-
+      AGENT_CONFIG.REQUEST_TIMEOUT_MS
     );
-
 
   try {
 
     const response =
       await openai.chat.completions.create(
-
+        request,
         {
-
-          model,
-
-          messages,
-
-          temperature,
-
-          max_tokens:
-  options.maxTokens ||
-  1500
-
-        },
-
-        {
-
           signal:
             controller.signal
-
         }
-
       );
-
 
     return response;
 
@@ -11774,7 +11779,6 @@ async function callOpenAIWithTimeout(
 
     }
 
-
     throw error;
 
   } finally {
@@ -11786,6 +11790,7 @@ async function callOpenAIWithTimeout(
   }
 
 }
+
 // ============================================================
 // GEMINI PROVIDER
 // ============================================================
@@ -11809,29 +11814,26 @@ async function callGeminiWithTimeout(
 
   }
 
-
   const model =
     options.geminiModel ||
     GEMINI_MODEL;
 
-
   const controller =
     new AbortController();
 
-
   const timeout =
     setTimeout(
-
       () => {
         controller.abort();
       },
-
       AGENT_CONFIG.REQUEST_TIMEOUT_MS
-
     );
 
-
   try {
+
+    // --------------------------------------------------------
+    // SYSTEM INSTRUCTIONS
+    // --------------------------------------------------------
 
     const systemMessages =
       messages
@@ -11842,36 +11844,197 @@ async function callGeminiWithTimeout(
         .map(
           message =>
             String(
-              message?.content || ""
+              message?.content ||
+              ""
             )
         )
         .join("\n\n");
 
+    // --------------------------------------------------------
+    // GEMINI CONTENT CONVERSION
+    // --------------------------------------------------------
 
-    const contents =
-      messages
-        .filter(
-          message =>
-            message?.role !== "system"
-        )
-        .map(
-          message => ({
-            role:
-              message?.role === "assistant"
-                ? "model"
-                : "user",
+    const contents = [];
 
-            parts: [
-              {
-                text:
-                  String(
-                    message?.content || ""
+    for (
+      const message of messages
+    ) {
+
+      const role =
+        message?.role;
+
+      if (
+        role === "system"
+      ) {
+        continue;
+      }
+
+      // ------------------------------------------------------
+      // ASSISTANT TOOL CALL
+      // ------------------------------------------------------
+
+      if (
+        role === "assistant" &&
+        Array.isArray(
+          message?.tool_calls
+        ) &&
+        message.tool_calls.length > 0
+      ) {
+
+        const parts =
+          [];
+
+        if (
+          typeof message.content ===
+            "string" &&
+          message.content.trim()
+        ) {
+
+          parts.push({
+            text:
+              message.content
+          });
+
+        }
+
+        for (
+          const toolCall
+          of message.tool_calls
+        ) {
+
+          const functionData =
+            toolCall?.function ||
+            {};
+
+          let args = {};
+
+          try {
+
+            args =
+              functionData.arguments
+                ? JSON.parse(
+                    functionData.arguments
                   )
-              }
-            ]
-          })
-        );
+                : {};
 
+          } catch {
+
+            args = {};
+
+          }
+
+          parts.push({
+            functionCall: {
+              name:
+                functionData.name,
+              args
+            }
+          });
+
+        }
+
+        contents.push({
+          role:
+            "model",
+
+          parts
+        });
+
+        continue;
+
+      }
+
+      // ------------------------------------------------------
+      // TOOL RESULT
+      // ------------------------------------------------------
+
+      if (
+        role === "tool"
+      ) {
+
+        let result = {};
+
+        try {
+
+          result =
+            typeof message.content ===
+              "string"
+              ? JSON.parse(
+                  message.content
+                )
+              : (
+                  message.content ||
+                  {}
+                );
+
+        } catch {
+
+          result = {
+            result:
+              String(
+                message.content ||
+                ""
+              )
+          };
+
+        }
+
+        const toolName =
+          message?.name ||
+          message?.tool_name ||
+          "unknown_tool";
+
+        contents.push({
+
+          role:
+            "user",
+
+          parts: [
+            {
+              functionResponse: {
+                name:
+                  toolName,
+
+                response:
+                  result
+              }
+            }
+          ]
+
+        });
+
+        continue;
+
+      }
+
+      // ------------------------------------------------------
+      // NORMAL USER / ASSISTANT MESSAGE
+      // ------------------------------------------------------
+
+      contents.push({
+
+        role:
+          role === "assistant"
+            ? "model"
+            : "user",
+
+        parts: [
+          {
+            text:
+              String(
+                message?.content ||
+                ""
+              )
+          }
+        ]
+
+      });
+
+    }
+
+    // --------------------------------------------------------
+    // REQUEST BODY
+    // --------------------------------------------------------
 
     const body = {
 
@@ -11886,15 +12049,20 @@ async function callGeminiWithTimeout(
             : AGENT_CONFIG.TEMPERATURE,
 
         maxOutputTokens:
-  options.maxTokens ||
-  1500
+          options.maxTokens ||
+          1500
 
       }
 
     };
 
+    // --------------------------------------------------------
+    // SYSTEM INSTRUCTION
+    // --------------------------------------------------------
 
-    if (systemMessages) {
+    if (
+      systemMessages
+    ) {
 
       body.systemInstruction = {
 
@@ -11909,19 +12077,53 @@ async function callGeminiWithTimeout(
 
     }
 
+    // --------------------------------------------------------
+    // GEMINI FUNCTION DECLARATIONS
+    // --------------------------------------------------------
+
+    if (
+      Array.isArray(options.tools) &&
+      options.tools.length > 0
+    ) {
+
+      const functionDeclarations =
+        options.tools
+          .map(
+            tool =>
+              tool?.function
+          )
+          .filter(
+            Boolean
+          );
+
+      if (
+        functionDeclarations.length > 0
+      ) {
+
+        body.tools = [
+          {
+            functionDeclarations
+          }
+        ];
+
+      }
+
+    }
+
+    // --------------------------------------------------------
+    // REQUEST
+    // --------------------------------------------------------
 
     const response =
       await fetch(
-
         `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
           model
         )}:generateContent?key=${encodeURIComponent(
           GEMINI_API_KEY
         )}`,
-
         {
-
-          method: "POST",
+          method:
+            "POST",
 
           headers: {
             "Content-Type":
@@ -11929,19 +12131,17 @@ async function callGeminiWithTimeout(
           },
 
           body:
-            JSON.stringify(body),
+            JSON.stringify(
+              body
+            ),
 
           signal:
             controller.signal
-
         }
-
       );
-
 
     const data =
       await response.json();
-
 
     if (!response.ok) {
 
@@ -11961,21 +12161,71 @@ async function callGeminiWithTimeout(
 
     }
 
+    // --------------------------------------------------------
+    // NORMALIZE GEMINI RESPONSE
+    // --------------------------------------------------------
 
-    const text =
+    const parts =
       data
         ?.candidates?.[0]
         ?.content
-        ?.parts
-        ?.map(
+        ?.parts ||
+      [];
+
+    const text =
+      parts
+        .filter(
           part =>
-            part?.text || ""
+            typeof part?.text ===
+            "string"
+        )
+        .map(
+          part =>
+            part.text
         )
         .join("")
         .trim();
 
+    const functionCalls =
+      parts
+        .filter(
+          part =>
+            part?.functionCall?.name
+        );
 
-    if (!text) {
+    const toolCalls =
+      functionCalls.map(
+        (
+          part,
+          index
+        ) => ({
+
+          id:
+            `gemini-tool-${Date.now()}-${index}`,
+
+          type:
+            "function",
+
+          function: {
+
+            name:
+              part.functionCall.name,
+
+            arguments:
+              JSON.stringify(
+                part.functionCall.args ||
+                {}
+              )
+
+          }
+
+        })
+      );
+
+    if (
+      !text &&
+      toolCalls.length === 0
+    ) {
 
       const error =
         new Error(
@@ -11989,7 +12239,6 @@ async function callGeminiWithTimeout(
 
     }
 
-
     return {
 
       choices: [
@@ -12002,7 +12251,14 @@ async function callGeminiWithTimeout(
               "assistant",
 
             content:
-              text
+              text,
+
+            ...(toolCalls.length > 0
+              ? {
+                  tool_calls:
+                    toolCalls
+                }
+              : {})
 
           }
 
@@ -12041,8 +12297,7 @@ async function callGeminiWithTimeout(
 
   }
 
-}
-
+  }
 
 // ============================================================
 // GROQ PROVIDER
@@ -12067,84 +12322,91 @@ async function callGroqWithTimeout(
 
   }
 
-
   const model =
     options.groqModel ||
     GROQ_MODEL;
 
-
   const controller =
     new AbortController();
 
-
   const timeout =
     setTimeout(
-
       () => {
         controller.abort();
       },
-
       AGENT_CONFIG.REQUEST_TIMEOUT_MS
-
     );
-
 
   try {
 
+    const requestBody = {
+
+      model,
+
+      messages,
+
+      temperature:
+        typeof options.temperature ===
+        "number"
+          ? options.temperature
+          : AGENT_CONFIG.TEMPERATURE,
+
+      max_tokens:
+        options.maxTokens ||
+        1500
+
+    };
+
+    // --------------------------------------------------------
+    // TOOL CALLING
+    // --------------------------------------------------------
+
+    if (
+      Array.isArray(options.tools) &&
+      options.tools.length > 0
+    ) {
+
+      requestBody.tools =
+        options.tools;
+
+      requestBody.tool_choice =
+        options.toolChoice ||
+        "auto";
+
+    }
+
     const response =
       await fetch(
-
         "https://api.groq.com/openai/v1/chat/completions",
-
         {
-
-          method: "POST",
+          method:
+            "POST",
 
           headers: {
-
             "Content-Type":
               "application/json",
 
             Authorization:
               `Bearer ${GROQ_API_KEY}`
-
           },
 
           body:
-            JSON.stringify({
-
-              model,
-
-              messages,
-
-              temperature:
-                typeof options.temperature ===
-                "number"
-                  ? options.temperature
-                  : AGENT_CONFIG.TEMPERATURE,
-
-              max_tokens:
-  options.maxTokens ||
-  1500
-
-            }),
+            JSON.stringify(
+              requestBody
+            ),
 
           signal:
             controller.signal
-
         }
-
       );
-
 
     const data =
       await response.json();
-    
-    console.log(
-  "[GROQ RAW RESPONSE]",
-  JSON.stringify(data)
-);
 
+    console.log(
+      "[GROQ RAW RESPONSE]",
+      JSON.stringify(data)
+    );
 
     if (!response.ok) {
 
@@ -12164,9 +12426,23 @@ async function callGroqWithTimeout(
 
     }
 
+    const assistantMessage =
+      data?.choices?.[0]?.message;
+
+    const hasContent =
+      typeof assistantMessage?.content ===
+        "string" &&
+      assistantMessage.content.trim();
+
+    const hasToolCalls =
+      Array.isArray(
+        assistantMessage?.tool_calls
+      ) &&
+      assistantMessage.tool_calls.length > 0;
 
     if (
-      !data?.choices?.[0]?.message?.content
+      !hasContent &&
+      !hasToolCalls
     ) {
 
       const error =
@@ -12180,7 +12456,6 @@ async function callGroqWithTimeout(
       throw error;
 
     }
-
 
     return data;
 
@@ -24462,6 +24737,28 @@ function buildToolResultMessage(
 // ============================================================
 // MODEL CALL
 // ============================================================
+//
+// IMPORTANT:
+//
+// Part 11 does NOT call OpenAI directly.
+//
+// The canonical Part 7 executeAIProvider()
+// is the single model gateway.
+//
+// This gives Nkwasibwe:
+//
+//   - OpenAI
+//   - Gemini
+//   - Groq
+//   - health tracking
+//   - automatic fallback
+//   - cooldown / circuit breaker
+//   - provider metadata
+//   - tool calling
+//
+// Providers remain infrastructure.
+// They are not agents.
+// ============================================================
 
 async function callNkwasibweModel(
   messages,
@@ -24485,82 +24782,47 @@ async function callNkwasibweModel(
 
   }
 
-
-  const model =
-    options.model ||
-    AI_ORCHESTRATION_CONFIG
-      .DEFAULT_MODEL;
-
-
-  const request = {
-
-    model,
-
-    messages,
-
-    temperature:
-      Number.isFinite(
-        Number(
-          options.temperature
-        )
-      )
-        ? Number(
-            options.temperature
-          )
-        : AI_ORCHESTRATION_CONFIG
-            .DEFAULT_TEMPERATURE,
-
-    max_tokens:
-      Math.max(
-
-        100,
-
-        Math.min(
-
-          Number(
-            options.maxTokens
-          ) ||
-          AI_ORCHESTRATION_CONFIG
-            .MAX_MODEL_OUTPUT_TOKENS,
-
-          AI_ORCHESTRATION_CONFIG
-            .MAX_MODEL_OUTPUT_TOKENS
-
-        )
-
-      )
-
-  };
-
-
-  if (
-    tools.length > 0
-  ) {
-
-    request.tools =
-      tools;
-
-    request.tool_choice =
-      "auto";
-
-  }
-
-
   AI_ORCHESTRATION_RUNTIME
     .modelCalls++;
 
+  const response =
+    await executeAIProvider(
+      messages,
+      {
+
+        model:
+          options.model,
+
+        openaiModel:
+          options.openaiModel ||
+          options.model,
+
+        geminiModel:
+          options.geminiModel,
+
+        groqModel:
+          options.groqModel,
+
+        temperature:
+          options.temperature,
+
+        maxTokens:
+          options.maxTokens,
+
+        tools,
+
+        toolChoice:
+          options.toolChoice ||
+          "auto"
+
+      }
+    );
 
   AI_ORCHESTRATION_RUNTIME
     .lastModel =
-    model;
-
-
-  const response =
-    await openai.chat.completions
-      .create(
-        request
-      );
-
+      response?.__agentModel ||
+      options.model ||
+      "unknown";
 
   if (
     !response ||
@@ -24579,7 +24841,6 @@ async function callNkwasibweModel(
     throw error;
 
   }
-
 
   return response;
 
