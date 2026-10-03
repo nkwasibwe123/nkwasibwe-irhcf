@@ -19734,15 +19734,95 @@ function hasRecentDuplicateAction(
 const AGENT_ACTION_REGISTRY =
   new Map();
 
-
 // ============================================================
-// REGISTER ACTION
+// CANONICAL ACTION REGISTRATION
+// ============================================================
+//
+// This is the ONE canonical registration interface.
+//
+// Supported formats:
+//
+// LEGACY:
+// registerAgentAction(
+//   "memory.search",
+//   { handler: ... }
+// );
+//
+// MODERN:
+// registerAgentAction({
+//   name: "system.get_time",
+//   handler: ...
+// });
+//
+// IMPORTANT:
+// - Only explicitly registered handlers can execute.
+// - No arbitrary JavaScript execution.
+// - Part 10 uses this same registry.
 // ============================================================
 
 function registerAgentAction(
-  name,
-  definition
+  actionDefinition,
+  legacyDefinition
 ) {
+
+  // ----------------------------------------------------------
+  // SUPPORT LEGACY REGISTRATION FORMAT
+  // ----------------------------------------------------------
+
+  if (
+    typeof actionDefinition ===
+    "string"
+  ) {
+
+    actionDefinition =
+      Object.assign(
+        {},
+        legacyDefinition || {},
+        {
+          name:
+            actionDefinition
+        }
+      );
+
+    // Legacy actions may use timeoutMs.
+    if (
+      actionDefinition.timeout ===
+        undefined &&
+      actionDefinition.timeoutMs !==
+        undefined
+    ) {
+
+      actionDefinition.timeout =
+        actionDefinition.timeoutMs;
+
+    }
+
+  }
+
+
+  // ----------------------------------------------------------
+  // BASIC DEFINITION VALIDATION
+  // ----------------------------------------------------------
+
+  if (
+    !actionDefinition ||
+    typeof actionDefinition !==
+      "object"
+  ) {
+
+    throw createAgentActionError(
+      "Action definition is required",
+      "INVALID_ACTION_DEFINITION"
+    );
+
+  }
+
+
+  const name =
+    normalizeAgentActionName(
+      actionDefinition.name
+    );
+
 
   if (
     !isValidAgentActionName(
@@ -19751,48 +19831,29 @@ function registerAgentAction(
   ) {
 
     throw createAgentActionError(
-
       "Invalid agent action name",
-
       "INVALID_ACTION_NAME"
-
     );
 
   }
 
 
   if (
-    !definition ||
-    typeof definition !==
-      "object"
+    typeof actionDefinition.handler !==
+      "function"
   ) {
 
     throw createAgentActionError(
-
-      "Invalid action definition",
-
-      "INVALID_ACTION_DEFINITION"
-
-    );
-
-  }
-
-
-  if (
-    typeof definition.handler !==
-    "function"
-  ) {
-
-    throw createAgentActionError(
-
       "Action handler is required",
-
       "ACTION_HANDLER_REQUIRED"
-
     );
 
   }
 
+
+  // ----------------------------------------------------------
+  // PREVENT ACCIDENTAL DUPLICATE REGISTRATION
+  // ----------------------------------------------------------
 
   if (
     AGENT_ACTION_REGISTRY.has(
@@ -19801,54 +19862,128 @@ function registerAgentAction(
   ) {
 
     throw createAgentActionError(
-
       "Agent action already registered",
-
       "ACTION_ALREADY_REGISTERED"
-
     );
 
   }
 
 
-  AGENT_ACTION_REGISTRY.set(
+  // ----------------------------------------------------------
+  // NORMALIZE ACTION
+  // ----------------------------------------------------------
+
+  const timeout =
+    normalizeAgentTimeout(
+      actionDefinition.timeout ??
+      actionDefinition.timeoutMs
+    );
+
+
+  const retryCount =
+    normalizeAgentRetryCount(
+      actionDefinition.retryCount
+    );
+
+
+  const action = {
 
     name,
 
-    Object.freeze({
+    description:
+      normalizeText(
+        actionDefinition.description ||
+        ""
+      ).slice(
+        0,
+        2000
+      ),
 
-      name,
+    // Part 9 compatibility
+    requiresAuthentication:
+      actionDefinition
+        .requiresAuthentication !==
+      false,
 
-      description:
-        String(
-          definition.description ||
-          ""
-        ),
+    requiresUserOwnership:
+      actionDefinition
+        .requiresUserOwnership !==
+      false,
 
-      requiresAuthentication:
-        definition
-          .requiresAuthentication !==
-        false,
+    // Part 10 execution controls
+    enabled:
+      actionDefinition.enabled !==
+      false,
 
-      requiresUserOwnership:
-        definition
-          .requiresUserOwnership !==
-        false,
+    destructive:
+      actionDefinition.destructive ===
+      true,
 
-      timeoutMs:
-        Number.isInteger(
-          definition.timeoutMs
-        )
-          ? definition.timeoutMs
-          : AGENT_ACTION_CONFIG
-              .ACTION_TIMEOUT_MS,
+    requiresConfirmation:
+      actionDefinition
+        .requiresConfirmation ===
+      true,
 
-      handler:
-        definition.handler
+    timeout,
 
-    })
+    timeoutMs:
+      timeout,
 
+    retryCount,
+
+    handler:
+      actionDefinition.handler
+
+  };
+
+
+  // ----------------------------------------------------------
+  // REGISTER INTO THE ONE GLOBAL REGISTRY
+  // ----------------------------------------------------------
+
+  AGENT_ACTION_REGISTRY.set(
+    name,
+    action
   );
+
+
+  // ----------------------------------------------------------
+  // SAFE PUBLIC REGISTRATION RESULT
+  // ----------------------------------------------------------
+
+  return {
+
+    name:
+      action.name,
+
+    description:
+      action.description,
+
+    requiresAuthentication:
+      action.requiresAuthentication,
+
+    requiresUserOwnership:
+      action.requiresUserOwnership,
+
+    enabled:
+      action.enabled,
+
+    destructive:
+      action.destructive,
+
+    requiresConfirmation:
+      action.requiresConfirmation,
+
+    timeout:
+      action.timeout,
+
+    timeoutMs:
+      action.timeoutMs,
+
+    retryCount:
+      action.retryCount
+
+  };
 
 }
 
@@ -19858,13 +19993,17 @@ function registerAgentAction(
 // ============================================================
 
 function getAgentAction(
-  name
+  actionName
 ) {
 
+  const name =
+    normalizeAgentActionName(
+      actionName
+    );
+
+
   if (
-    !isValidAgentActionName(
-      name
-    )
+    !name
   ) {
 
     return null;
@@ -19885,38 +20024,52 @@ function getAgentAction(
 // ============================================================
 // LIST REGISTERED ACTIONS
 // ============================================================
+//
+// Handler functions are NEVER exposed.
+// ============================================================
 
 function listAgentActions() {
 
   return Array.from(
-
     AGENT_ACTION_REGISTRY.values()
+  )
+    .map(
+      action => ({
 
-  ).map(
+        name:
+          action.name,
 
-    action => ({
+        description:
+          action.description,
 
-      name:
-        action.name,
+        requiresAuthentication:
+          action.requiresAuthentication,
 
-      description:
-        action.description,
+        requiresUserOwnership:
+          action.requiresUserOwnership,
 
-      requiresAuthentication:
-        action.requiresAuthentication,
+        enabled:
+          action.enabled,
 
-      requiresUserOwnership:
-        action.requiresUserOwnership,
+        destructive:
+          action.destructive,
 
-      timeoutMs:
-        action.timeoutMs
+        requiresConfirmation:
+          action.requiresConfirmation,
 
-    })
+        timeout:
+          action.timeout,
 
-  );
+        timeoutMs:
+          action.timeoutMs,
 
-}
+        retryCount:
+          action.retryCount
 
+      })
+    );
+
+    }
 
 // ============================================================
 // MEMORY SEARCH ACTION
@@ -21010,44 +21163,7 @@ const AGENT_IDEMPOTENCY_STORE =
   new Map();
 
 
-// ============================================================
-// ACTION NAME VALIDATION
-// ============================================================
 
-function isValidAgentActionName(
-  actionName
-) {
-
-  if (
-    typeof actionName !==
-    "string"
-  ) {
-
-    return false;
-
-  }
-
-
-  const value =
-    actionName.trim();
-
-
-  if (
-    !value ||
-    value.length >
-      AGENT_ACTION_CONFIG
-        .MAX_ACTION_NAME_LENGTH
-  ) {
-
-    return false;
-
-  }
-
-
-  return /^[a-zA-Z0-9._:-]+$/
-    .test(value);
-
-}
 
 
 // ============================================================
@@ -21406,180 +21522,7 @@ function canExecuteAgentAction(
 
 }
 
-
-// ============================================================
-// ACTION REGISTRATION
-// ============================================================
-
-function registerAgentAction(
-  actionDefinition,
-  legacyDefinition
-) {
-
-  /*
-   * SUPPORT BOTH REGISTRATION FORMATS
-   *
-   * OLD:
-   * registerAgentAction(
-   *   "memory.search",
-   *   { handler: ... }
-   * );
-   *
-   * NEW:
-   * registerAgentAction({
-   *   name: "system.get_time",
-   *   handler: ...
-   * });
-   */
-
-  if (
-    typeof actionDefinition ===
-      "string"
-  ) {
-
-    actionDefinition =
-      Object.assign(
-        {},
-        legacyDefinition || {},
-        {
-          name:
-            actionDefinition
-        }
-      );
-
-    /*
-     * OLD ACTIONS sometimes use
-     * timeoutMs while the new engine
-     * uses timeout.
-     */
-    if (
-      actionDefinition.timeout ===
-        undefined &&
-      actionDefinition.timeoutMs !==
-        undefined
-    ) {
-      actionDefinition.timeout =
-        actionDefinition.timeoutMs;
-    }
-  }
-
-
-  if (
-    !actionDefinition ||
-    typeof actionDefinition !==
-      "object"
-  ) {
-
-    throw new Error(
-      "Action definition is required"
-    );
-
-  }
-  const name =
-    normalizeAgentActionName(
-      actionDefinition.name
-    );
-
-
-  if (
-    !isValidAgentActionName(
-      name
-    )
-  ) {
-
-    throw new Error(
-      "Invalid agent action name"
-    );
-
-  }
-
-
-  if (
-    typeof actionDefinition.handler !==
-      "function"
-  ) {
-
-    throw new Error(
-      "Agent action handler is required"
-    );
-
-  }
-
-
-  const action = {
-
-    name,
-
-    description:
-      normalizeText(
-        actionDefinition.description ||
-        ""
-      ).slice(
-        0,
-        2000
-      ),
-
-    enabled:
-      actionDefinition.enabled !==
-        false,
-
-    destructive:
-      actionDefinition.destructive ===
-        true,
-
-    requiresConfirmation:
-      actionDefinition
-        .requiresConfirmation ===
-        true,
-
-    timeout:
-      normalizeAgentTimeout(
-        actionDefinition.timeout
-      ),
-
-    retryCount:
-      normalizeAgentRetryCount(
-        actionDefinition.retryCount
-      ),
-
-    handler:
-      actionDefinition.handler
-
-  };
-
-
-  AGENT_ACTION_REGISTRY.set(
-    name,
-    action
-  );
-
-
-  return {
-
-    name:
-      action.name,
-
-    description:
-      action.description,
-
-    enabled:
-      action.enabled,
-
-    destructive:
-      action.destructive,
-
-    requiresConfirmation:
-      action.requiresConfirmation,
-
-    timeout:
-      action.timeout,
-
-    retryCount:
-      action.retryCount
-
-  };
-
-}
+    
 
 
 // ============================================================
@@ -21611,80 +21554,6 @@ function unregisterAgentAction(
 
 }
 
-
-// ============================================================
-// GET REGISTERED ACTION
-// ============================================================
-
-function getAgentAction(
-  actionName
-) {
-
-  const name =
-    normalizeAgentActionName(
-      actionName
-    );
-
-
-  if (
-    !name
-  ) {
-
-    return null;
-
-  }
-
-
-  return (
-    AGENT_ACTION_REGISTRY.get(
-      name
-    ) ||
-    null
-  );
-
-}
-
-
-// ============================================================
-// LIST REGISTERED ACTIONS
-// ============================================================
-//
-// Handler functions are intentionally never exposed.
-//
-
-function listAgentActions() {
-
-  return Array.from(
-    AGENT_ACTION_REGISTRY.values()
-  )
-    .map(
-      action => ({
-
-        name:
-          action.name,
-
-        description:
-          action.description,
-
-        enabled:
-          action.enabled,
-
-        destructive:
-          action.destructive,
-
-        requiresConfirmation:
-          action.requiresConfirmation,
-
-        timeout:
-          action.timeout,
-
-        retryCount:
-          action.retryCount
-
-      })
-    );
-
-}
 
 
 // ============================================================
@@ -23696,15 +23565,22 @@ const AI_ORCHESTRATION_RUNTIME = {
 
 
 // ============================================================
-// OPENAI AVAILABILITY CHECK
+// AI PROVIDER AVAILABILITY
+// ============================================================
+//
+// Nkwasibwe is provider-agnostic.
+// OpenAI, Gemini and Groq are providers,
+// not agents.
+//
+// The centralized provider registry from Part 1
+// is the source of truth.
 // ============================================================
 
 function isAIProviderAvailable() {
 
-  return Boolean(
-    openai &&
-    typeof openai ===
-      "object"
+  return (
+    getAvailableProviders().length >
+    0
   );
 
 }
@@ -23859,130 +23735,13 @@ function validateAIUserMessage(
 }
 
 
-// ============================================================
-// CONVERSATION HISTORY LOADER
-// ============================================================
-
-async function loadAgentConversationContext(
-  userId,
-  sessionId
-) {
-
-  if (
-    !userId ||
-    !sessionId
-  ) {
-
-    return {
-
-      conversation:
-        null,
-
-      messages:
-        []
-
-    };
-
-  }
-
-
-  const conversation =
-    await resolveUserConversation(
-
-      userId,
-
-      sessionId
-
-    );
-
-
-  if (
-    !conversation
-  ) {
-
-    return {
-
-      conversation:
-        null,
-
-      messages:
-        []
-
-    };
-
-  }
-
-
-  const result =
-    await pool.query(
-
-      `SELECT
-         id,
-         role,
-         content,
-         created_at
-       FROM messages
-       WHERE conversation_id = $1
-       ORDER BY
-         created_at DESC,
-         id DESC
-       LIMIT $2`,
-
-      [
-
-        conversation.id,
-
-        AI_ORCHESTRATION_CONFIG
-          .MAX_CONTEXT_MESSAGES
-
-      ]
-
-    );
-
-
-  const messages =
-    result.rows
-      .reverse()
-      .map(
-        message => ({
-
-          role:
-            message.role,
-
-          content:
-            limitAIText(
-
-              message.content,
-
-              AI_ORCHESTRATION_CONFIG
-                .MAX_CONTEXT_CHARACTERS
-
-            )
-
-        })
-      );
-
-
-  AI_ORCHESTRATION_RUNTIME
-    .conversationReads++;
-
-
-  return {
-
-    conversation,
-
-    messages
-
-  };
-
-}
 
 
 // ============================================================
 // MEMORY CONTEXT LOADER
 // ============================================================
 
-async function loadAgentMemoryContext(
+async function loadOrchestrationMemoryContext(
   userId,
   query
 ) {
@@ -24100,7 +23859,7 @@ async function loadAgentMemoryContext(
 // MEMORY PROMPT FORMATTER
 // ============================================================
 
-function formatAgentMemoryContext(
+function formatOrchestrationMemoryContext(
   memoryContext
 ) {
 
@@ -24473,9 +24232,9 @@ function buildNkwasibweSystemPrompt(
 ) {
 
   const memoryText =
-    formatAgentMemoryContext(
-      memoryContext
-    );
+  formatOrchestrationMemoryContext(
+    memoryContext
+  );
 
 
   const userName =
@@ -25414,13 +25173,13 @@ async function runNkwasibweAgent(
 
         ),
 
-        loadAgentMemoryContext(
+        loadOrchestrationMemoryContext(
 
-          user.id,
+  user.id,
 
-          validation.value
+  validation.value
 
-        )
+)
 
       ]);
 
@@ -26277,86 +26036,7 @@ app.get(
             AI_ORCHESTRATION_CONFIG
               .DEFAULT_MODEL,
 
-          tools:
-            AI_ORCHESTRATION_CONFIG
-              .ENABLE_TOOLS,
-
-          memory:
-            AI_ORCHESTRATION_CONFIG
-              .ENABLE_MEMORY
-
-        },
-
-        timestamp:
-          new Date().toISOString()
-
-      });
-
-    } catch (
-      error
-    ) {
-
-      console.error(
-
-        "AI provider status error:",
-
-        error
-
-      );
-
-
-      return res.status(
-        500
-      ).json({
-
-        success:
-          false,
-
-        code:
-          "AI_PROVIDER_STATUS_FAILED",
-
-        error:
-          "Could not determine AI provider status"
-
-      });
-
-    }
-
-  }
-);
-
-
-// ============================================================
-// PART 11 COMPLETE
-// ============================================================
-//
-// Nkwasibwe IRHCF now has:
-//
-// ✓ AI orchestration engine
-// ✓ OpenAI model integration
-// ✓ Conversation-aware AI
-// ✓ Memory-aware AI
-// ✓ Long-term memory awareness
-// ✓ Dynamic tool discovery
-// ✓ Secure tool routing
-// ✓ PART 10 action integration
-// ✓ Multi-round agent execution
-// ✓ Tool-call loop protection
-// ✓ Execution timeout protection
-// ✓ Context-window protection
-// ✓ Tool argument validation
-// ✓ Unknown-tool rejection
-// ✓ Authentication enforcement
-// ✓ Conversation persistence
-// ✓ Structured agent responses
-// ✓ Agent runtime statistics
-// ✓ Provider status API
-// ✓ Failure isolation
-// ✓ Audit logging
-// ✓ Prompt-injection defensive rules
-// ✓ No direct exposure of action handlers
-// ✓ No direct exposure of secrets
-//
+          
 // NEXT:
 //
 // PART 12/14
