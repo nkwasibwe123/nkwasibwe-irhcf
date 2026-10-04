@@ -13100,6 +13100,24 @@ function getProviderHealthSnapshot() {
 // ============================================================
 // MULTI-PROVIDER AI EXECUTION
 // ============================================================
+//
+// Provider strategy:
+//
+//   1. Build configured providers.
+//   2. Prefer healthy providers.
+//   3. Never intentionally probe providers still in cooldown.
+//   4. If a provider fails, immediately continue to the next
+//      healthy provider.
+//   5. If all providers are temporarily cooling down, return
+//      a dedicated temporary-unavailability error.
+//   6. Never confuse provider cooldown with research failure.
+//
+// IMPORTANT:
+//
+// This function does NOT invent a provider.
+// It only uses providers that already exist in this file.
+//
+// ============================================================
 
 async function executeAIProvider(
   messages,
@@ -13116,13 +13134,15 @@ async function executeAIProvider(
 
     providers.push({
 
-      name: "openai",
+      name:
+        "openai",
 
-      execute: providerOptions =>
-        callOpenAIWithTimeout(
-          messages,
-          providerOptions
-        )
+      execute:
+        providerOptions =>
+          callOpenAIWithTimeout(
+            messages,
+            providerOptions
+          )
 
     });
 
@@ -13136,13 +13156,15 @@ async function executeAIProvider(
 
     providers.push({
 
-      name: "gemini",
+      name:
+        "gemini",
 
-      execute: providerOptions =>
-        callGeminiWithTimeout(
-          messages,
-          providerOptions
-        )
+      execute:
+        providerOptions =>
+          callGeminiWithTimeout(
+            messages,
+            providerOptions
+          )
 
     });
 
@@ -13156,23 +13178,27 @@ async function executeAIProvider(
 
     providers.push({
 
-      name: "groq",
+      name:
+        "groq",
 
-      execute: providerOptions =>
-        callGroqWithTimeout(
-          messages,
-          providerOptions
-        )
+      execute:
+        providerOptions =>
+          callGroqWithTimeout(
+            messages,
+            providerOptions
+          )
 
     });
 
   }
 
   // ----------------------------------------------------------
-  // NO PROVIDERS
+  // NO CONFIGURED PROVIDERS
   // ----------------------------------------------------------
 
-  if (providers.length === 0) {
+  if (
+    providers.length === 0
+  ) {
 
     const error =
       new Error(
@@ -13182,17 +13208,21 @@ async function executeAIProvider(
     error.code =
       "AI_PROVIDER_NOT_CONFIGURED";
 
+    error.status =
+      503;
+
     throw error;
 
   }
 
-  let lastError = null;
+  let lastError =
+    null;
 
   // ----------------------------------------------------------
   // HEALTHY PROVIDERS FIRST
   // ----------------------------------------------------------
 
-  const healthyProviders =
+  let providersToTry =
     providers.filter(
       provider =>
         isProviderHealthy(
@@ -13200,30 +13230,15 @@ async function executeAIProvider(
         )
     );
 
-  let providersToTry =
-    healthyProviders;
-
-    // ----------------------------------------------------------
+  // ----------------------------------------------------------
   // ALL PROVIDERS IN COOLDOWN
   // ----------------------------------------------------------
   //
-  // IMPORTANT:
+  // Do NOT probe them.
   //
-  // NEVER probe a provider while its cooldown is still active.
+  // However, distinguish a real cooldown from a provider whose
+  // health state is stale or already expired.
   //
-  // Probing a known-rate-limited provider:
-  //
-  //   - wastes latency
-  //   - wastes quota
-  //   - creates unnecessary 429 errors
-  //   - can make the frontend appear frozen
-  //   - defeats the circuit breaker
-  //
-  // If every provider is unavailable, fail immediately with
-  // a dedicated cooldown error.
-  //
-  // A later request will automatically use the provider whose
-  // cooldown has expired.
   // ----------------------------------------------------------
 
   if (
@@ -13249,18 +13264,20 @@ async function executeAIProvider(
                 0
               );
 
+            const remainingMs =
+              Math.max(
+                0,
+                cooldownUntil -
+                now
+              );
+
             return {
               provider:
                 provider.name,
 
               cooldownUntil,
 
-              remainingMs:
-                Math.max(
-                  0,
-                  cooldownUntil -
-                  now
-                )
+              remainingMs
             };
 
           }
@@ -13271,53 +13288,115 @@ async function executeAIProvider(
             b.remainingMs
         );
 
-    const nextProvider =
-      cooldowns[0] ||
-      null;
+    // --------------------------------------------------------
+    // RE-EVALUATE EXPIRED COOLDOWNS
+    // --------------------------------------------------------
 
-    const finalError =
-      new Error(
-        nextProvider &&
-        nextProvider.remainingMs > 0
-          ? `All AI providers are temporarily unavailable. Next provider may recover in approximately ${Math.ceil(
-              nextProvider.remainingMs /
-              1000
-            )} seconds.`
-          : "All AI providers are temporarily unavailable."
+    const expiredProviders =
+      cooldowns
+        .filter(
+          item =>
+            item.remainingMs <= 0
+        )
+        .map(
+          item =>
+            item.provider
+        );
+
+    if (
+      expiredProviders.length > 0
+    ) {
+
+      providersToTry =
+        providers.filter(
+          provider =>
+            expiredProviders.includes(
+              provider.name
+            )
+        );
+
+      console.log(
+        "[AI HEALTH] Cooldown expired; rebuilding provider list",
+        {
+          providers:
+            providersToTry.map(
+              provider =>
+                provider.name
+            )
+        }
       );
 
-    finalError.code =
-      "AI_ALL_PROVIDERS_COOLDOWN";
+    }
 
-    finalError.status =
-      429;
+    // --------------------------------------------------------
+    // STILL ALL IN COOLDOWN
+    // --------------------------------------------------------
 
-    finalError.retryAfterMs =
-      nextProvider
-        ? nextProvider.remainingMs
-        : 0;
+    if (
+      providersToTry.length === 0
+    ) {
 
-    finalError.providerHealth =
-      getProviderHealthSnapshot();
+      const nextProvider =
+        cooldowns[0] ||
+        null;
 
-    console.warn(
-      "[AI HEALTH] All providers are in cooldown; refusing unnecessary probe",
-      {
-        nextProvider:
-          nextProvider?.provider ||
-          null,
+      const retryAfterMs =
+        nextProvider
+          ? nextProvider.remainingMs
+          : 0;
 
-        retryAfterMs:
-          finalError.retryAfterMs,
+      const finalError =
+        new Error(
+          nextProvider &&
+          retryAfterMs > 0
 
-        providerHealth:
-          finalError.providerHealth
-      }
-    );
+            ? `All AI providers are temporarily unavailable. Next provider may recover in approximately ${Math.ceil(
+                retryAfterMs /
+                1000
+              )} seconds.`
 
-    throw finalError;
+            : "All AI providers are temporarily unavailable."
+        );
 
-            }
+      finalError.code =
+        "AI_ALL_PROVIDERS_COOLDOWN";
+
+      // ------------------------------------------------------
+      // 503 IS MORE ACCURATE THAN 429 HERE.
+      //
+      // 429 means the request itself is being rate limited.
+      // Here the platform knows that its configured providers
+      // are temporarily unavailable.
+      // ------------------------------------------------------
+
+      finalError.status =
+        503;
+
+      finalError.retryAfterMs =
+        retryAfterMs;
+
+      finalError.providerHealth =
+        getProviderHealthSnapshot();
+
+      console.warn(
+        "[AI HEALTH] All providers are temporarily unavailable",
+        {
+          nextProvider:
+            nextProvider?.provider ||
+            null,
+
+          retryAfterMs,
+
+          providerHealth:
+            finalError.providerHealth
+        }
+      );
+
+      throw finalError;
+
+    }
+
+  }
 
   // ----------------------------------------------------------
   // EXECUTE PROVIDERS
@@ -13370,13 +13449,21 @@ async function executeAIProvider(
       // ------------------------------------------------------
       // PROVIDER RETRY
       // ------------------------------------------------------
-      // Empty responses can occasionally be transient.
-      // Retry the same provider once before marking it failed.
+      //
+      // Retry only transient EMPTY response failures.
+      // Do NOT blindly retry quota, authentication, or other
+      // provider failures.
+      //
+      // ------------------------------------------------------
 
-      const MAX_PROVIDER_ATTEMPTS = 2;
+      const MAX_PROVIDER_ATTEMPTS =
+        2;
 
-      let response = null;
-      let providerError = null;
+      let response =
+        null;
+
+      let providerError =
+        null;
 
       for (
         let attempt = 1;
@@ -13391,7 +13478,8 @@ async function executeAIProvider(
               providerOptions
             );
 
-          providerError = null;
+          providerError =
+            null;
 
           break;
 
@@ -13414,7 +13502,8 @@ async function executeAIProvider(
 
           if (
             !isEmptyResponse ||
-            attempt >= MAX_PROVIDER_ATTEMPTS
+            attempt >=
+              MAX_PROVIDER_ATTEMPTS
           ) {
 
             break;
@@ -13425,6 +13514,7 @@ async function executeAIProvider(
             `[AI] ${provider.name} returned an empty response; retrying`,
             {
               attempt,
+
               maxAttempts:
                 MAX_PROVIDER_ATTEMPTS
             }
@@ -13446,7 +13536,9 @@ async function executeAIProvider(
       // FINAL PROVIDER FAILURE
       // ------------------------------------------------------
 
-      if (providerError) {
+      if (
+        providerError
+      ) {
 
         throw providerError;
 
@@ -13456,7 +13548,9 @@ async function executeAIProvider(
       // VALIDATE PROVIDER RESPONSE
       // ------------------------------------------------------
 
-      if (!response) {
+      if (
+        !response
+      ) {
 
         const error =
           new Error(
@@ -13481,8 +13575,13 @@ async function executeAIProvider(
       // ------------------------------------------------------
       // ATTACH PROVIDER METADATA
       // ------------------------------------------------------
-      // Keep the original response shape unchanged so existing
-      // extractAIResponse() code continues to work.
+      //
+      // Keep the original response shape unchanged.
+      //
+      // Existing extractAIResponse() can therefore continue
+      // working without modification.
+      //
+      // ------------------------------------------------------
 
       try {
 
@@ -13492,8 +13591,10 @@ async function executeAIProvider(
           {
             value:
               provider.name,
+
             enumerable:
               false,
+
             configurable:
               true
           }
@@ -13504,18 +13605,30 @@ async function executeAIProvider(
 
             ? (
                 providerOptions.groqModel ||
-                (typeof GROQ_MODEL !== "undefined"
-                  ? GROQ_MODEL
-                  : providerOptions.model)
+
+                (
+                  typeof GROQ_MODEL !==
+                    "undefined"
+
+                    ? GROQ_MODEL
+
+                    : providerOptions.model
+                )
               )
 
             : provider.name === "gemini"
 
               ? (
                   providerOptions.geminiModel ||
-                  (typeof GEMINI_MODEL !== "undefined"
-                    ? GEMINI_MODEL
-                    : providerOptions.model)
+
+                  (
+                    typeof GEMINI_MODEL !==
+                      "undefined"
+
+                      ? GEMINI_MODEL
+
+                      : providerOptions.model
+                  )
                 )
 
               : (
@@ -13530,17 +13643,22 @@ async function executeAIProvider(
             value:
               actualModel ||
               "unknown",
+
             enumerable:
               false,
+
             configurable:
               true
           }
         );
 
-      } catch (metadataError) {
+      } catch (
+        metadataError
+      ) {
 
         console.warn(
           "[AI] Could not attach provider metadata",
+
           metadataError?.message ||
           metadataError
         );
@@ -13578,7 +13696,9 @@ async function executeAIProvider(
         `[AI] Provider failed: ${provider.name}`,
         {
           status,
+
           code,
+
           message:
             error?.message ||
             "Unknown provider error"
@@ -13595,7 +13715,7 @@ async function executeAIProvider(
       );
 
       // ------------------------------------------------------
-      // TRY NEXT PROVIDER
+      // TRY NEXT HEALTHY PROVIDER
       // ------------------------------------------------------
 
       continue;
@@ -13632,7 +13752,7 @@ async function executeAIProvider(
 
   throw finalError;
 
-}
+    }
 
 
 // ============================================================
