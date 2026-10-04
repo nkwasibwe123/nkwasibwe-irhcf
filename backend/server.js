@@ -12088,14 +12088,29 @@ async function callGeminiWithTimeout(
     }
 
     // --------------------------------------------------------
-    // GEMINI FUNCTION DECLARATIONS
+    // GEMINI TOOLS
+    // --------------------------------------------------------
+    //
+    // Supported infrastructure tools:
+    //
+    // 1. Existing custom function declarations
+    // 2. Gemini Google Search grounding
+    //
+    // IMPORTANT:
+    // Providers are infrastructure.
+    // They are NOT Nkwasibwe agents.
+    // --------------------------------------------------------
+
+    const geminiTools = [];
+
+    // --------------------------------------------------------
+    // EXISTING CUSTOM FUNCTION TOOLS
     // --------------------------------------------------------
 
     if (
       Array.isArray(options.tools) &&
       options.tools.length > 0
     ) {
-
       const functionDeclarations =
         options.tools
           .map(
@@ -12109,15 +12124,37 @@ async function callGeminiWithTimeout(
       if (
         functionDeclarations.length > 0
       ) {
-
-        body.tools = [
-          {
-            functionDeclarations
-          }
-        ];
-
+        geminiTools.push({
+          functionDeclarations
+        });
       }
+    }
 
+    // --------------------------------------------------------
+    // GOOGLE SEARCH GROUNDING
+    // --------------------------------------------------------
+    //
+    // Gemini 3.8 Flash supports:
+    //
+    //   google_search
+    //
+    // This lets Gemini search current web information,
+    // synthesize it, and attach grounding/citation metadata.
+    // --------------------------------------------------------
+
+    if (
+      options.googleSearch === true
+    ) {
+      geminiTools.push({
+        google_search: {}
+      });
+    }
+
+    if (
+      geminiTools.length > 0
+    ) {
+      body.tools =
+        geminiTools;
     }
 
     // --------------------------------------------------------
@@ -12249,14 +12286,29 @@ async function callGeminiWithTimeout(
 
     }
 
+        // --------------------------------------------------------
+    // NORMALIZED RESPONSE WITH GROUNDING METADATA
+    // --------------------------------------------------------
+    //
+    // Keep Gemini grounding metadata available to the
+    // research layer so source URLs and titles are not lost.
+    //
+    // Existing extractAIResponse() continues to work because
+    // the response still follows the OpenAI-compatible shape.
+    // --------------------------------------------------------
+
+    const candidate =
+      data?.candidates?.[0] ||
+      {};
+
+    const groundingMetadata =
+      candidate?.groundingMetadata ||
+      null;
+
     return {
-
       choices: [
-
         {
-
           message: {
-
             role:
               "assistant",
 
@@ -12269,15 +12321,21 @@ async function callGeminiWithTimeout(
                     toolCalls
                 }
               : {})
-
           }
-
         }
+      ],
 
-      ]
+      // ------------------------------------------------------
+      // Gemini grounding information
+      // ------------------------------------------------------
+      //
+      // This is intentionally outside choices so the existing
+      // response extraction remains compatible.
+      // ------------------------------------------------------
 
+      __geminiGroundingMetadata:
+        groundingMetadata
     };
-
   } catch (error) {
 
     if (
@@ -15261,6 +15319,30 @@ async function selfRepairAgentResponse(
 // ============================================================
 // LIVE WEB RESEARCH
 // ============================================================
+//
+// Canonical Nkwasibwe live-research pipeline.
+//
+// Provider order:
+//
+//   1. OpenAI Web Search
+//   2. Gemini Google Search
+//   3. Groq Browser Search
+//
+// IMPORTANT:
+//
+// Providers are infrastructure.
+// They are NOT agents.
+//
+// The research gate must NEVER use model reasoning
+// as a substitute for actual research.
+//
+// If every live-search provider fails,
+// the function returns performed:false.
+//
+// The caller's safety gate then blocks unsupported
+// factual generation.
+//
+// ============================================================
 
 async function performLiveResearch(
   task,
@@ -15272,12 +15354,23 @@ async function performLiveResearch(
 
   if (!researchTask) {
     return {
-      performed: false,
-      reason: "EMPTY_TASK",
-      sources: [],
-      context: ""
+      performed:
+        false,
+
+      reason:
+        "EMPTY_TASK",
+
+      sources:
+        [],
+
+      context:
+        ""
     };
   }
+
+  // ==========================================================
+  // LANGUAGE
+  // ==========================================================
 
   const languageInstruction =
     language === "rw"
@@ -15288,33 +15381,195 @@ async function performLiveResearch(
           ? "Return the research synthesis in Swahili."
           : "Return the research synthesis in English.";
 
+  // ==========================================================
+  // RESEARCH SYSTEM PROMPT
+  // ==========================================================
+
   const researchSystemPrompt = [
-    "You are the Nkwasibwe IRHCF live research agent.",
-    "Research the user's question using live web search.",
-    "Prefer primary and official sources whenever available.",
-    "For Rwanda government, public institutions, education, national examinations, laws, public officials, and current institutional information, strongly prefer official Rwanda government or institutional websites.",
-    "Do not invent facts, names, dates, ranks, salaries, positions, examination rules, results, or URLs.",
-    "If sources disagree, report the disagreement instead of silently choosing a fact.",
-    "Separate confirmed facts from inference.",
-    "Include the source title and URL for important claims.",
-    "The research result will be passed to another Nkwasibwe response agent.",
-    "Return enough factual context for that agent to answer accurately.",
+    "You are the Nkwasibwe IRHCF live research engine.",
+    "",
+    "Use live web search to investigate the user's request.",
+    "",
+    "Research requirements:",
+    "1. Prefer primary and official sources.",
+    "2. For Rwanda government information, prefer official Rwanda government and institutional domains.",
+    "3. For education and national examinations, prefer official NESA, MINEDUC, REB, and other relevant official Rwanda institutional sources.",
+    "4. For laws and regulations, prefer official government/legal sources.",
+    "5. For current public officials, use current official institutional sources.",
+    "6. Do not invent facts, dates, names, URLs, examination rules, grades, results, salaries, ranks, or positions.",
+    "7. If a claim cannot be verified, explicitly mark it as unverified.",
+    "8. If sources disagree, report the disagreement.",
+    "9. Separate confirmed facts from inference.",
+    "10. Include important source titles and URLs when available.",
+    "11. Do not use model reasoning as evidence.",
+    "12. The final research result will be passed to another Nkwasibwe response agent.",
+    "13. Return enough factual context for that agent to answer accurately.",
     languageInstruction
   ].join("\n");
 
   const researchMessages = [
     {
-      role: "system",
-      content: researchSystemPrompt
+      role:
+        "system",
+
+      content:
+        researchSystemPrompt
     },
+
     {
-      role: "user",
-      content: researchTask
+      role:
+        "user",
+
+      content:
+        researchTask
     }
   ];
 
   // ==========================================================
-  // RESEARCH PROVIDER 1 — OPENAI WEB SEARCH
+  // SOURCE EXTRACTION HELPER
+  // ==========================================================
+
+  function extractSourcesFromText(
+    text,
+    existingSources = []
+  ) {
+    const sources =
+      Array.isArray(
+        existingSources
+      )
+        ? [...existingSources]
+        : [];
+
+    if (
+      typeof text !==
+      "string"
+    ) {
+      return sources;
+    }
+
+    const urlPattern =
+      /https?:\/\/[^\s)\]}>,]+/gi;
+
+    const matches =
+      text.match(
+        urlPattern
+      ) || [];
+
+    for (
+      const rawUrl of matches
+    ) {
+      const url =
+        String(rawUrl)
+          .replace(
+            /[.,;:]+$/,
+            ""
+          );
+
+      if (
+        url &&
+        !sources.some(
+          source =>
+            source.url ===
+            url
+        )
+      ) {
+        sources.push({
+          url,
+          title:
+            url
+        });
+      }
+
+      if (
+        sources.length >= 20
+      ) {
+        break;
+      }
+    }
+
+    return sources;
+  }
+
+  // ==========================================================
+  // GEMINI GROUNDING SOURCE EXTRACTION
+  // ==========================================================
+
+  function extractGeminiGroundingSources(
+    response
+  ) {
+    const sources = [];
+
+    const metadata =
+      response
+        ?.__geminiGroundingMetadata;
+
+    if (
+      !metadata
+    ) {
+      return sources;
+    }
+
+    const chunks =
+      Array.isArray(
+        metadata.groundingChunks
+      )
+        ? metadata.groundingChunks
+        : [];
+
+    for (
+      const chunk of chunks
+    ) {
+      const web =
+        chunk?.web ||
+        {};
+
+      const url =
+        typeof web.uri ===
+        "string"
+          ? web.uri.trim()
+          : "";
+
+      const title =
+        typeof web.title ===
+        "string"
+          ? web.title.trim()
+          : "";
+
+      if (
+        !url
+      ) {
+        continue;
+      }
+
+      if (
+        sources.some(
+          source =>
+            source.url ===
+            url
+        )
+      ) {
+        continue;
+      }
+
+      sources.push({
+        url,
+        title:
+          title ||
+          url
+      });
+
+      if (
+        sources.length >= 20
+      ) {
+        break;
+      }
+    }
+
+    return sources;
+  }
+
+  // ==========================================================
+  // PROVIDER 1 — OPENAI WEB SEARCH
   // ==========================================================
 
   if (openai) {
@@ -15336,11 +15591,13 @@ async function performLiveResearch(
 
           tools: [
             {
-              type: "web_search"
+              type:
+                "web_search"
             }
           ],
 
-          input: researchMessages
+          input:
+            researchMessages
         });
 
       const researchText =
@@ -15349,34 +15606,27 @@ async function performLiveResearch(
           ? researchResponse.output_text.trim()
           : "";
 
-      if (researchText) {
-        const sources = [];
+      if (
+        researchText
+      ) {
+        const rawSources =
+          extractSourcesFromText(
+            researchText
+          );
 
-        const urlPattern =
-          /https?:\/\/[^\s)\]}>,]+/gi;
-
-        const matches =
-          researchText.match(
-            urlPattern
-          ) || [];
-
-        for (
-          const rawUrl of matches
-        ) {
-          const url =
-            String(rawUrl)
-              .replace(
-                /[.,;:]+$/,
-                ""
-              );
-
-          if (
-            !sources.includes(url) &&
-            sources.length < 10
-          ) {
-            sources.push(url);
-          }
-        }
+        const sources =
+          rawSources.map(
+            source =>
+              typeof source ===
+              "string"
+                ? {
+                    url:
+                      source,
+                    title:
+                      source
+                  }
+                : source
+          );
 
         console.log(
           "[RESEARCH] OpenAI live research completed:",
@@ -15387,9 +15637,14 @@ async function performLiveResearch(
         );
 
         return {
-          performed: true,
-          reason: "OPENAI_SUCCESS",
+          performed:
+            true,
+
+          reason:
+            "OPENAI_SUCCESS",
+
           sources,
+
           context:
             researchText.slice(
               0,
@@ -15404,39 +15659,166 @@ async function performLiveResearch(
 
     } catch (error) {
       console.warn(
-        "[RESEARCH] OpenAI live research failed. Trying fallback:",
+        "[RESEARCH] OpenAI live research failed. Trying Gemini:",
         {
           code:
             error?.code ||
             "OPENAI_RESEARCH_ERROR",
+
           status:
             error?.status ||
             error?.statusCode ||
             0,
+
           message:
             error?.message ||
             String(error)
         }
       );
     }
+
   } else {
     console.warn(
-      "[RESEARCH] OpenAI research provider unavailable. Trying fallback."
+      "[RESEARCH] OpenAI research provider unavailable. Trying Gemini."
     );
   }
 
   // ==========================================================
-  // RESEARCH PROVIDER 2 — GROQ BROWSER SEARCH
+  // PROVIDER 2 — GEMINI GOOGLE SEARCH
   // ==========================================================
   //
-  // Reuse the existing Groq provider adapter.
+  // Gemini 3.8 Flash supports Google Search grounding.
   //
-  // IMPORTANT:
-  // This is NOT a second research engine.
-  // It is the existing provider adapter using
-  // Groq's built-in browser_search capability.
+  // The adapter returns both:
   //
-  // Groq's openai/gpt-oss-20b supports browser_search.
+  //   choices[0].message.content
+  //
+  // and:
+  //
+  //   __geminiGroundingMetadata
+  //
+  // so we can preserve verified source URLs.
+  //
+  // ==========================================================
+
+  if (GEMINI_API_KEY) {
+    try {
+      console.log(
+        "[RESEARCH] Trying Gemini Google Search:",
+        {
+          model:
+            GEMINI_MODEL,
+
+          taskLength:
+            researchTask.length
+        }
+      );
+
+      const geminiResearchResponse =
+        await callGeminiWithTimeout(
+          researchMessages,
+          {
+            geminiModel:
+              GEMINI_MODEL,
+
+            maxTokens:
+              4000,
+
+            googleSearch:
+              true
+          }
+        );
+
+      const researchText =
+        extractAIResponse(
+          geminiResearchResponse
+        );
+
+      if (
+        typeof researchText ===
+          "string" &&
+        researchText.trim()
+      ) {
+        const cleanedResearchText =
+          researchText.trim();
+
+        // ------------------------------------------------------
+        // First collect official grounding sources returned
+        // by Gemini itself.
+        // ------------------------------------------------------
+
+        let sources =
+          extractGeminiGroundingSources(
+            geminiResearchResponse
+          );
+
+        // ------------------------------------------------------
+        // Then collect any explicit URLs contained in text.
+        // ------------------------------------------------------
+
+        sources =
+          extractSourcesFromText(
+            cleanedResearchText,
+            sources
+          );
+
+        console.log(
+          "[RESEARCH] Gemini Google Search completed:",
+          {
+            sources:
+              sources.length
+          }
+        );
+
+        return {
+          performed:
+            true,
+
+          reason:
+            "GEMINI_GOOGLE_SEARCH_SUCCESS",
+
+          sources,
+
+          context:
+            cleanedResearchText.slice(
+              0,
+              12000
+            )
+        };
+      }
+
+      console.warn(
+        "[RESEARCH] Gemini Google Search returned no usable text."
+      );
+
+    } catch (error) {
+      console.warn(
+        "[RESEARCH] Gemini Google Search failed. Trying Groq:",
+        {
+          code:
+            error?.code ||
+            "GEMINI_RESEARCH_ERROR",
+
+          status:
+            error?.status ||
+            error?.statusCode ||
+            0,
+
+          message:
+            error?.message ||
+            String(error)
+        }
+      );
+    }
+
+  } else {
+    console.warn(
+      "[RESEARCH] Gemini research provider unavailable. Trying Groq."
+    );
+  }
+
+  // ==========================================================
+  // PROVIDER 3 — GROQ BROWSER SEARCH
   // ==========================================================
 
   if (GROQ_API_KEY) {
@@ -15446,41 +15828,42 @@ async function performLiveResearch(
         {
           model:
             "openai/gpt-oss-20b",
+
           taskLength:
             researchTask.length
         }
       );
 
       const groqResearchResponse =
-  await callGroqWithTimeout(
-    researchMessages,
-    {
-      groqModel:
-        "openai/gpt-oss-20b",
+        await callGroqWithTimeout(
+          researchMessages,
+          {
+            groqModel:
+              "openai/gpt-oss-20b",
 
-      temperature:
-        0.1,
+            temperature:
+              0.1,
 
-      maxCompletionTokens:
-        4000,
+            maxCompletionTokens:
+              4000,
 
-      reasoningEffort:
-        "low",
+            reasoningEffort:
+              "low",
 
-      includeReasoning:
-        false,
+            includeReasoning:
+              false,
 
-      tools: [
-        {
-          type:
-            "browser_search"
-        }
-      ],
+            tools: [
+              {
+                type:
+                  "browser_search"
+              }
+            ],
 
-      toolChoice:
-        "required"
-    }
-  );
+            toolChoice:
+              "required"
+          }
+        );
 
       const researchText =
         extractAIResponse(
@@ -15495,33 +15878,10 @@ async function performLiveResearch(
         const cleanedResearchText =
           researchText.trim();
 
-        const sources = [];
-
-        const urlPattern =
-          /https?:\/\/[^\s)\]}>,]+/gi;
-
-        const matches =
-          cleanedResearchText.match(
-            urlPattern
-          ) || [];
-
-        for (
-          const rawUrl of matches
-        ) {
-          const url =
-            String(rawUrl)
-              .replace(
-                /[.,;:]+$/,
-                ""
-              );
-
-          if (
-            !sources.includes(url) &&
-            sources.length < 10
-          ) {
-            sources.push(url);
-          }
-        }
+        let sources =
+          extractSourcesFromText(
+            cleanedResearchText
+          );
 
         console.log(
           "[RESEARCH] Groq browser research completed:",
@@ -15532,9 +15892,14 @@ async function performLiveResearch(
         );
 
         return {
-          performed: true,
-          reason: "GROQ_BROWSER_SEARCH_SUCCESS",
+          performed:
+            true,
+
+          reason:
+            "GROQ_BROWSER_SEARCH_SUCCESS",
+
           sources,
+
           context:
             cleanedResearchText.slice(
               0,
@@ -15554,16 +15919,19 @@ async function performLiveResearch(
           code:
             error?.code ||
             "GROQ_RESEARCH_ERROR",
+
           status:
             error?.status ||
             error?.statusCode ||
             0,
+
           message:
             error?.message ||
             String(error)
         }
       );
     }
+
   } else {
     console.warn(
       "[RESEARCH] Groq research provider unavailable."
@@ -15571,7 +15939,7 @@ async function performLiveResearch(
   }
 
   // ==========================================================
-  // ALL RESEARCH PROVIDERS FAILED
+  // ALL LIVE RESEARCH PROVIDERS FAILED
   // ==========================================================
 
   console.warn(
@@ -15579,16 +15947,20 @@ async function performLiveResearch(
   );
 
   return {
-    performed: false,
+    performed:
+      false,
+
     reason:
       "ALL_RESEARCH_PROVIDERS_FAILED",
-    sources: [],
-    context: ""
+
+    sources:
+      [],
+
+    context:
+      ""
   };
-}
-    
-      
-          
+  }
+
 // ============================================================
 // CORE AGENT EXECUTION
 // ============================================================
