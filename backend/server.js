@@ -15313,45 +15313,268 @@ async function selfRepairAgentResponse(
 
       }
 
-
 // ============================================================
-// NKWASIBWE IRHCF — LIVE RESEARCH GATE
+// NKWASIBWE IRHCF — LIVE RESEARCH REQUIREMENT DETECTOR
 // ============================================================
 //
 // Purpose:
-// - Detect questions that require current/external information.
-// - Use OpenAI Responses API web search when available.
-// - Return grounded research context to the main agent.
-// - Never invent research results.
-// - Never expose internal research metadata to the user.
+// - Detect tasks that genuinely require current/external data.
+// - Respect explicit user instructions.
+// - Never trigger web research merely because a task mentions
+//   a generic word such as "website", "Rwanda", "amakuru",
+//   "official", or a year.
+// - Explicit "do not use the internet/web/research" instructions
+//   ALWAYS override automatic research detection.
 //
 // IMPORTANT:
-// This is a capability inside the existing agent engine.
-// It is NOT a second AI engine.
+// This function decides WHETHER research is required.
+// It does NOT perform research.
+//
+// Research execution is handled separately by:
+//     performLiveResearch()
+//
 // ============================================================
 
+function taskNeedsLiveResearch(task) {
 
-  function taskNeedsLiveResearch(task) {
   const text =
     String(task || "")
       .trim()
       .toLowerCase();
 
+  // ----------------------------------------------------------
+  // EMPTY TASK
+  // ----------------------------------------------------------
+
   if (!text) {
     return false;
   }
 
-  const researchSignals = [
-    // ----------------------------------------------------------
-    // CURRENT / TIME-SENSITIVE
-    // ----------------------------------------------------------
+  // ==========================================================
+  // 1. EXPLICIT USER RESEARCH OPT-OUT
+  // ==========================================================
+  //
+  // This MUST be checked BEFORE any positive research signal.
+  //
+  // Examples:
+  //
+  // "Ntukoreshe amakuru yo kuri internet"
+  // "Ntukoreshe internet"
+  // "Don't use the internet"
+  // "Do not browse"
+  // "No web search"
+  // "Without internet"
+  //
+  // If the user explicitly says not to use external research,
+  // the detector MUST return false.
+  //
+  // This is a user instruction and therefore has priority over
+  // automatic keyword detection.
+  //
+  // ==========================================================
+
+  const researchOptOutSignals = [
+
+    // --------------------------------------------------------
+    // KINYARWANDA
+    // --------------------------------------------------------
+
+    "ntukoreshe internet",
+    "ntukoreshe amakuru yo kuri internet",
+    "ntukoreshe amakuru kuri internet",
+    "ntukoreshe urubuga rwa internet",
+    "ntukoreshe web",
+    "ntukoreshe web search",
+    "ntukoreshe ubushakashatsi bwo kuri internet",
+    "ntukoreshe ubushakashatsi kuri internet",
+    "sinshaka amakuru yo kuri internet",
+    "sinshaka amakuru kuri internet",
+    "sinshaka ko ukoresha internet",
+    "sinshaka ko ukoresha web",
+    "sinshaka ko ushakisha kuri internet",
+    "ntushakishe kuri internet",
+    "ntushakishe internet",
+    "ntushakishe kuri web",
+    "ntukore web search",
+    "ntukore research",
+    "nta internet",
+    "nta web search",
+    "utakoreshe internet",
+    "udakoreshe internet",
+
+    // --------------------------------------------------------
+    // ENGLISH
+    // --------------------------------------------------------
+
+    "do not use the internet",
+    "don't use the internet",
+    "do not use internet",
+    "don't use internet",
+    "do not browse",
+    "don't browse",
+    "do not search the web",
+    "don't search the web",
+    "do not use web search",
+    "don't use web search",
+    "do not use the web",
+    "don't use the web",
+    "without internet",
+    "without using the internet",
+    "without web search",
+    "without browsing",
+    "no internet",
+    "no web search",
+    "no browsing",
+    "offline only",
+    "use your own knowledge",
+    "use only your knowledge",
+    "do not research",
+    "don't research",
+    "no research",
+
+    // --------------------------------------------------------
+    // FRENCH
+    // --------------------------------------------------------
+
+    "n'utilise pas internet",
+    "ne pas utiliser internet",
+    "sans internet",
+    "ne cherche pas sur internet",
+    "ne faites pas de recherche",
+
+    // --------------------------------------------------------
+    // SWAHILI
+    // --------------------------------------------------------
+
+    "usitumie internet",
+    "usitafute kwenye internet",
+    "bila internet",
+    "usitumie web search"
+  ];
+
+  const hasExplicitResearchOptOut =
+    researchOptOutSignals.some(
+      signal =>
+        text.includes(signal)
+    );
+
+  if (
+    hasExplicitResearchOptOut
+  ) {
+
+    console.log(
+      "[RESEARCH] Explicit user opt-out detected. Live research disabled.",
+      {
+        reason:
+          "USER_EXPLICITLY_DISABLED_WEB_RESEARCH"
+      }
+    );
+
+    return false;
+  }
+
+  // ==========================================================
+  // 2. EXPLICIT POSITIVE RESEARCH REQUESTS
+  // ==========================================================
+  //
+  // These are stronger than ordinary contextual keywords.
+  //
+  // Examples:
+  //
+  // "shakisha"
+  // "research"
+  // "investigate"
+  // "verify using official sources"
+  //
+  // ==========================================================
+
+  const explicitResearchSignals = [
+
+    // Kinyarwanda
+    "shakisha",
+    "gushakisha",
+    "gushaka amakuru",
+    "gukora ubushakashatsi",
+    "kora ubushakashatsi",
+    "genzura amakuru",
+    "genzura ukoresheje amasoko",
+    "genzura ukoresheje isoko",
+    "amasoko yemewe",
+    "isoko yemewe",
+    "urubuga rwa leta",
+    "urubuga rwemewe",
+
+    // English
+    "search for",
+    "search online",
+    "search the web",
+    "search the internet",
+    "web search",
+    "research",
+    "research this",
+    "research it",
+    "investigate",
+    "look this up",
+    "look it up",
+    "find current information",
+    "verify online",
+    "verify using official sources",
+    "check official sources",
+    "use official sources",
+    "use official websites",
+    "find official source",
+    "find official sources",
+
+    // French
+    "recherche",
+    "chercher sur internet",
+    "chercher en ligne",
+    "vérifier les sources",
+
+    // Swahili
+    "tafuta mtandaoni",
+    "tafuta kwenye internet",
+    "fanya utafiti",
+    "thibitisha kwa vyanzo rasmi"
+  ];
+
+  const hasExplicitResearchRequest =
+    explicitResearchSignals.some(
+      signal =>
+        text.includes(signal)
+    );
+
+  if (
+    hasExplicitResearchRequest
+  ) {
+
+    return true;
+  }
+
+  // ==========================================================
+  // 3. CURRENT / TIME-SENSITIVE INFORMATION
+  // ==========================================================
+  //
+  // Current information should trigger research because the
+  // model's internal knowledge may be outdated.
+  //
+  // ==========================================================
+
+  const currentInformationSignals = [
+
+    // Kinyarwanda
     "ubu",
     "uyu munsi",
-    "ubu ngubu",
     "uyu mwaka",
-    "umwaka wa",
     "muri iki gihe",
     "vuba aha",
+    "amakuru mashya",
+    "amakuru agezweho",
+    "amakuru y'uyu munsi",
+    "amakuru y'ubu",
+    "ibigezweho",
+
+    // English
     "latest",
     "current",
     "today",
@@ -15359,34 +15582,80 @@ async function selfRepairAgentResponse(
     "recent",
     "recently",
     "latest news",
-    "amakuru mashya",
-    "amakuru agezweho",
+    "current news",
+    "as of today",
+    "as of now",
+    "this week",
+    "this month",
+    "this year"
+  ];
 
-    // ----------------------------------------------------------
-    // DATES / YEARS
-    // ----------------------------------------------------------
-    "2024",
-    "2025",
-    "2026",
-    "2027",
+  if (
+    currentInformationSignals.some(
+      signal =>
+        text.includes(signal)
+    )
+  ) {
 
-    // ----------------------------------------------------------
-    // GOVERNMENT / PUBLIC INSTITUTIONS
-    // ----------------------------------------------------------
-    "president",
-    "perezida",
-    "minister",
-    "minisitiri",
-    "chief",
-    "commander",
-    "umuyobozi",
-    "umuyobozi mukuru",
-    "government",
-    "leta",
+    return true;
+  }
 
-    // ----------------------------------------------------------
-    // RWANDA INSTITUTIONS
-    // ----------------------------------------------------------
+  // ==========================================================
+  // 4. OFFICIAL / VERIFIED INFORMATION
+  // ==========================================================
+  //
+  // "official" alone is not enough in every task.
+  // It becomes a research signal when the user asks for an
+  // official source/site or verification.
+  //
+  // ==========================================================
+
+  const officialResearchSignals = [
+
+    "official source",
+    "official sources",
+    "official website",
+    "official websites",
+    "official site",
+    "official document",
+    "official documents",
+    "source officielle",
+    "sources officielles",
+    "isoko yemewe",
+    "amasoko yemewe",
+    "urubuga rwemewe",
+    "inyandiko yemewe",
+    "verified source",
+    "verified sources",
+    "amakuru yagenzuwe",
+    "amakuru yemejwe"
+  ];
+
+  if (
+    officialResearchSignals.some(
+      signal =>
+        text.includes(signal)
+    )
+  ) {
+
+    return true;
+  }
+
+  // ==========================================================
+  // 5. SPECIFIC CURRENT RWANDA INSTITUTION QUESTIONS
+  // ==========================================================
+  //
+  // Institution names alone should NOT automatically trigger
+  // research.
+  //
+  // Research is required when the user is asking about their
+  // current information, current services, rules, results,
+  // announcements, or official status.
+  //
+  // ==========================================================
+
+  const rwandaInstitutionSignals = [
+
     "rnp",
     "rcs",
     "rdf",
@@ -15397,121 +15666,336 @@ async function selfRepairAgentResponse(
     "reb",
     "irembo",
     "mifotra",
+    "nesa",
+    "ministry of education",
+    "government of rwanda",
+    "leta y'u rwanda",
+    "leta y'u Rwanda"
+  ];
 
-    // ----------------------------------------------------------
-    // EDUCATION / EXAM RESULTS
-    // ----------------------------------------------------------
+  const currentInstitutionContextSignals = [
+
+    "results",
+    "result",
     "amanota",
     "amanota yanjye",
     "amanota yawe",
-    "results",
-    "result",
     "exam results",
     "exam",
-    "examination",
     "national examination",
     "national exams",
     "senior six",
     "senior 6",
     "s6",
-    "ordinary level",
-    "o level",
-    "a level",
-    "secondary school",
-    "school results",
-    "marks",
-    "grades",
-    "grade",
-    "marksheet",
-    "certificate",
-    "transcript",
-    "student results",
+    "application status",
+    "application",
+    "recruitment",
+    "admission",
+    "registration",
+    "requirements",
+    "requirements for",
+    "eligibility",
+    "deadline",
+    "deadlines",
+    "announcement",
+    "announcements",
+    "service",
+    "services",
+    "procedure",
+    "procedures",
+    "requirements",
+    "policy",
+    "regulation",
+    "regulations",
+    "amategeko",
+    "amabwiriza"
+  ];
 
-    // ----------------------------------------------------------
-    // MONEY / CURRENCY / PRICES
-    // ----------------------------------------------------------
+  const mentionsRwandaInstitution =
+    rwandaInstitutionSignals.some(
+      signal =>
+        text.includes(signal)
+    );
+
+  const asksCurrentInstitutionInformation =
+    currentInstitutionContextSignals.some(
+      signal =>
+        text.includes(signal)
+    );
+
+  if (
+    mentionsRwandaInstitution &&
+    asksCurrentInstitutionInformation
+  ) {
+
+    return true;
+  }
+
+  // ==========================================================
+  // 6. EDUCATION / EXAM RESULTS
+  // ==========================================================
+  //
+  // Education terms alone should not always force research.
+  //
+  // Example:
+  //
+  // "Explain what a grade is."
+  //
+  // does NOT need live web research.
+  //
+  // But:
+  //
+  // "What are the 2026 Senior Six results?"
+  //
+  // DOES need live research.
+  //
+  // ==========================================================
+
+  const educationCurrentSignals = [
+
+    "amanota yanjye",
+    "amanota yawe",
+    "results zanjye",
+    "my results",
+    "your results",
+    "exam results",
+    "national examination results",
+    "national exam results",
+    "senior six results",
+    "senior 6 results",
+    "s6 results",
+    "school results",
+    "student results",
+    "marksheet",
+    "transcript results",
+    "exam result",
+    "results released",
+    "results announced"
+  ];
+
+  if (
+    educationCurrentSignals.some(
+      signal =>
+        text.includes(signal)
+    )
+  ) {
+
+    return true;
+  }
+
+  // ==========================================================
+  // 7. MONEY / PRICES / EXCHANGE RATES
+  // ==========================================================
+  //
+  // "amafaranga" alone is too broad.
+  //
+  // We only trigger research when the user asks about a
+  // changing financial value.
+  //
+  // ==========================================================
+
+  const moneyCurrentSignals = [
+
+    "exchange rate",
+    "exchange rates",
+    "igipimo cy'ivunjisha",
+    "ivunjisha",
+    "current price",
+    "current prices",
+    "price today",
+    "price now",
+    "igiciro cy'uyu munsi",
+    "ibiciro by'uyu munsi",
+    "umushahara wa",
+    "salary of",
+    "current salary",
+    "minimum wage",
+    "latest price"
+  ];
+
+  if (
+    moneyCurrentSignals.some(
+      signal =>
+        text.includes(signal)
+    )
+  ) {
+
+    return true;
+  }
+
+  // ==========================================================
+  // 8. CURRENT LAW / POLITICS / ELECTIONS
+  // ==========================================================
+
+  const currentLawPoliticsSignals = [
+
+    "new law",
+    "new laws",
+    "latest law",
+    "current law",
+    "new regulation",
+    "new regulations",
+    "latest regulation",
+    "current regulation",
+    "new policy",
+    "latest policy",
+    "current policy",
+    "election results",
+    "election date",
+    "latest election",
+    "current president",
+    "current minister",
+    "current government",
+    "amatora y'uyu mwaka",
+    "amategeko mashya",
+    "amabwiriza mashya",
+    "politiki nshya"
+  ];
+
+  if (
+    currentLawPoliticsSignals.some(
+      signal =>
+        text.includes(signal)
+    )
+  ) {
+
+    return true;
+  }
+
+  // ==========================================================
+  // 9. DATES / YEARS
+  // ==========================================================
+  //
+  // IMPORTANT:
+  //
+  // A year by itself is NOT sufficient to force research.
+  //
+  // Example:
+  //
+  // "Explain how websites were built in 2026"
+  //
+  // does not automatically require live research.
+  //
+  // A year combined with a current/external information
+  // question does.
+  //
+  // ==========================================================
+
+  const containsRecentYear =
+    /\b(2024|2025|2026|2027)\b/
+      .test(text);
+
+  const yearContextSignals = [
+
+    "results",
+    "amanota",
+    "exam",
+    "election",
+    "amatora",
+    "law",
+    "amategeko",
+    "regulation",
+    "policy",
     "salary",
     "umushahara",
     "price",
     "igiciro",
-    "amafaranga",
-    "frw",
-    "rwf",
-    "usd",
-    "dollar",
-    "dollars",
-    "euro",
-    "eur",
-    "pound",
-    "exchange rate",
-    "exchange",
-    "rate",
-    "conversion",
-    "convert",
-    "currency",
-
-    // ----------------------------------------------------------
-    // LAW / POLITICS / PUBLIC POLICY
-    // ----------------------------------------------------------
-    "law",
-    "laws",
-    "amategeko",
-    "regulation",
-    "regulations",
-    "policy",
-    "politics",
-    "politiki",
-    "election",
-    "elections",
-    "amatora",
-
-    // ----------------------------------------------------------
-    // WEB / SOURCES
-    // ----------------------------------------------------------
-    "website",
-    "web site",
-    "link",
-    "source",
-    "sources",
+    "announcement",
+    "deadline",
+    "admission",
+    "application",
+    "recruitment",
+    "latest",
+    "current",
     "official",
-    "official website",
+    "verified",
     "official source",
-    "urubuga",
-    "amakuru",
-
-    // ----------------------------------------------------------
-    // EXPLICIT RESEARCH REQUESTS
-    // ----------------------------------------------------------
-    "search",
-    "shakisha",
-    "recherche",
-    "research",
-    "investigate",
-    "iperereza",
-    "verify",
-    "verification",
-    "genzura",
-    "gushakisha",
-    "gushaka amakuru",
-
-    // ----------------------------------------------------------
-    // COMPARISON OF CURRENT / EXTERNAL ENTITIES
-    // ----------------------------------------------------------
-    "compare",
-    "comparison",
-    "compare them",
-    "agereranya",
-    "gereranya",
-    "itandukaniro",
-    "difference between"
+    "official website"
   ];
 
-  return researchSignals.some(
-    signal =>
-      text === signal ||
-      text.includes(signal)
-  );
+  if (
+    containsRecentYear &&
+    yearContextSignals.some(
+      signal =>
+        text.includes(signal)
+    )
+  ) {
+
+    return true;
   }
+
+  // ==========================================================
+  // 10. GENERIC WEB TERMS
+  // ==========================================================
+  //
+  // IMPORTANT:
+  //
+  // "website" alone MUST NOT trigger research.
+  //
+  // A user may say:
+  //
+  // "Build a website."
+  //
+  // That is a coding task, not a research task.
+  //
+  // Research only when the user explicitly asks to find,
+  // inspect, compare, verify, or look up an external website.
+  //
+  // ==========================================================
+
+  const explicitWebResearchSignals = [
+
+    "search this website",
+    "search the website",
+    "search these websites",
+    "look at this website",
+    "look at the website",
+    "inspect this website",
+    "inspect the website",
+    "find this website",
+    "find the website",
+    "find official website",
+    "open the official website",
+    "check the official website",
+    "check this website",
+    "compare websites",
+    "compare these websites",
+    "compare official websites",
+    "reba urubuga",
+    "reba kuri uru rubuga",
+    "reba kuri website",
+    "genzura urubuga",
+    "genzura website",
+    "shakisha urubuga",
+    "shakisha website"
+  ];
+
+  if (
+    explicitWebResearchSignals.some(
+      signal =>
+        text.includes(signal)
+    )
+  ) {
+
+    return true;
+  }
+
+  // ==========================================================
+  // 11. DEFAULT
+  // ==========================================================
+  //
+  // If none of the strong signals above matched, do NOT use
+  // live research.
+  //
+  // This keeps ordinary planning, coding, explanation,
+  // writing, brainstorming, and problem-solving tasks fast
+  // and independent from external providers.
+  //
+  // ==========================================================
+
+  return false;
+    }
+
 
 // ============================================================
 // LIVE WEB RESEARCH
