@@ -15452,28 +15452,35 @@ async function performLiveResearch(
       );
 
       const groqResearchResponse =
-        await callGroqWithTimeout(
-          researchMessages,
-          {
-            groqModel:
-              "openai/gpt-oss-20b",
+  await callGroqWithTimeout(
+    researchMessages,
+    {
+      groqModel:
+        "openai/gpt-oss-20b",
 
-            temperature:
-              0.1,
+      temperature:
+        0.1,
 
-            maxCompletionTokens: 4000,
+      maxCompletionTokens:
+        4000,
 
-            tools: [
-              {
-                type:
-                  "browser_search"
-              }
-            ],
+      reasoningEffort:
+        "low",
 
-            toolChoice:
-              "required"
-          }
-        );
+      includeReasoning:
+        false,
+
+      tools: [
+        {
+          type:
+            "browser_search"
+        }
+      ],
+
+      toolChoice:
+        "required"
+    }
+  );
 
       const researchText =
         extractAIResponse(
