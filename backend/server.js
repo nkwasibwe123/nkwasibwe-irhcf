@@ -15259,15 +15259,6 @@ async function performLiveResearch(
     };
   }
 
-  if (!openai) {
-    return {
-      performed: false,
-      reason: "OPENAI_PROVIDER_UNAVAILABLE",
-      sources: [],
-      context: ""
-    };
-  }
-
   const languageInstruction =
     language === "rw"
       ? "Return the research synthesis in Kinyarwanda."
@@ -15277,138 +15268,301 @@ async function performLiveResearch(
           ? "Return the research synthesis in Swahili."
           : "Return the research synthesis in English.";
 
-  try {
-    console.log(
-      "[RESEARCH] Starting live web research:",
-      {
-        taskLength:
-          researchTask.length
-      }
-    );
+  const researchSystemPrompt = [
+    "You are the Nkwasibwe IRHCF live research agent.",
+    "Research the user's question using live web search.",
+    "Prefer primary and official sources whenever available.",
+    "For Rwanda government, public institutions, education, national examinations, laws, public officials, and current institutional information, strongly prefer official Rwanda government or institutional websites.",
+    "Do not invent facts, names, dates, ranks, salaries, positions, examination rules, results, or URLs.",
+    "If sources disagree, report the disagreement instead of silently choosing a fact.",
+    "Separate confirmed facts from inference.",
+    "Include the source title and URL for important claims.",
+    "The research result will be passed to another Nkwasibwe response agent.",
+    "Return enough factual context for that agent to answer accurately.",
+    languageInstruction
+  ].join("\n");
 
-    const researchResponse =
-      await openai.responses.create({
-        model:
-          process.env.OPENAI_RESEARCH_MODEL ||
-          OPENAI_MODEL ||
-          "gpt-4o-mini",
+  const researchMessages = [
+    {
+      role: "system",
+      content: researchSystemPrompt
+    },
+    {
+      role: "user",
+      content: researchTask
+    }
+  ];
 
-        tools: [
-          {
-            type: "web_search"
-          }
-        ],
+  // ==========================================================
+  // RESEARCH PROVIDER 1 — OPENAI WEB SEARCH
+  // ==========================================================
 
-        input: [
-          {
-            role: "system",
-            content: [
-              "You are the Nkwasibwe IRHCF live research agent.",
-              "Research the user's question using web search.",
-              "Prefer primary and official sources whenever available.",
-              "For government, public officials, laws, elections, institutions, salaries, and current events, prefer official government or institutional sources.",
-              "Do not invent facts, names, dates, ranks, salaries, or positions.",
-              "If sources disagree, report the disagreement instead of silently choosing a fact.",
-              "Separate confirmed facts from inference.",
-              "Include the source title and URL for important claims.",
-              languageInstruction
-            ].join("\n")
-          },
-          {
-            role: "user",
-            content: researchTask
-          }
-        ]
-      });
-
-    const researchText =
-      typeof researchResponse?.output_text === "string"
-        ? researchResponse.output_text.trim()
-        : "";
-
-    if (!researchText) {
-      console.warn(
-        "[RESEARCH] Web research returned no usable text."
+  if (openai) {
+    try {
+      console.log(
+        "[RESEARCH] Trying OpenAI live web search:",
+        {
+          taskLength:
+            researchTask.length
+        }
       );
 
-      return {
-        performed: true,
-        reason: "NO_RESEARCH_TEXT",
-        sources: [],
-        context: ""
-      };
+      const researchResponse =
+        await openai.responses.create({
+          model:
+            process.env.OPENAI_RESEARCH_MODEL ||
+            OPENAI_MODEL ||
+            "gpt-4o-mini",
+
+          tools: [
+            {
+              type: "web_search"
+            }
+          ],
+
+          input: researchMessages
+        });
+
+      const researchText =
+        typeof researchResponse?.output_text ===
+          "string"
+          ? researchResponse.output_text.trim()
+          : "";
+
+      if (researchText) {
+        const sources = [];
+
+        const urlPattern =
+          /https?:\/\/[^\s)\]}>,]+/gi;
+
+        const matches =
+          researchText.match(
+            urlPattern
+          ) || [];
+
+        for (
+          const rawUrl of matches
+        ) {
+          const url =
+            String(rawUrl)
+              .replace(
+                /[.,;:]+$/,
+                ""
+              );
+
+          if (
+            !sources.includes(url) &&
+            sources.length < 10
+          ) {
+            sources.push(url);
+          }
+        }
+
+        console.log(
+          "[RESEARCH] OpenAI live research completed:",
+          {
+            sources:
+              sources.length
+          }
+        );
+
+        return {
+          performed: true,
+          reason: "OPENAI_SUCCESS",
+          sources,
+          context:
+            researchText.slice(
+              0,
+              12000
+            )
+        };
+      }
+
+      console.warn(
+        "[RESEARCH] OpenAI returned no usable research text."
+      );
+
+    } catch (error) {
+      console.warn(
+        "[RESEARCH] OpenAI live research failed. Trying fallback:",
+        {
+          code:
+            error?.code ||
+            "OPENAI_RESEARCH_ERROR",
+          status:
+            error?.status ||
+            error?.statusCode ||
+            0,
+          message:
+            error?.message ||
+            String(error)
+        }
+      );
     }
+  } else {
+    console.warn(
+      "[RESEARCH] OpenAI research provider unavailable. Trying fallback."
+    );
+  }
 
-    const sources = [];
+  // ==========================================================
+  // RESEARCH PROVIDER 2 — GROQ BROWSER SEARCH
+  // ==========================================================
+  //
+  // Reuse the existing Groq provider adapter.
+  //
+  // IMPORTANT:
+  // This is NOT a second research engine.
+  // It is the existing provider adapter using
+  // Groq's built-in browser_search capability.
+  //
+  // Groq's openai/gpt-oss-20b supports browser_search.
+  // ==========================================================
 
-    const urlPattern =
-      /https?:\/\/[^\s)\]}>,]+/gi;
+  if (GROQ_API_KEY) {
+    try {
+      console.log(
+        "[RESEARCH] Falling back to Groq browser search:",
+        {
+          model:
+            "openai/gpt-oss-20b",
+          taskLength:
+            researchTask.length
+        }
+      );
 
-    const matches =
-      researchText.match(
-        urlPattern
-      ) || [];
+      const groqResearchResponse =
+        await callGroqWithTimeout(
+          researchMessages,
+          {
+            groqModel:
+              "openai/gpt-oss-20b",
 
-    for (
-      const rawUrl of matches
-    ) {
-      const url =
-        String(rawUrl)
-          .replace(
-            /[.,;:]+$/,
-            ""
-          );
+            temperature:
+              0.1,
+
+            maxTokens:
+              1800,
+
+            tools: [
+              {
+                type:
+                  "browser_search"
+              }
+            ],
+
+            toolChoice:
+              "required"
+          }
+        );
+
+      const researchText =
+        extractAIResponse(
+          groqResearchResponse
+        );
 
       if (
-        !sources.includes(url) &&
-        sources.length < 10
+        typeof researchText ===
+          "string" &&
+        researchText.trim()
       ) {
-        sources.push(url);
+        const cleanedResearchText =
+          researchText.trim();
+
+        const sources = [];
+
+        const urlPattern =
+          /https?:\/\/[^\s)\]}>,]+/gi;
+
+        const matches =
+          cleanedResearchText.match(
+            urlPattern
+          ) || [];
+
+        for (
+          const rawUrl of matches
+        ) {
+          const url =
+            String(rawUrl)
+              .replace(
+                /[.,;:]+$/,
+                ""
+              );
+
+          if (
+            !sources.includes(url) &&
+            sources.length < 10
+          ) {
+            sources.push(url);
+          }
+        }
+
+        console.log(
+          "[RESEARCH] Groq browser research completed:",
+          {
+            sources:
+              sources.length
+          }
+        );
+
+        return {
+          performed: true,
+          reason: "GROQ_BROWSER_SEARCH_SUCCESS",
+          sources,
+          context:
+            cleanedResearchText.slice(
+              0,
+              12000
+            )
+        };
       }
+
+      console.warn(
+        "[RESEARCH] Groq browser search returned no usable text."
+      );
+
+    } catch (error) {
+      console.warn(
+        "[RESEARCH] Groq browser search failed:",
+        {
+          code:
+            error?.code ||
+            "GROQ_RESEARCH_ERROR",
+          status:
+            error?.status ||
+            error?.statusCode ||
+            0,
+          message:
+            error?.message ||
+            String(error)
+        }
+      );
     }
-
-    console.log(
-      "[RESEARCH] Live research completed:",
-      {
-        sources:
-          sources.length
-      }
-    );
-
-    return {
-      performed: true,
-      reason: "SUCCESS",
-      sources,
-      context:
-        researchText.slice(
-          0,
-          12000
-        )
-    };
-
-  } catch (error) {
+  } else {
     console.warn(
-      "[RESEARCH] Live research failed:",
-      {
-        code:
-          error?.code ||
-          "RESEARCH_ERROR",
-        message:
-          error?.message ||
-          String(error)
-      }
+      "[RESEARCH] Groq research provider unavailable."
     );
-
-    return {
-      performed: false,
-      reason:
-        error?.code ||
-        "RESEARCH_ERROR",
-      sources: [],
-      context: ""
-    };
   }
+
+  // ==========================================================
+  // ALL RESEARCH PROVIDERS FAILED
+  // ==========================================================
+
+  console.warn(
+    "[RESEARCH] All live research providers failed."
+  );
+
+  return {
+    performed: false,
+    reason:
+      "ALL_RESEARCH_PROVIDERS_FAILED",
+    sources: [],
+    context: ""
+  };
 }
+    
+      
+          
 // ============================================================
 // CORE AGENT EXECUTION
 // ============================================================
