@@ -16498,8 +16498,18 @@ async function performLiveResearch(
     );
   }
 
-  // ==========================================================
+    // ==========================================================
   // PROVIDER 3 — GROQ BROWSER SEARCH
+  // ==========================================================
+  //
+  // Groq GPT-OSS supports the built-in browser_search tool.
+  //
+  // IMPORTANT:
+  // - Groq is infrastructure, not an agent.
+  // - This provider is used only after OpenAI and Gemini fail.
+  // - Research MUST come from the browser_search tool.
+  // - Model reasoning alone is NOT accepted as research.
+  //
   // ==========================================================
 
   if (GROQ_API_KEY) {
@@ -16515,9 +16525,60 @@ async function performLiveResearch(
         }
       );
 
+      // --------------------------------------------------------
+      // FORCE THE RESEARCH TASK TO BE EXPLICIT
+      // --------------------------------------------------------
+      //
+      // Groq documents that tool_choice:"required" forces
+      // tool usage, but the prompt should also clearly steer
+      // the model toward using the browser_search tool.
+      //
+      // This reduces the chance of the model attempting to
+      // answer from internal knowledge instead of searching.
+      // --------------------------------------------------------
+
+      const groqResearchMessages = [
+        {
+          role:
+            "system",
+
+          content: [
+            "You are the Nkwasibwe IRHCF live web research engine.",
+            "",
+            "MANDATORY RESEARCH PROCEDURE:",
+            "1. You MUST use the browser_search tool before producing any research answer.",
+            "2. Do NOT answer this task from model memory alone.",
+            "3. Search the live web for the requested information.",
+            "4. Prefer primary and official sources.",
+            "5. For Rwanda government information, prefer official Rwanda government and institutional domains.",
+            "6. For education and national examinations, prefer official NESA, MINEDUC, REB, and other relevant official Rwanda institutional sources.",
+            "7. For laws and regulations, prefer official government or legal sources.",
+            "8. For current public officials, verify information using current official institutional sources.",
+            "9. Do not invent facts, dates, names, URLs, examination rules, grades, results, salaries, ranks, or positions.",
+            "10. If a claim cannot be verified, explicitly mark it as unverified.",
+            "11. If sources disagree, report the disagreement.",
+            "12. Separate confirmed facts from inference.",
+            "13. Include important source titles and URLs when available.",
+            "14. The browser search results are the evidence for this research.",
+            "15. After searching, synthesize the verified findings clearly.",
+            "16. Return enough factual context for another Nkwasibwe response agent to answer the user accurately.",
+            "",
+            languageInstruction
+          ].join("\n")
+        },
+
+        {
+          role:
+            "user",
+
+          content:
+            researchTask
+        }
+      ];
+
       const groqResearchResponse =
         await callGroqWithTimeout(
-          researchMessages,
+          groqResearchMessages,
           {
             groqModel:
               "openai/gpt-oss-20b",
@@ -16546,6 +16607,10 @@ async function performLiveResearch(
           }
         );
 
+      // --------------------------------------------------------
+      // EXTRACT FINAL RESEARCH RESPONSE
+      // --------------------------------------------------------
+
       const researchText =
         extractAIResponse(
           groqResearchResponse
@@ -16559,16 +16624,72 @@ async function performLiveResearch(
         const cleanedResearchText =
           researchText.trim();
 
+        // ------------------------------------------------------
+        // EXTRACT EXPLICIT URLS FROM FINAL RESEARCH TEXT
+        // ------------------------------------------------------
+
         let sources =
           extractSourcesFromText(
             cleanedResearchText
           );
 
+        // ------------------------------------------------------
+        // GROQ MAY RETURN TOOL EXECUTION INFORMATION.
+        //
+        // Preserve any URLs that appear inside executed tool
+        // results when available.
+        // ------------------------------------------------------
+
+        try {
+          const assistantMessage =
+            groqResearchResponse
+              ?.choices?.[0]
+              ?.message;
+
+          const executedTools =
+            Array.isArray(
+              assistantMessage?.executed_tools
+            )
+              ? assistantMessage.executed_tools
+              : [];
+
+          if (
+            executedTools.length > 0
+          ) {
+            const executedToolsText =
+              JSON.stringify(
+                executedTools
+              );
+
+            sources =
+              extractSourcesFromText(
+                executedToolsText,
+                sources
+              );
+          }
+        } catch (
+          sourceExtractionError
+        ) {
+          console.warn(
+            "[RESEARCH] Groq executed-tool source extraction warning:",
+            {
+              message:
+                sourceExtractionError?.message ||
+                String(
+                  sourceExtractionError
+                )
+            }
+          );
+        }
+
         console.log(
           "[RESEARCH] Groq browser research completed:",
           {
             sources:
-              sources.length
+              sources.length,
+
+            researchLength:
+              cleanedResearchText.length
           }
         );
 
@@ -16590,7 +16711,7 @@ async function performLiveResearch(
       }
 
       console.warn(
-        "[RESEARCH] Groq browser search returned no usable text."
+        "[RESEARCH] Groq browser search returned no usable final research text."
       );
 
     } catch (error) {
@@ -16617,7 +16738,7 @@ async function performLiveResearch(
     console.warn(
       "[RESEARCH] Groq research provider unavailable."
     );
-  }
+                }
 
   // ==========================================================
   // ALL LIVE RESEARCH PROVIDERS FAILED
