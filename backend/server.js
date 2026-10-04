@@ -12648,7 +12648,7 @@ const AI_PROVIDER_HEALTH = {
 // Temporary overload/server errors get shorter cooldowns.
 //
 
-function getProviderCooldownMs(
+    function getProviderCooldownMs(
   providerName,
   error
 ) {
@@ -12665,11 +12665,130 @@ function getProviderCooldownMs(
       error?.code ||
       ""
     )
+      .trim()
       .toLowerCase();
 
+  const message =
+    String(
+      error?.message ||
+      ""
+    )
+      .trim()
+      .toLowerCase();
+
+  // ----------------------------------------------------------
+  // HELPER: PARSE PROVIDER RETRY DELAY
+  // ----------------------------------------------------------
+  //
+  // Some providers tell us exactly when they expect us
+  // to retry, for example:
+  //
+  //   "Please try again in 32m33.936s"
+  //
+  // or:
+  //
+  //   "retry after 45 seconds"
+  //
+  // We should respect that instead of blindly using
+  // a fixed 2-minute cooldown.
+  // ----------------------------------------------------------
+
+  function parseRetryAfterMs(
+    source
+  ) {
+
+    const text =
+      String(
+        source || ""
+      )
+        .trim()
+        .toLowerCase();
+
+    if (!text) {
+      return 0;
+    }
+
+    let totalMs = 0;
+
+    const hoursMatch =
+      text.match(
+        /(\d+(?:\.\d+)?)\s*h(?:ours?|r)?/
+      );
+
+    const minutesMatch =
+      text.match(
+        /(\d+(?:\.\d+)?)\s*m(?:in(?:ute)?s?)?/
+      );
+
+    const secondsMatch =
+      text.match(
+        /(\d+(?:\.\d+)?)\s*s(?:ec(?:ond)?s?)?/
+      );
+
+    if (hoursMatch) {
+      totalMs +=
+        Number(hoursMatch[1]) *
+        60 *
+        60 *
+        1000;
+    }
+
+    if (minutesMatch) {
+      totalMs +=
+        Number(minutesMatch[1]) *
+        60 *
+        1000;
+    }
+
+    if (secondsMatch) {
+      totalMs +=
+        Number(secondsMatch[1]) *
+        1000;
+    }
+
+    return Number.isFinite(totalMs)
+      ? Math.max(
+          0,
+          Math.round(totalMs)
+        )
+      : 0;
+  }
+
+  // ----------------------------------------------------------
+  // PROVIDER-SPECIFIC RETRY-AFTER
+  // ----------------------------------------------------------
+
+  const providerRetryAfterMs =
+    Math.max(
+      parseRetryAfterMs(
+        error?.retryAfter
+      ),
+
+      parseRetryAfterMs(
+        error?.retry_after
+      ),
+
+      parseRetryAfterMs(
+        error?.headers?.["retry-after"]
+      ),
+
+      parseRetryAfterMs(
+        error?.headers?.get?.(
+          "retry-after"
+        )
+      ),
+
+      parseRetryAfterMs(
+        message
+      )
+    );
 
   // ----------------------------------------------------------
   // OPENAI BILLING / CREDIT EXHAUSTION
+  // ----------------------------------------------------------
+  //
+  // This is not a normal short-lived rate limit.
+  // Retrying every few seconds only wastes time.
   // ----------------------------------------------------------
 
   if (
@@ -12683,29 +12802,45 @@ function getProviderCooldownMs(
       ) ||
       code.includes(
         "quota"
+      ) ||
+      message.includes(
+        "no credits remaining"
+      ) ||
+      message.includes(
+        "credit balance"
+      ) ||
+      message.includes(
+        "insufficient quota"
       )
     )
   ) {
 
-    // 10 minutes
-    return 10 * 60 * 1000;
+    return Math.max(
+      10 * 60 * 1000,
+      providerRetryAfterMs
+    );
 
   }
 
-
   // ----------------------------------------------------------
-  // RATE LIMIT
+  // ALL RATE LIMITS
+  // ----------------------------------------------------------
+  //
+  // Prefer the provider's own retry-after value.
+  //
+  // Otherwise use a safe default of 2 minutes.
   // ----------------------------------------------------------
 
   if (
     status === 429
   ) {
 
-    // 2 minutes
-    return 2 * 60 * 1000;
+    return Math.max(
+      2 * 60 * 1000,
+      providerRetryAfterMs
+    );
 
   }
-
 
   // ----------------------------------------------------------
   // TEMPORARY SERVER / OVERLOAD
@@ -12717,11 +12852,9 @@ function getProviderCooldownMs(
     status === 504
   ) {
 
-    // 60 seconds
     return 60 * 1000;
 
   }
-
 
   // ----------------------------------------------------------
   // REQUEST TOO LARGE
@@ -12731,11 +12864,9 @@ function getProviderCooldownMs(
     status === 413
   ) {
 
-    // 5 minutes
     return 5 * 60 * 1000;
 
   }
-
 
   // ----------------------------------------------------------
   // AUTHENTICATION / CONFIGURATION ERRORS
@@ -12752,20 +12883,17 @@ function getProviderCooldownMs(
     )
   ) {
 
-    // 10 minutes
     return 10 * 60 * 1000;
 
   }
-
 
   // ----------------------------------------------------------
   // UNKNOWN ERROR
   // ----------------------------------------------------------
 
-  // 30 seconds
   return 30 * 1000;
 
-}
+    }
 
 
 // ============================================================
@@ -13075,52 +13203,121 @@ async function executeAIProvider(
   let providersToTry =
     healthyProviders;
 
-  // ----------------------------------------------------------
+    // ----------------------------------------------------------
   // ALL PROVIDERS IN COOLDOWN
   // ----------------------------------------------------------
+  //
+  // IMPORTANT:
+  //
+  // NEVER probe a provider while its cooldown is still active.
+  //
+  // Probing a known-rate-limited provider:
+  //
+  //   - wastes latency
+  //   - wastes quota
+  //   - creates unnecessary 429 errors
+  //   - can make the frontend appear frozen
+  //   - defeats the circuit breaker
+  //
+  // If every provider is unavailable, fail immediately with
+  // a dedicated cooldown error.
+  //
+  // A later request will automatically use the provider whose
+  // cooldown has expired.
+  // ----------------------------------------------------------
 
-  if (providersToTry.length === 0) {
+  if (
+    providersToTry.length === 0
+  ) {
 
-    const sorted =
-      [...providers].sort(
-        (a, b) => {
+    const now =
+      Date.now();
 
-          const aHealth =
-            AI_PROVIDER_HEALTH[
-              a.name
-            ];
+    const cooldowns =
+      providers
+        .map(
+          provider => {
 
-          const bHealth =
-            AI_PROVIDER_HEALTH[
-              b.name
-            ];
+            const health =
+              AI_PROVIDER_HEALTH[
+                provider.name
+              ];
 
-          return (
-            (
-              aHealth?.cooldownUntil ||
-              0
-            ) -
-            (
-              bHealth?.cooldownUntil ||
-              0
-            )
-          );
+            const cooldownUntil =
+              Number(
+                health?.cooldownUntil ||
+                0
+              );
 
-        }
+            return {
+              provider:
+                provider.name,
+
+              cooldownUntil,
+
+              remainingMs:
+                Math.max(
+                  0,
+                  cooldownUntil -
+                  now
+                )
+            };
+
+          }
+        )
+        .sort(
+          (a, b) =>
+            a.remainingMs -
+            b.remainingMs
+        );
+
+    const nextProvider =
+      cooldowns[0] ||
+      null;
+
+    const finalError =
+      new Error(
+        nextProvider &&
+        nextProvider.remainingMs > 0
+          ? `All AI providers are temporarily unavailable. Next provider may recover in approximately ${Math.ceil(
+              nextProvider.remainingMs /
+              1000
+            )} seconds.`
+          : "All AI providers are temporarily unavailable."
       );
 
-    providersToTry =
-      sorted.slice(0, 1);
+    finalError.code =
+      "AI_ALL_PROVIDERS_COOLDOWN";
+
+    finalError.status =
+      429;
+
+    finalError.retryAfterMs =
+      nextProvider
+        ? nextProvider.remainingMs
+        : 0;
+
+    finalError.providerHealth =
+      getProviderHealthSnapshot();
 
     console.warn(
-      "[AI HEALTH] All providers are in cooldown; probing earliest provider",
+      "[AI HEALTH] All providers are in cooldown; refusing unnecessary probe",
       {
-        provider:
-          providersToTry[0]?.name
+        nextProvider:
+          nextProvider?.provider ||
+          null,
+
+        retryAfterMs:
+          finalError.retryAfterMs,
+
+        providerHealth:
+          finalError.providerHealth
       }
     );
 
-  }
+    throw finalError;
+
+            }
 
   // ----------------------------------------------------------
   // EXECUTE PROVIDERS
