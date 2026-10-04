@@ -12313,13 +12313,12 @@ async function callGeminiWithTimeout(
 // GROQ PROVIDER
 // ============================================================
 
+
 async function callGroqWithTimeout(
   messages,
   options = {}
 ) {
-
   if (!GROQ_API_KEY) {
-
     const error =
       new Error(
         "Groq provider is not configured"
@@ -12329,7 +12328,6 @@ async function callGroqWithTimeout(
       "GROQ_PROVIDER_NOT_CONFIGURED";
 
     throw error;
-
   }
 
   const model =
@@ -12348,11 +12346,8 @@ async function callGroqWithTimeout(
     );
 
   try {
-
     const requestBody = {
-
       model,
-
       messages,
 
       temperature:
@@ -12361,28 +12356,52 @@ async function callGroqWithTimeout(
           ? options.temperature
           : AGENT_CONFIG.TEMPERATURE,
 
-      max_tokens:
-        options.maxTokens ||
-        1500
+      max_completion_tokens:
+        Number(options.maxCompletionTokens) > 0
+          ? Number(
+              options.maxCompletionTokens
+            )
+          : Number(
+              options.maxTokens
+            ) > 0
+              ? Number(
+                  options.maxTokens
+                )
+              : 3000,
 
+      stream: false,
+
+      reasoning_effort:
+        options.reasoningEffort ||
+        "low"
     };
 
-    // --------------------------------------------------------
-    // TOOL CALLING
-    // --------------------------------------------------------
+    // ----------------------------------------------------------
+    // OPTIONAL REASONING OUTPUT
+    // ----------------------------------------------------------
+
+    if (
+      typeof options.includeReasoning ===
+      "boolean"
+    ) {
+      requestBody.include_reasoning =
+        options.includeReasoning;
+    }
+
+    // ----------------------------------------------------------
+    // BUILT-IN TOOL CALLING
+    // ----------------------------------------------------------
 
     if (
       Array.isArray(options.tools) &&
       options.tools.length > 0
     ) {
-
       requestBody.tools =
         options.tools;
 
       requestBody.tool_choice =
         options.toolChoice ||
         "auto";
-
     }
 
     const response =
@@ -12419,7 +12438,6 @@ async function callGroqWithTimeout(
     );
 
     if (!response.ok) {
-
       const error =
         new Error(
           data?.error?.message ||
@@ -12433,49 +12451,53 @@ async function callGroqWithTimeout(
         "GROQ_PROVIDER_ERROR";
 
       throw error;
-
     }
 
     const assistantMessage =
       data?.choices?.[0]?.message;
 
-    const hasContent =
+    const content =
       typeof assistantMessage?.content ===
-        "string" &&
-      assistantMessage.content.trim();
+      "string"
+        ? assistantMessage.content.trim()
+        : "";
 
-    const hasToolCalls =
+    const toolCalls =
       Array.isArray(
         assistantMessage?.tool_calls
-      ) &&
-      assistantMessage.tool_calls.length > 0;
+      )
+        ? assistantMessage.tool_calls
+        : [];
+
+    // ----------------------------------------------------------
+    // IMPORTANT:
+    // reasoning IS NOT the final answer.
+    //
+    // Never use reasoning as factual research output.
+    // ----------------------------------------------------------
 
     if (
-      !hasContent &&
-      !hasToolCalls
+      !content &&
+      toolCalls.length === 0
     ) {
-
       const error =
         new Error(
-          "Groq returned an empty response"
+          "Groq returned no final content"
         );
 
       error.code =
-        "GROQ_EMPTY_RESPONSE";
+        "GROQ_EMPTY_FINAL_CONTENT";
 
       throw error;
-
     }
 
     return data;
 
   } catch (error) {
-
     if (
       error?.name ===
       "AbortError"
     ) {
-
       const timeoutError =
         new Error(
           "Groq provider request timed out"
@@ -12485,20 +12507,18 @@ async function callGroqWithTimeout(
         "GROQ_PROVIDER_TIMEOUT";
 
       throw timeoutError;
-
     }
 
     throw error;
 
   } finally {
-
     clearTimeout(
       timeout
     );
-
   }
-
 }
+      
+        
 
 
      // ============================================================
@@ -15441,8 +15461,7 @@ async function performLiveResearch(
             temperature:
               0.1,
 
-            maxTokens:
-              1800,
+            maxCompletionTokens: 4000,
 
             tools: [
               {
