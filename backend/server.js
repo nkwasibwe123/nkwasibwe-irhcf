@@ -80,7 +80,7 @@ const {
   buildOpportunity,
   buildRevenueProjectPlan
 } = require("./core/economic-autopilot");
-const { buildActionCenter } = require("./core/action-center");
+const { buildActionCenter, buildRequiredAction } = require("./core/action-center");
 
 // ============================================================
 // APPLICATION IDENTITY
@@ -14852,7 +14852,15 @@ app.post(
             normalized.code ||
             "AGENT_EXECUTION_FAILED",
 
-          requestId
+          requestId,
+
+          requiredAction:
+            buildRequiredAction({
+              code:
+                normalized.code,
+              apiBaseUrl:
+                `${req.protocol}://${req.get("host")}`
+            })
 
         });
 
