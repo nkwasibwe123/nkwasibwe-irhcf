@@ -37044,12 +37044,6 @@ let server = null;
 // The database schema is created before the worker starts.
 //
 
-const scheduleWorker =
-  new ScheduleWorker({
-    pool,
-    taskEngine: persistentTaskEngine
-  });
-
 const persistentTaskEngine =
   new TaskEngine({
     pool,
@@ -37109,6 +37103,12 @@ const persistentTaskEngine =
         };
 
       }
+  });
+
+const scheduleWorker =
+  new ScheduleWorker({
+    pool,
+    taskEngine: persistentTaskEngine
   });
 
 app.use(
