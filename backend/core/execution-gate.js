@@ -9,7 +9,12 @@ const ACTIONS = Object.freeze({
   GENERATE_VIDEO: "generate_video",
   BUILD_SOFTWARE: "build_software",
   RESEARCH: "research",
-  EXTERNAL_ACTION: "external_action"
+  EXTERNAL_ACTION: "external_action",
+  ACCOUNT_ACTION: "account_action",
+  BROWSE_AND_ACT: "browse_and_act",
+  MEETING_ACTION: "meeting_action",
+  PUBLISH_YOUTUBE: "publish_youtube",
+  PROJECT_BUILD: "project_build"
 });
 
 const ACTION_POLICIES = Object.freeze({
@@ -19,7 +24,12 @@ const ACTION_POLICIES = Object.freeze({
   generate_video: { capabilities: ["media_generation"], verification: true, authorization: false },
   build_software: { capabilities: ["software_architecture", "code_generation", "testing"], verification: true, authorization: false },
   research: { capabilities: ["web_research", "source_evaluation"], verification: true, authorization: false },
-  external_action: { capabilities: ["task_execution"], verification: true, authorization: true }
+  external_action: { capabilities: ["task_execution"], verification: true, authorization: true },
+  account_action: { capabilities: ["account_control", "task_execution"], verification: true, authorization: true },
+  browse_and_act: { capabilities: ["browser_automation", "task_execution"], verification: true, authorization: true },
+  meeting_action: { capabilities: ["meeting_control", "voice_processing", "task_execution"], verification: true, authorization: true },
+  publish_youtube: { capabilities: ["youtube_publishing", "media_generation"], verification: true, authorization: true },
+  project_build: { capabilities: ["project_autopilot", "task_decomposition", "verification"], verification: true, authorization: false }
 });
 
 function createExecutionId() {
