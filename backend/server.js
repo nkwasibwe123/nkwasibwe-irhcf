@@ -81,6 +81,12 @@ const {
   buildRevenueProjectPlan
 } = require("./core/economic-autopilot");
 const { buildActionCenter, buildRequiredAction } = require("./core/action-center");
+const {
+  createTransaction,
+  updateTransaction,
+  listTransactions,
+  preparePayout
+} = require("./integrations/financial-ledger");
 
 // ============================================================
 // APPLICATION IDENTITY
@@ -3698,6 +3704,140 @@ app.post("/api/economy/opportunities", authenticateToken, async (req, res) => {
     });
   }
 });
+
+// ============================================================
+// FINANCIAL LEDGER + CONTROLLED PAYOUT PREPARATION
+// ============================================================
+//
+// The ledger is durable, idempotent and user-isolated.
+// Actual money movement is still blocked unless an approved
+// provider, explicit authorization and verified destination exist.
+// ============================================================
+
+app.get(
+  "/api/finance/transactions",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const transactions = await listTransactions(
+        pool,
+        req.user.id,
+        {
+          limit: req.query?.limit,
+          offset: req.query?.offset
+        }
+      );
+
+      return res.json({
+        success: true,
+        transactions
+      });
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        error: "Could not load financial transactions.",
+        code: "FINANCE_LEDGER_READ_FAILED"
+      });
+    }
+  }
+);
+
+app.post(
+  "/api/finance/transactions",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const transaction = await createTransaction(pool, {
+        userId: req.user.id,
+        direction: req.body?.direction,
+        action: req.body?.action,
+        provider: req.body?.provider,
+        amount: req.body?.amount,
+        currency: req.body?.currency || "RWF",
+        idempotencyKey: req.body?.idempotencyKey,
+        destination: req.body?.destination || null,
+        metadata: req.body?.metadata || {}
+      });
+
+      return res.status(201).json({
+        success: true,
+        transaction
+      });
+    } catch (error) {
+      return res.status(400).json({
+        success: false,
+        error: error?.message || "Could not create financial transaction.",
+        code: "FINANCE_LEDGER_WRITE_FAILED"
+      });
+    }
+  }
+);
+
+app.patch(
+  "/api/finance/transactions/:id",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const transaction = await updateTransaction(pool, {
+        userId: req.user.id,
+        id: Number(req.params.id),
+        status: req.body?.status,
+        providerReference: req.body?.providerReference || null,
+        error: req.body?.error || null,
+        metadata: req.body?.metadata || null
+      });
+
+      if (!transaction) {
+        return res.status(404).json({
+          success: false,
+          error: "Financial transaction not found.",
+          code: "FINANCE_TRANSACTION_NOT_FOUND"
+        });
+      }
+
+      return res.json({
+        success: true,
+        transaction
+      });
+    } catch (error) {
+      return res.status(400).json({
+        success: false,
+        error: error?.message || "Could not update financial transaction.",
+        code: "FINANCE_LEDGER_UPDATE_FAILED"
+      });
+    }
+  }
+);
+
+app.post(
+  "/api/finance/payout/prepare",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const prepared = preparePayout({
+        amount: req.body?.amount,
+        currency: req.body?.currency || "RWF",
+        idempotencyKey: req.body?.idempotencyKey,
+        providerAvailable: Boolean(req.body?.providerAvailable),
+        authorized: req.body?.authorized === true,
+        destinationVerified: req.body?.destinationVerified === true,
+        destination: req.body?.destination
+      });
+
+      return res.json({
+        success: true,
+        payout: prepared
+      });
+    } catch (error) {
+      return res.status(403).json({
+        success: false,
+        error: error?.message || "Payout preparation is blocked.",
+        code: error?.code || "FINANCIAL_ACTION_BLOCKED"
+      });
+    }
+  }
+);
+
 
 // CURRENT USER
 // ============================================================
