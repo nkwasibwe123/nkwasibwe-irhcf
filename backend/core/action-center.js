@@ -167,7 +167,7 @@ function buildActionCenter({
         title: "Huza YouTube",
         message: "Kugira ngo IRHCF ibashe gutegura no kohereza videos kuri YouTube, huza channel yawe.",
         actionLabel: "Huza YouTube",
-        actionUrl: `${apiBaseUrl}/api/integrations/google/authorize?service=youtube`,
+        actionUrl: `${apiBaseUrl}/api/integrations/google/authorize?platform=youtube`,
         category: "integration",
         blocking: false,
         metadata: { service: "youtube" }
@@ -183,7 +183,7 @@ function buildActionCenter({
         title: "Huza Google Meet",
         message: "Kugira ngo IRHCF ibashe gukoresha meeting workflows zemewe, huza Google account yawe.",
         actionLabel: "Huza Google Meet",
-        actionUrl: `${apiBaseUrl}/api/integrations/google/authorize?service=meet`,
+        actionUrl: `${apiBaseUrl}/api/integrations/google/authorize?platform=meet`,
         category: "integration",
         blocking: false,
         metadata: { service: "google_meet" }
