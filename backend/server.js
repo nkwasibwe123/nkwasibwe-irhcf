@@ -35,6 +35,9 @@ const {
   createTaskRouter
 } = require("./core/task-engine");
 
+const { AdapterRegistry } = require("./core/adapter-registry");
+const adapterRegistry = new AdapterRegistry();
+
 // ============================================================
 // APPLICATION IDENTITY
 // ============================================================
