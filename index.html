@@ -167,6 +167,17 @@
         <div class="header-actions">
 
 
+          <!-- CAPABILITY DASHBOARD -->
+          <button
+            id="dashboardButton"
+            class="icon-button"
+            type="button"
+            aria-label="Open capability dashboard"
+            title="Capability dashboard"
+          >
+            ☷
+          </button>
+
           <!-- NEW CONVERSATION -->
 
           <button
@@ -200,6 +211,41 @@
       <!-- ==============================================
            CHAT
            ============================================== -->
+
+      <!-- ==============================================
+           CAPABILITY DASHBOARD
+           ============================================== -->
+      <section
+        id="capabilityDashboard"
+        class="capability-dashboard"
+        aria-hidden="true"
+      >
+        <div class="dashboard-backdrop" data-dashboard-close></div>
+        <div class="dashboard-panel" role="dialog" aria-modal="true" aria-labelledby="dashboardTitle">
+          <div class="dashboard-header">
+            <div>
+              <h2 id="dashboardTitle">IRHCF Dashboard</h2>
+              <p>Tools, agents, tasks and creation capabilities.</p>
+            </div>
+            <button id="dashboardCloseButton" class="icon-button" type="button" aria-label="Close dashboard">×</button>
+          </div>
+          <div class="dashboard-grid">
+            <button class="dashboard-card" type="button" data-dashboard-action="file"><span class="dashboard-card-icon">📎</span><strong>Add File</strong><span>Documents, PDF, spreadsheets and text.</span></button>
+            <button class="dashboard-card" type="button" data-dashboard-action="photo"><span class="dashboard-card-icon">🖼️</span><strong>Add Photo</strong><span>Images for analysis or creation workflows.</span></button>
+            <button class="dashboard-card" type="button" data-dashboard-action="video"><span class="dashboard-card-icon">🎬</span><strong>Add Video</strong><span>Video analysis and media workflows.</span></button>
+            <button class="dashboard-card" type="button" data-dashboard-action="audio"><span class="dashboard-card-icon">🎧</span><strong>Add Audio</strong><span>Voice, music and audio processing.</span></button>
+            <button class="dashboard-card" type="button" data-dashboard-action="image-create"><span class="dashboard-card-icon">✨</span><strong>Create Image</strong><span>Describe an image to create.</span></button>
+            <button class="dashboard-card" type="button" data-dashboard-action="video-create"><span class="dashboard-card-icon">🎥</span><strong>Create Video</strong><span>Start a video or film workflow.</span></button>
+            <button class="dashboard-card" type="button" data-dashboard-action="music-create"><span class="dashboard-card-icon">🎵</span><strong>Create Music</strong><span>Start music, vocal or audio production.</span></button>
+            <button class="dashboard-card" type="button" data-dashboard-action="software"><span class="dashboard-card-icon">💻</span><strong>Build Software</strong><span>Applications, websites, APIs and systems.</span></button>
+            <button class="dashboard-card" type="button" data-dashboard-action="research"><span class="dashboard-card-icon">🔎</span><strong>Research</strong><span>Deep research with source verification.</span></button>
+            <button class="dashboard-card" type="button" data-dashboard-action="tasks"><span class="dashboard-card-icon">⚙️</span><strong>Long Tasks</strong><span>Persistent tasks and progress tracking.</span></button>
+            <button class="dashboard-card" type="button" data-dashboard-action="agents"><span class="dashboard-card-icon">🤖</span><strong>Agent Teams</strong><span>Specialists collaborating on your work.</span></button>
+            <button class="dashboard-card" type="button" data-dashboard-action="capabilities"><span class="dashboard-card-icon">🧩</span><strong>Capabilities</strong><span>Abilities and controlled capability expansion.</span></button>
+          </div>
+          <div id="dashboardStatus" class="dashboard-status" aria-live="polite">Ready.</div>
+        </div>
+      </section>
 
       <main
         id="chat"
