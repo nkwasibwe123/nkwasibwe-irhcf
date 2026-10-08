@@ -9999,65 +9999,6 @@ function getAgentStatus() {
 // AGENT TASK VALIDATION
 // ============================================================
 
-function validateAgentTask(
-  task
-) {
-
-  const value =
-    normalizeText(
-      task
-    );
-
-
-  if (!value) {
-
-    return {
-
-      valid:
-        false,
-
-      error:
-        "Task is required",
-
-      code:
-        "TASK_REQUIRED"
-
-    };
-
-  }
-
-
-  if (
-    value.length >
-    AGENT_CONFIG.MAX_TASK_LENGTH
-  ) {
-
-    return {
-
-      valid:
-        false,
-
-      error:
-        "Task is too long",
-
-      code:
-        "TASK_TOO_LONG"
-
-    };
-
-  }
-
-
-  return {
-
-    valid:
-      true,
-
-    value
-
-  };
-
-}
 
 
 // ============================================================
@@ -14130,119 +14071,12 @@ function normalizeMemoryText(
 // MEMORY LENGTH VALIDATION
 // ============================================================
 
-function validateMemoryContent(
-  content,
-  longTerm = false
-) {
-
-  const value =
-    normalizeMemoryText(
-      content
-    );
-
-
-  if (!value) {
-
-    return {
-
-      valid:
-        false,
-
-      error:
-        "Memory content is required",
-
-      code:
-        "MEMORY_REQUIRED"
-
-    };
-
-  }
-
-
-  const maxLength =
-    longTerm
-      ? MEMORY_CONFIG
-          .MAX_LONG_TERM_MEMORY_LENGTH
-      : MEMORY_CONFIG
-          .MAX_MEMORY_LENGTH;
-
-
-  if (
-    value.length >
-    maxLength
-  ) {
-
-    return {
-
-      valid:
-        false,
-
-      error:
-        "Memory content is too long",
-
-      code:
-        "MEMORY_TOO_LONG"
-
-    };
-
-  }
-
-
-  return {
-
-    valid:
-      true,
-
-    value
-
-  };
-
-}
 
 
 // ============================================================
 // IMPORTANCE NORMALIZATION
 // ============================================================
 
-function normalizeMemoryImportance(
-  value
-) {
-
-  const number =
-    Number(
-      value
-    );
-
-
-  if (
-    !Number.isFinite(number)
-  ) {
-
-    return MEMORY_CONFIG
-      .DEFAULT_IMPORTANCE;
-
-  }
-
-
-  return Math.min(
-
-    Math.max(
-
-      Math.round(
-        number
-      ),
-
-      MEMORY_CONFIG
-        .MIN_IMPORTANCE
-
-    ),
-
-    MEMORY_CONFIG
-      .MAX_IMPORTANCE
-
-  );
-
-}
 
 
 // ============================================================
@@ -14501,68 +14335,6 @@ function calculateMemoryRelevance(
 // MEMORY OWNERSHIP CHECK
 // ============================================================
 
-async function resolveUserMemory(
-  userId,
-  memoryId
-) {
-
-  if (!userId) {
-
-    throw new Error(
-      "User ID is required"
-    );
-
-  }
-
-
-  const id =
-    Number(
-      memoryId
-    );
-
-
-  if (
-    !Number.isInteger(id) ||
-    id <= 0
-  ) {
-
-    return null;
-
-  }
-
-
-  const result =
-    await pool.query(
-
-      `SELECT
-         id,
-         user_id,
-         memory,
-         importance,
-         created_at,
-         updated_at
-       FROM user_memory
-       WHERE id = $1
-       AND user_id = $2
-       LIMIT 1`,
-
-      [
-
-        id,
-
-        userId
-
-      ]
-
-    );
-
-
-  return (
-    result.rows[0] ||
-    null
-  );
-
-}
 
 
 // ============================================================
@@ -17300,31 +17072,6 @@ async function executeAgentActionWithTimeout(
 // ACTION HISTORY RECORDING
 // ============================================================
 
-function recordAgentActionHistory(
-  record
-) {
-
-  AGENT_ACTION_HISTORY.push({
-
-    ...record,
-
-    timestamp:
-      new Date().toISOString()
-
-  });
-
-
-  while (
-    AGENT_ACTION_HISTORY.length >
-    AGENT_ACTION_CONFIG
-      .MAX_ACTION_HISTORY
-  ) {
-
-    AGENT_ACTION_HISTORY.shift();
-
-  }
-
-}
 
 
 // ============================================================
