@@ -5430,6 +5430,68 @@ function addSystemMessage(
 }
 
 // ============================================================
+// MESSAGE EDITING
+// ============================================================
+
+function attachMessageEditButton(row, messageId, messageText) {
+  const id = Number(messageId);
+  if (!row || !Number.isSafeInteger(id) || id < 1) return;
+  if (row.querySelector(".message-edit-button")) return;
+
+  row.dataset.messageId = String(id);
+  const wrapper = row.querySelector(".message-content-wrapper");
+  if (!wrapper) return;
+
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "message-edit-button";
+  button.textContent = "Edit";
+  button.title = "Edit this message and regenerate the conversation from here";
+  button.setAttribute("aria-label", "Edit sent message");
+  button.style.marginTop = "6px";
+  button.style.padding = "4px 9px";
+  button.style.borderRadius = "8px";
+  button.style.border = "1px solid currentColor";
+  button.style.background = "transparent";
+  button.style.cursor = "pointer";
+  button.style.fontSize = "12px";
+  button.addEventListener("click", () => {
+    void prepareMessageEdit(row, id, messageText);
+  });
+  wrapper.appendChild(button);
+}
+
+async function prepareMessageEdit(row, messageId, messageText) {
+  if (isSending || !sessionId) return;
+  const confirmed = window.confirm(
+    "Guhindura ubu butumwa bizakuraho ubu butumwa n'ibisubizo byose byakurikiyeho muri iki kiganiro. Urashaka gukomeza?"
+  );
+  if (!confirmed) return;
+
+  try {
+    const endpoint =
+      API_ENDPOINTS.conversations + "/" +
+      encodeURIComponent(sessionId) + "/messages/" +
+      encodeURIComponent(messageId) + "/prepare-edit";
+
+    const result = await apiRequest(endpoint, { method: "POST" });
+    if (!result?.success) throw new Error("Ntibyashobotse gutegura guhindura ubutumwa.");
+
+    await displayConversationHistory();
+    if (userInput) {
+      userInput.value = String(messageText || "");
+      autoResizeInput();
+      userInput.focus();
+      userInput.setSelectionRange(userInput.value.length, userInput.value.length);
+    }
+    setStatus("Hindura ubutumwa, hanyuma ukande Send kugira ngo IRHCF isubize ku butumwa bushya.", "normal");
+  } catch (error) {
+    console.error("[MESSAGE_EDIT]", error);
+    setStatus("Ntibyashobotse guhindura ubutumwa: " + String(error?.message || "ikibazo cya serivisi").slice(0, 160), "normal");
+  }
+}
+
+// ============================================================
 // ADD CHAT MESSAGE
 // ============================================================
 //
@@ -5518,6 +5580,10 @@ function addMessage(
   body.appendChild(
     meta
   );
+
+  if (role === "user" && options.id) {
+    attachMessageEditButton(row, options.id, text);
+  }
 
   if (role === "user") {
 
@@ -6205,7 +6271,7 @@ async function sendMessage() {
   // DISPLAY USER MESSAGE
   // ----------------------------------------------------------
 
-  addMessage(
+  const userMessageRow = addMessage(
     text,
     "user"
   );
@@ -6282,6 +6348,18 @@ async function sendMessage() {
     updateBackendState(
       true
     );
+
+    const persistedUserMessageId =
+      data?.request?.id ??
+      data?.data?.request?.id ??
+      null;
+    if (persistedUserMessageId) {
+      attachMessageEditButton(
+        userMessageRow,
+        persistedUserMessageId,
+        text
+      );
+    }
 
 
     // --------------------------------------------------------
