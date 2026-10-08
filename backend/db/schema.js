@@ -134,11 +134,21 @@ async function createSchema() {
       id SERIAL PRIMARY KEY,
       user_id INTEGER,
       task TEXT NOT NULL,
-      status TEXT DEFAULT 'pending',
+      status TEXT DEFAULT 'PLANNED',
       priority INTEGER DEFAULT 1,
       result TEXT,
       error TEXT,
       attempts INTEGER DEFAULT 0,
+      max_attempts INTEGER DEFAULT 3,
+      session_id TEXT,
+      progress NUMERIC(5,2) DEFAULT 0,
+      progress_message TEXT,
+      checkpoint JSONB DEFAULT '{}'::jsonb,
+      worker_id TEXT,
+      locked_at TIMESTAMP,
+      next_run_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      started_at TIMESTAMP,
+      completed_at TIMESTAMP,
       metadata JSONB DEFAULT '{}'::jsonb,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -531,7 +541,7 @@ await pool.query(`
 
     ALTER TABLE tasks
       ADD COLUMN IF NOT EXISTS status TEXT
-        DEFAULT 'pending';
+        DEFAULT 'PLANNED';
 
     ALTER TABLE tasks
       ADD COLUMN IF NOT EXISTS priority INTEGER
@@ -546,6 +556,40 @@ await pool.query(`
     ALTER TABLE tasks
       ADD COLUMN IF NOT EXISTS attempts INTEGER
         DEFAULT 0;
+
+    ALTER TABLE tasks
+      ADD COLUMN IF NOT EXISTS max_attempts INTEGER
+        DEFAULT 3;
+
+    ALTER TABLE tasks
+      ADD COLUMN IF NOT EXISTS session_id TEXT;
+
+    ALTER TABLE tasks
+      ADD COLUMN IF NOT EXISTS progress NUMERIC(5,2)
+        DEFAULT 0;
+
+    ALTER TABLE tasks
+      ADD COLUMN IF NOT EXISTS progress_message TEXT;
+
+    ALTER TABLE tasks
+      ADD COLUMN IF NOT EXISTS checkpoint JSONB
+        DEFAULT '{}'::jsonb;
+
+    ALTER TABLE tasks
+      ADD COLUMN IF NOT EXISTS worker_id TEXT;
+
+    ALTER TABLE tasks
+      ADD COLUMN IF NOT EXISTS locked_at TIMESTAMP;
+
+    ALTER TABLE tasks
+      ADD COLUMN IF NOT EXISTS next_run_at TIMESTAMP
+        DEFAULT CURRENT_TIMESTAMP;
+
+    ALTER TABLE tasks
+      ADD COLUMN IF NOT EXISTS started_at TIMESTAMP;
+
+    ALTER TABLE tasks
+      ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP;
 
     ALTER TABLE tasks
       ADD COLUMN IF NOT EXISTS metadata JSONB
@@ -1408,29 +1452,24 @@ await pool.query(`
     DO $$
     BEGIN
 
-      IF NOT EXISTS (
-        SELECT 1
-        FROM pg_constraint
-        WHERE conname = 'chk_tasks_status'
-      ) THEN
+      ALTER TABLE tasks
+        DROP CONSTRAINT IF EXISTS chk_tasks_status;
 
-        ALTER TABLE tasks
-        ADD CONSTRAINT chk_tasks_status
-        CHECK (
-          status IN (
-            'pending',
-            'planning',
-            'running',
-            'testing',
-            'repairing',
-            'verifying',
-            'completed',
-            'failed',
-            'cancelled'
-          )
-        );
-
-      END IF;
+      ALTER TABLE tasks
+      ADD CONSTRAINT chk_tasks_status
+      CHECK (
+        status IN (
+          'PLANNED',
+          'RUNNING',
+          'PAUSED',
+          'WAITING_FOR_TOOL',
+          'WAITING_FOR_USER',
+          'REPAIRING',
+          'VERIFYING',
+          'COMPLETED',
+          'FAILED'
+        )
+      );
 
     END
     $$;
@@ -1609,6 +1648,30 @@ await pool.query(`
       )
     ON CONFLICT (setting_key)
     DO NOTHING;
+  `);
+
+  // ============================================================
+  // LONG-RUNNING TASK ENGINE INDEXES
+  // ============================================================
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_tasks_worker_queue
+      ON tasks(status, priority DESC, created_at ASC);
+
+    CREATE INDEX IF NOT EXISTS idx_tasks_next_run
+      ON tasks(status, next_run_at);
+
+    CREATE INDEX IF NOT EXISTS idx_tasks_user_status
+      ON tasks(user_id, status, updated_at DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_tasks_worker_lock
+      ON tasks(worker_id, locked_at);
+
+    CREATE INDEX IF NOT EXISTS idx_task_runs_task
+      ON task_runs(task_id, run_number DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_agent_runs_task
+      ON agent_runs(task_id, started_at DESC);
   `);
 
   console.log("System settings checked.");
