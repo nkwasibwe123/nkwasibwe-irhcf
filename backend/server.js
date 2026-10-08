@@ -5884,8 +5884,12 @@ app.post(
       const deleted = await client.query(
         `DELETE FROM messages
          WHERE conversation_id = $1
-           AND (created_at, id) >= ($2, $3)`,
-        [conversation.id, target.created_at, target.id]
+           AND (created_at, id) >= (
+             SELECT created_at, id
+             FROM messages
+             WHERE id = $2 AND conversation_id = $1
+           )`,
+        [conversation.id, target.id]
       );
 
       await client.query(
