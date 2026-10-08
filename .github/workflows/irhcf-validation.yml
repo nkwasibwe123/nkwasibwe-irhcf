@@ -36,7 +36,7 @@ jobs:
             echo "Render health check attempt ${attempt}/18"
             if curl --silent --show-error --fail --max-time 15 "$health_url" --output /tmp/irhcf-health.json; then
               cat /tmp/irhcf-health.json
-              if node -e 'const h = JSON.parse(require("fs").readFileSync("/tmp/irhcf-health.json", "utf8")); if (!h.success || !h.mediaProviders || typeof h.mediaProviders.videoGeneration !== "boolean") process.exit(1);'; then
+              if node -e 'const h = JSON.parse(require("fs").readFileSync("/tmp/irhcf-health.json", "utf8")); if (!h.success || !h.mediaProviders || typeof h.mediaProviders.videoGeneration !== "boolean") process.exit(1); for (const [name, ready] of Object.entries(h.mediaProviders)) if (!ready) console.log("::warning::Media provider " + name + " is not configured.");'; then
                 echo "Render backend health endpoint returned success."
                 exit 0
               fi
