@@ -29943,6 +29943,14 @@ app.get(
           health.status !==
           "unhealthy",
 
+        mediaProviders: {
+          imageGeneration: Boolean(openai),
+          speechGeneration: Boolean(openai),
+          audioTranscription: Boolean(openai),
+          videoGeneration: Boolean(OPENAI_API_KEY),
+          musicGeneration: Boolean(ELEVENLABS_API_KEY)
+        },
+
         system: {
 
           name:
