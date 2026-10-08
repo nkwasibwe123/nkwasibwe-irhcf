@@ -86,6 +86,9 @@ const API_ENDPOINTS = Object.freeze({
   imageGeneration:
     "/api/media/image",
 
+  speechGeneration:
+    "/api/media/speech",
+
   capabilityExpansionPlan:
     "/api/capabilities/expansion-plan"
 
@@ -7052,6 +7055,55 @@ async function generateImageFromPrompt(prompt) {
   }
 }
 
+async function generateSpeechFromText(text, voice = "alloy") {
+  const cleanText = String(text || "").trim().slice(0, 4000);
+  if (!cleanText) return;
+
+  if (!authToken) {
+    setDashboardStatus("Banza winjire muri konti kugira ngo ukore amajwi.");
+    showAuthenticationDialog();
+    return;
+  }
+
+  setDashboardStatus("IRHCF iri gukora amajwi avugwa (voice-over)...");
+  try {
+    const result = await apiRequest(API_ENDPOINTS.speechGeneration, {
+      method: "POST",
+      body: JSON.stringify({ text: cleanText, voice })
+    });
+    const source = String(result?.audio || "");
+    if (!result?.success || !source.startsWith("data:audio/mpeg;base64,")) {
+      throw new Error("Serivisi ntiyagaruye audio ikoreshwa.");
+    }
+
+    const row = addMessage("Voice-over yakozwe neza (audio MP3).", "ai");
+    const wrapper = row?.querySelector(".message-content-wrapper");
+    if (!wrapper) throw new Error("Ntibyashobotse kwerekana audio muri chat.");
+
+    const player = document.createElement("audio");
+    player.controls = true;
+    player.preload = "metadata";
+    player.src = source;
+    player.style.display = "block";
+    player.style.width = "min(100%, 420px)";
+    player.style.marginTop = "10px";
+    wrapper.appendChild(player);
+
+    const download = document.createElement("a");
+    download.href = source;
+    download.download = "nkwasibwe-irhcf-voiceover.mp3";
+    download.textContent = "Download MP3";
+    download.style.display = "inline-block";
+    download.style.marginTop = "8px";
+    wrapper.appendChild(download);
+
+    setDashboardStatus("Voice-over yakozwe. Iyi ni imvugo (speech), si indirimbo cyangwa music generation.");
+  } catch (error) {
+    console.error("[IRHCF SPEECH]", error);
+    setDashboardStatus("Amajwi ntiyakozwe: " + String(error?.message || "serivisi ntiboneka").slice(0, 180));
+  }
+}
+
 async function requestCapabilityExpansionPlan(requestedCapability, reason) {
   const capability = String(requestedCapability || "").trim().slice(0, 200);
   const details = String(reason || "").trim().slice(0, 2000);
@@ -7155,6 +7207,17 @@ function dashboardAction(action) {
     if (imagePrompt && imagePrompt.trim()) {
       setDashboardOpen(false);
       void generateImageFromPrompt(imagePrompt);
+    }
+    return;
+  }
+
+  if (action === "speech-create") {
+    const speechText = window.prompt(
+      "Andika amagambo ushaka ko IRHCF ivuga mu majwi (ntabwo ari indirimbo):"
+    );
+    if (speechText && speechText.trim()) {
+      setDashboardOpen(false);
+      void generateSpeechFromText(speechText);
     }
     return;
   }
