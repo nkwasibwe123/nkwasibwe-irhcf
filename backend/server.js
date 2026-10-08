@@ -3694,6 +3694,35 @@ app.post("/api/media/video", authenticateToken, async (req, res) => {
     form.append("seconds", String(seconds));
     form.append("size", size);
 
+    const referenceImageBase64 = String(req.body?.referenceImageBase64 || "");
+    if (referenceImageBase64) {
+      const mimeType = String(req.body?.referenceImageMimeType || "").toLowerCase();
+      const allowedImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
+      if (!allowedImageTypes.has(mimeType) ||
+          referenceImageBase64.length > 8_500_000 ||
+          !/^[A-Za-z0-9+/]+={0,2}$/.test(referenceImageBase64)) {
+        return res.status(400).json({
+          success: false,
+          error: "Reference image must be a PNG, JPEG or WEBP file no larger than 6 MB.",
+          code: "INVALID_VIDEO_REFERENCE_IMAGE"
+        });
+      }
+      const imageBuffer = Buffer.from(referenceImageBase64, "base64");
+      if (!imageBuffer.length || imageBuffer.length > 6 * 1024 * 1024) {
+        return res.status(413).json({
+          success: false,
+          error: "Reference image exceeds the 6 MB limit.",
+          code: "VIDEO_REFERENCE_IMAGE_TOO_LARGE"
+        });
+      }
+      const extension = mimeType === "image/jpeg" ? "jpg" : mimeType.split("/")[1];
+      form.append(
+        "input_reference",
+        new Blob([imageBuffer], { type: mimeType }),
+        "reference." + extension
+      );
+    }
+
     const upstream = await fetch("https://api.openai.com/v1/videos", {
       method: "POST",
       headers: { Authorization: "Bearer " + OPENAI_API_KEY },
