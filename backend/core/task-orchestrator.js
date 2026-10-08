@@ -201,6 +201,65 @@ function classifyTask(task) {
 
   if (
     containsAny(text, [
+      "account",
+      "my account",
+      "login",
+      "post for me",
+      "send for me",
+      "upload for me",
+      "publish for me",
+      "mu mwanya wanjye",
+      "konti yanjye"
+    ])
+  ) {
+    return {
+      type: "account_automation",
+      confidence: 0.94,
+      reason:
+        "The request appears to require an authorized action on an external user account."
+    };
+  }
+
+  if (
+    containsAny(text, [
+      "meeting",
+      "online meeting",
+      "google meet",
+      "join the meeting",
+      "attend the meeting",
+      "inama online",
+      "jya mu nama"
+    ])
+  ) {
+    return {
+      type: "meeting",
+      confidence: 0.95,
+      reason:
+        "The request appears to require meeting participation using voice and external communication."
+    };
+  }
+
+  if (
+    containsAny(text, [
+      "start this project",
+      "build this project",
+      "make this project",
+      "turn this idea into",
+      "project",
+      "igitekerezo",
+      "tangira gukora"
+    ])
+  ) {
+    return {
+      type: "project_autopilot",
+      confidence: 0.88,
+      reason:
+        "The request appears to require an end-to-end project lifecycle."
+    };
+  }
+
+  if (
+    containsAny(text, [
       "schedule",
       "every day",
       "every week",
@@ -327,6 +386,29 @@ function detectCapabilities(task, classification) {
       add("task_execution");
       break;
 
+    case "account_automation":
+      add("account_control");
+      add("browser_automation");
+      add("task_execution");
+      add("verification");
+      break;
+
+    case "meeting":
+      add("meeting_control");
+      add("voice_processing");
+      add("task_execution");
+      add("verification");
+      break;
+
+    case "project_autopilot":
+      add("project_autopilot");
+      add("task_decomposition");
+      add("planning");
+      add("verification");
+      add("web_research");
+      add("task_execution");
+      break;
+
     case "business":
       add("market_analysis");
       add("planning");
@@ -404,6 +486,31 @@ function detectCapabilities(task, classification) {
     add("voice_processing");
   }
 
+  if (
+    containsAny(text, [
+      "youtube",
+      "youtube channel",
+      "upload to youtube",
+      "publish on youtube"
+    ])
+  ) {
+    add("youtube_publishing");
+  }
+
+  if (
+    containsAny(text, [
+      "account",
+      "konti",
+      "login",
+      "sign in",
+      "post for me",
+      "send for me"
+    ])
+  ) {
+    add("account_control");
+    add("browser_automation");
+  }
+
   return capabilities;
 }
 
@@ -465,6 +572,31 @@ function buildPlan(task, classification, capabilities) {
       name: "Create",
       action:
         "Generate or transform the requested media.",
+      status: "planned"
+    });
+  }
+
+  if (
+    capabilities.includes("account_control") ||
+    capabilities.includes("browser_automation")
+  ) {
+    steps.push({
+      step: steps.length + 1,
+      name: "Authorized Action",
+      action:
+        "Use the connected account only within granted scopes and explicit authorization boundaries.",
+      status: "planned"
+    });
+  }
+
+  if (
+    capabilities.includes("meeting_control")
+  ) {
+    steps.push({
+      step: steps.length + 1,
+      name: "Meeting",
+      action:
+        "Join or create the authorized meeting, listen, respond, and verify meeting actions.",
       status: "planned"
     });
   }
@@ -549,6 +681,19 @@ function buildVerification(classification, capabilities) {
     capabilities.includes("deployment")
   ) {
     checks.push("Deployment status is verified before claiming success");
+  }
+
+  if (capabilities.includes("account_control")) {
+    checks.push("Requested account scope and authorization were valid");
+    checks.push("External action result was independently verified");
+  }
+
+  if (capabilities.includes("meeting_control")) {
+    checks.push("Meeting identity, participation, and response outcome were verified");
+  }
+
+  if (capabilities.includes("youtube_publishing")) {
+    checks.push("Published media exists and returned platform metadata is verified");
   }
 
   if (
