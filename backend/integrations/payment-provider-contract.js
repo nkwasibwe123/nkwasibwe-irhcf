@@ -35,4 +35,53 @@ async function payout(provider, request) {
   return provider.payout(request);
 }
 
-module.exports = { collect, status, payout };
+function createMomoPaymentProvider({
+  credentials,
+  requestToPay,
+  getRequestToPayStatus,
+  transfer,
+  getTransferStatus
+} = {}) {
+  if (!credentials) {
+    throw new Error("Payment provider credentials are required.");
+  }
+
+  return {
+    name: "mtn_momo",
+
+    async collect(request) {
+      return requestToPay({
+        ...credentials,
+        ...request
+      });
+    },
+
+    async status(request) {
+      return getRequestToPayStatus({
+        ...credentials,
+        ...request
+      });
+    },
+
+    async payout(request) {
+      return transfer({
+        ...credentials,
+        ...request
+      });
+    },
+
+    async payoutStatus(request) {
+      return getTransferStatus({
+        ...credentials,
+        ...request
+      });
+    }
+  };
+}
+
+module.exports = {
+  collect,
+  status,
+  payout,
+  createMomoPaymentProvider
+};
