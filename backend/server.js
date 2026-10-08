@@ -40,6 +40,14 @@ const adapterRegistry = new AdapterRegistry();
 const { CapabilityRegistry } = require("./capabilities/registry");
 const capabilityRegistry = new CapabilityRegistry(pool);
 
+const {
+  buildAuthorizationUrl,
+  exchangeAuthorizationCode,
+  createState
+} = require("./integrations/google-oauth");
+
+const { encryptJson } = require("./core/secure-credentials");
+
 // ============================================================
 // APPLICATION IDENTITY
 // ============================================================
@@ -3325,6 +3333,193 @@ return res.json({
       
 
 // ============================================================
+// ============================================================
+// CONNECTED ACCOUNT AUTHORIZATION
+// ============================================================
+
+const GOOGLE_INTEGRATION_SCOPES = Object.freeze({
+  youtube: ["https://www.googleapis.com/auth/youtube.upload"],
+  meet: ["https://www.googleapis.com/auth/meetings.space.created"]
+});
+
+app.get("/api/integrations/google/authorize", authenticateToken, async (req, res) => {
+  try {
+    const platform = String(req.query?.platform || "youtube").trim().toLowerCase();
+    const scopes = GOOGLE_INTEGRATION_SCOPES[platform];
+
+    if (!scopes) {
+      return res.status(400).json({
+        success: false,
+        error: "Unsupported Google integration platform.",
+        code: "INTEGRATION_PLATFORM_UNSUPPORTED"
+      });
+    }
+
+    const redirectUri = process.env.GOOGLE_OAUTH_REDIRECT_URI || "";
+    if (!redirectUri) {
+      return res.status(503).json({
+        success: false,
+        error: "GOOGLE_OAUTH_REDIRECT_URI is not configured.",
+        code: "GOOGLE_OAUTH_NOT_CONFIGURED"
+      });
+    }
+
+    const state = createState();
+    const stateHash = crypto.createHash("sha256").update(state).digest("hex");
+
+    await pool.query(
+      `INSERT INTO oauth_states
+        (user_id, platform, state_hash, scopes, redirect_uri, expires_at)
+       VALUES
+        ($1, $2, $3, $4::jsonb, $5, CURRENT_TIMESTAMP + INTERVAL '10 minutes')`,
+      [
+        req.user.id,
+        platform,
+        stateHash,
+        JSON.stringify(scopes),
+        redirectUri
+      ]
+    );
+
+    const authorization = buildAuthorizationUrl({
+      scopes,
+      state,
+      redirectUri
+    });
+
+    return res.json({
+      success: true,
+      platform,
+      authorizationUrl: authorization.url,
+      expiresInSeconds: 600
+    });
+  } catch (error) {
+    console.error("[OAUTH] Authorization URL failed:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Could not start account authorization.",
+      code: "OAUTH_AUTHORIZE_FAILED"
+    });
+  }
+});
+
+app.get("/api/integrations/google/callback", async (req, res) => {
+  try {
+    const code = String(req.query?.code || "").trim();
+    const state = String(req.query?.state || "").trim();
+
+    if (!code || !state) {
+      return res.status(400).send("Missing OAuth code or state.");
+    }
+
+    const stateHash = crypto.createHash("sha256").update(state).digest("hex");
+
+    const stateResult = await pool.query(
+      `SELECT *
+       FROM oauth_states
+       WHERE state_hash = $1
+         AND consumed_at IS NULL
+         AND expires_at > CURRENT_TIMESTAMP
+       LIMIT 1`,
+      [stateHash]
+    );
+
+    if (!stateResult.rows.length) {
+      return res.status(400).send("OAuth state is invalid or expired.");
+    }
+
+    const oauthState = stateResult.rows[0];
+    const tokens = await exchangeAuthorizationCode({
+      code,
+      redirectUri: oauthState.redirect_uri
+    });
+
+    await pool.query(
+      `UPDATE oauth_states
+       SET consumed_at = CURRENT_TIMESTAMP
+       WHERE id = $1`,
+      [oauthState.id]
+    );
+
+    await pool.query(
+      `INSERT INTO connected_accounts
+        (user_id, platform, provider_type, scopes, status, encrypted_credentials, metadata)
+       VALUES
+        ($1, $2, 'oauth', $3::jsonb, 'active', $4, $5::jsonb)`,
+      [
+        oauthState.user_id,
+        oauthState.platform,
+        JSON.stringify(oauthState.scopes || []),
+        encryptJson(tokens),
+        JSON.stringify({ connectedAt: new Date().toISOString() })
+      ]
+    );
+
+    return res.send(
+      "Account connected successfully. You can close this window and return to Nkwasibwe IRHCF."
+    );
+  } catch (error) {
+    console.error("[OAUTH] Callback failed:", error);
+    return res.status(500).send(
+      "Account authorization failed. Please return to Nkwasibwe IRHCF and try again."
+    );
+  }
+});
+
+app.get("/api/integrations/accounts", authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT
+         id, platform, provider_type, external_account_id,
+         display_name, scopes, status, metadata, created_at, updated_at
+       FROM connected_accounts
+       WHERE user_id = $1
+       ORDER BY updated_at DESC`,
+      [req.user.id]
+    );
+
+    return res.json({ success: true, accounts: result.rows });
+  } catch (error) {
+    console.error("[INTEGRATIONS] Account list failed:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Could not list connected accounts.",
+      code: "INTEGRATION_LIST_FAILED"
+    });
+  }
+});
+
+app.delete("/api/integrations/accounts/:id", authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `UPDATE connected_accounts
+       SET status = 'revoked',
+           encrypted_credentials = NULL,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1 AND user_id = $2
+       RETURNING id, platform, status, updated_at`,
+      [Number(req.params.id), req.user.id]
+    );
+
+    if (!result.rows.length) {
+      return res.status(404).json({
+        success: false,
+        error: "Connected account not found.",
+        code: "INTEGRATION_ACCOUNT_NOT_FOUND"
+      });
+    }
+
+    return res.json({ success: true, account: result.rows[0] });
+  } catch (error) {
+    console.error("[INTEGRATIONS] Account revoke failed:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Could not revoke connected account.",
+      code: "INTEGRATION_REVOKE_FAILED"
+    });
+  }
+});
+
 // CURRENT USER
 // ============================================================
 
