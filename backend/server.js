@@ -3646,6 +3646,253 @@ app.post("/api/media/image", authenticateToken, async (req, res) => {
 });
 
 // ============================================================
+// AUTHENTICATED HD VIDEO GENERATION (SORA)
+// Jobs are persisted per user; status and content endpoints enforce
+// ownership before consulting or downloading provider assets.
+// ============================================================
+
+app.post("/api/media/video", authenticateToken, async (req, res) => {
+  try {
+    if (!OPENAI_API_KEY) {
+      return res.status(503).json({
+        success: false,
+        error: "Video generation is unavailable because the OpenAI provider is not configured.",
+        code: "MEDIA_PROVIDER_UNAVAILABLE"
+      });
+    }
+
+    const prompt = String(req.body?.prompt || "").trim().slice(0, 4000);
+    const allowedSizes = new Set(["1280x720", "720x1280", "1792x1024", "1024x1792"]);
+    const size = allowedSizes.has(req.body?.size) ? req.body.size : "1280x720";
+    const seconds = [4, 8, 12].includes(Number(req.body?.seconds))
+      ? Number(req.body.seconds)
+      : 8;
+
+    if (!prompt) {
+      return res.status(400).json({
+        success: false,
+        error: "A video prompt is required.",
+        code: "VIDEO_PROMPT_REQUIRED"
+      });
+    }
+
+    const form = new FormData();
+    form.append("model", "sora-2");
+    form.append("prompt", prompt);
+    form.append("seconds", String(seconds));
+    form.append("size", size);
+
+    const upstream = await fetch("https://api.openai.com/v1/videos", {
+      method: "POST",
+      headers: { Authorization: "Bearer " + OPENAI_API_KEY },
+      body: form,
+      signal: AbortSignal.timeout(30000)
+    });
+    const payload = await upstream.json().catch(() => ({}));
+
+    if (!upstream.ok || !payload?.id) {
+      const upstreamStatus = Number(upstream.status);
+      return res.status(upstreamStatus >= 400 && upstreamStatus < 600 ? upstreamStatus : 502).json({
+        success: false,
+        error: String(payload?.error?.message || "The video provider could not start this job.").slice(0, 400),
+        code: payload?.error?.code || "VIDEO_PROVIDER_FAILED"
+      });
+    }
+
+    await pool.query(
+      `INSERT INTO media_jobs
+         (user_id, provider_id, media_type, status, progress, prompt, metadata)
+       VALUES ($1, $2, 'video', $3, $4, $5, $6::jsonb)
+       ON CONFLICT (provider_id) DO NOTHING`,
+      [
+        req.user.id,
+        payload.id,
+        String(payload.status || "queued"),
+        Math.max(0, Math.min(100, Number(payload.progress) || 0)),
+        prompt,
+        JSON.stringify({ model: payload.model || "sora-2", size, seconds })
+      ]
+    );
+
+    return res.status(202).json({
+      success: true,
+      job: {
+        id: payload.id,
+        status: payload.status || "queued",
+        progress: Math.max(0, Math.min(100, Number(payload.progress) || 0)),
+        model: payload.model || "sora-2",
+        size,
+        seconds
+      }
+    });
+  } catch (error) {
+    console.error("[MEDIA_VIDEO] Creation failed:", {
+      code: error?.code || null,
+      status: error?.status || null,
+      message: String(error?.message || "Video generation failed").slice(0, 400)
+    });
+    const status = Number(error?.status);
+    return res.status(status >= 400 && status < 600 ? status : 502).json({
+      success: false,
+      error: "Video generation failed. Check provider availability, model access and account credits.",
+      code: error?.code || "VIDEO_GENERATION_FAILED"
+    });
+  }
+});
+
+app.get("/api/media/video/:videoId", authenticateToken, async (req, res) => {
+  try {
+    if (!OPENAI_API_KEY) {
+      return res.status(503).json({
+        success: false,
+        error: "Video provider is not configured.",
+        code: "MEDIA_PROVIDER_UNAVAILABLE"
+      });
+    }
+
+    const videoId = String(req.params.videoId || "");
+    if (!/^video_[A-Za-z0-9_-]{3,200}$/.test(videoId)) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid video job ID.",
+        code: "INVALID_VIDEO_ID"
+      });
+    }
+
+    const owned = await pool.query(
+      `SELECT provider_id, status, progress, metadata
+       FROM media_jobs
+       WHERE user_id = $1 AND provider_id = $2 AND media_type = 'video'`,
+      [req.user.id, videoId]
+    );
+    if (!owned.rows[0]) {
+      return res.status(404).json({
+        success: false,
+        error: "Video job not found.",
+        code: "VIDEO_JOB_NOT_FOUND"
+      });
+    }
+
+    const upstream = await fetch(
+      "https://api.openai.com/v1/videos/" + encodeURIComponent(videoId),
+      {
+        headers: { Authorization: "Bearer " + OPENAI_API_KEY },
+        signal: AbortSignal.timeout(20000)
+      }
+    );
+    const payload = await upstream.json().catch(() => ({}));
+    if (!upstream.ok) {
+      return res.status(502).json({
+        success: false,
+        error: String(payload?.error?.message || "Could not retrieve video job status.").slice(0, 400),
+        code: payload?.error?.code || "VIDEO_STATUS_FAILED"
+      });
+    }
+
+    const status = String(payload.status || owned.rows[0].status || "queued");
+    const progress = Math.max(0, Math.min(100, Number(payload.progress) || 0));
+    await pool.query(
+      `UPDATE media_jobs
+       SET status = $1, progress = $2, updated_at = CURRENT_TIMESTAMP
+       WHERE user_id = $3 AND provider_id = $4`,
+      [status, progress, req.user.id, videoId]
+    );
+
+    return res.json({
+      success: true,
+      job: {
+        id: videoId,
+        status,
+        progress,
+        model: payload.model || owned.rows[0].metadata?.model || "sora-2",
+        size: payload.size || owned.rows[0].metadata?.size || "1280x720",
+        seconds: payload.seconds || owned.rows[0].metadata?.seconds || 8,
+        error: payload.error?.message || null
+      }
+    });
+  } catch (error) {
+    console.error("[MEDIA_VIDEO] Status lookup failed:", error);
+    return res.status(502).json({
+      success: false,
+      error: "Could not retrieve video job status.",
+      code: "VIDEO_STATUS_FAILED"
+    });
+  }
+});
+
+app.get("/api/media/video/:videoId/content", authenticateToken, async (req, res) => {
+  try {
+    if (!OPENAI_API_KEY) {
+      return res.status(503).json({
+        success: false,
+        error: "Video provider is not configured.",
+        code: "MEDIA_PROVIDER_UNAVAILABLE"
+      });
+    }
+
+    const videoId = String(req.params.videoId || "");
+    if (!/^video_[A-Za-z0-9_-]{3,200}$/.test(videoId)) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid video job ID.",
+        code: "INVALID_VIDEO_ID"
+      });
+    }
+
+    const owned = await pool.query(
+      `SELECT status FROM media_jobs
+       WHERE user_id = $1 AND provider_id = $2 AND media_type = 'video'`,
+      [req.user.id, videoId]
+    );
+    if (!owned.rows[0]) {
+      return res.status(404).json({
+        success: false,
+        error: "Video job not found.",
+        code: "VIDEO_JOB_NOT_FOUND"
+      });
+    }
+    if (owned.rows[0].status !== "completed") {
+      return res.status(409).json({
+        success: false,
+        error: "Video is not ready for download.",
+        code: "VIDEO_NOT_READY"
+      });
+    }
+
+    const upstream = await fetch(
+      "https://api.openai.com/v1/videos/" + encodeURIComponent(videoId) + "/content",
+      {
+        headers: { Authorization: "Bearer " + OPENAI_API_KEY },
+        signal: AbortSignal.timeout(60000)
+      }
+    );
+    if (!upstream.ok || !upstream.body) {
+      const payload = await upstream.json().catch(() => ({}));
+      return res.status(Number(upstream.status) >= 400 ? upstream.status : 502).json({
+        success: false,
+        error: String(payload?.error?.message || "Video content is not available yet.").slice(0, 400),
+        code: payload?.error?.code || "VIDEO_CONTENT_FAILED"
+      });
+    }
+
+    res.status(200);
+    res.setHeader("Content-Type", upstream.headers.get("content-type") || "video/mp4");
+    res.setHeader("Content-Disposition", 'attachment; filename="nkwasibwe-irhcf-video.mp4"');
+    res.setHeader("Cache-Control", "private, no-store");
+    require("stream").Readable.fromWeb(upstream.body).pipe(res);
+  } catch (error) {
+    console.error("[MEDIA_VIDEO] Content download failed:", error);
+    if (!res.headersSent) {
+      res.status(502).json({
+        success: false,
+        error: "Could not download generated video.",
+        code: "VIDEO_CONTENT_FAILED"
+      });
+    }
+  }
+});
+
+// ============================================================
 // AUTHENTICATED SPEECH / VOICE-OVER GENERATION
 // This produces spoken audio, not music or singing.
 // ============================================================
