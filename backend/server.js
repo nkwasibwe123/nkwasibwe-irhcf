@@ -9343,9 +9343,9 @@ app.get(
              FROM user_memory
              WHERE user_id = $1
              AND (
-               content ILIKE $2
-               OR title ILIKE $2
-               OR source_label ILIKE $2
+               memory_key ILIKE $2
+               OR memory_value ILIKE $2
+               OR COALESCE(metadata::text, '') ILIKE $2
              )
              ORDER BY
                importance DESC,
@@ -9374,8 +9374,7 @@ app.get(
              WHERE user_id = $1
              AND (
                content ILIKE $2
-               OR title ILIKE $2
-               OR source_label ILIKE $2
+               OR COALESCE(metadata::text, '') ILIKE $2
              )
              ORDER BY
                importance DESC,
@@ -15671,238 +15670,13 @@ async function deleteLongTermMemory(
 // LIST USER MEMORY
 // ============================================================
 
-app.get(
-  "/api/memory",
-  authenticateToken,
-  async (req, res) => {
-
-    try {
-
-      const limit =
-        Math.min(
-
-          Math.max(
-
-            Number(
-              req.query?.limit
-            ) || 20,
-
-            1
-
-          ),
-
-          MEMORY_CONFIG
-            .MAX_MEMORY_CONTEXT_ITEMS
-
-        );
-
-
-      const memories =
-        await fetchUserMemories(
-
-          req.user.id,
-
-          limit
-
-        );
-
-
-      return res.json({
-
-        success:
-          true,
-
-        memories
-
-      });
-
-    } catch (error) {
-
-      MEMORY_RUNTIME.failures++;
-
-      MEMORY_RUNTIME.lastFailureAt =
-        new Date();
-
-
-      console.error(
-        "List memory error:",
-        error
-      );
-
-
-      return res.status(500).json({
-
-        success:
-          false,
-
-        error:
-          "Could not load user memory",
-
-        code:
-          "MEMORY_LIST_FAILED"
-
-      });
-
-    }
-
-  }
-);
-
-
 // ============================================================
 // CREATE USER MEMORY API
 // ============================================================
 
-app.post(
-  "/api/memory",
-  authenticateToken,
-  async (req, res) => {
-
-    try {
-
-      const result =
-        await createUserMemory(
-
-          req.user.id,
-
-          req.body?.memory ??
-          req.body?.content,
-
-          req.body?.importance
-
-        );
-
-
-      return res.status(
-        result.created
-          ? 201
-          : 200
-      ).json({
-
-        success:
-          true,
-
-        ...result
-
-      });
-
-    } catch (error) {
-
-      MEMORY_RUNTIME.failures++;
-
-      MEMORY_RUNTIME.lastFailureAt =
-        new Date();
-
-
-      console.error(
-        "Create memory error:",
-        error
-      );
-
-
-      return res.status(
-        error?.code ===
-          "MEMORY_LIMIT_REACHED"
-          ? 409
-          : 400
-      ).json({
-
-        success:
-          false,
-
-        error:
-          error?.message ||
-          "Could not create memory",
-
-        code:
-          error?.code ||
-          "MEMORY_CREATE_FAILED"
-
-      });
-
-    }
-
-  }
-);
-
-
 // ============================================================
 // DELETE USER MEMORY API
 // ============================================================
-
-app.delete(
-  "/api/memory/:memoryId",
-  authenticateToken,
-  async (req, res) => {
-
-    try {
-
-      const deleted =
-        await deleteUserMemory(
-
-          req.user.id,
-
-          req.params.memoryId
-
-        );
-
-
-      if (!deleted) {
-
-        return res.status(404).json({
-
-          success:
-            false,
-
-          error:
-            "Memory not found",
-
-          code:
-            "MEMORY_NOT_FOUND"
-
-        });
-
-      }
-
-
-      return res.json({
-
-        success:
-          true,
-
-        message:
-          "Memory deleted"
-
-      });
-
-    } catch (error) {
-
-      MEMORY_RUNTIME.failures++;
-
-      console.error(
-        "Delete memory error:",
-        error
-      );
-
-
-      return res.status(500).json({
-
-        success:
-          false,
-
-        error:
-          "Could not delete memory",
-
-        code:
-          "MEMORY_DELETE_FAILED"
-
-      });
-
-    }
-
-  }
-);
-
 
 // ============================================================
 // LIST LONG-TERM MEMORY API
