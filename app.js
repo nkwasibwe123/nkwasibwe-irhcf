@@ -5792,9 +5792,32 @@ async function transcribeAudioFile(file) {
   }
 }
 
+async function prepareVideoFromReference(file) {
+  const prompt = window.prompt(
+    "Sobanura uko ushaka ko iyi foto ihinduka video ya HD: movement, camera, lighting, style n'ibindi."
+  );
+  if (prompt && prompt.trim()) {
+    void generateVideoFromPrompt(prompt, file);
+  }
+}
+
 function handleFileSelection(
   event
 ) {
+
+  if (fileInput?.dataset.videoReference === "true") {
+    fileInput.dataset.videoReference = "false";
+    const selectedImage = Array.from(event.target.files || []).find(file =>
+      ["image/jpeg", "image/png", "image/webp"].includes(String(file.type || "").toLowerCase())
+    );
+    event.target.value = "";
+    if (!selectedImage) {
+      showToast("Hitamo ifoto ya JPEG, PNG cyangwa WEBP.", "warning");
+      return;
+    }
+    void prepareVideoFromReference(selectedImage);
+    return;
+  }
 
   if (fileInput?.dataset.transcribeAudio === "true") {
     fileInput.dataset.transcribeAudio = "false";
@@ -7202,7 +7225,7 @@ async function generateMusicFromPrompt(prompt) {
   }
 }
 
-async function generateVideoFromPrompt(prompt) {
+async function generateVideoFromPrompt(prompt, referenceImageFile = null) {
   const cleanPrompt = String(prompt || "").trim().slice(0, 4000);
   if (!cleanPrompt) return;
 
@@ -7220,9 +7243,35 @@ async function generateVideoFromPrompt(prompt) {
   setStatus("IRHCF yatangiye gukora video ya HD. Ntufunge iki kiganiro niba ushaka kureba progress.", "loading");
   setDashboardStatus("Video job iri gutangizwa...");
   try {
+    const videoRequest = {
+      prompt: cleanPrompt,
+      seconds: 8,
+      size: "1280x720"
+    };
+
+    if (referenceImageFile) {
+      if (referenceImageFile.size > 6 * 1024 * 1024) {
+        throw new Error("Reference image irenze 6 MB.");
+      }
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(new Error("Ntibyashobotse gusoma reference image."));
+        reader.readAsDataURL(referenceImageFile);
+      });
+      const mimeType = String(referenceImageFile.type || "").toLowerCase();
+      if (!["image/jpeg", "image/png", "image/webp"].includes(mimeType)) {
+        throw new Error("Reference image igomba kuba JPEG, PNG cyangwa WEBP.");
+      }
+      videoRequest.referenceImageMimeType = mimeType;
+      videoRequest.referenceImageBase64 = dataUrl.includes(",")
+        ? dataUrl.slice(dataUrl.indexOf(",") + 1)
+        : "";
+    }
+
     const created = await apiRequest(API_ENDPOINTS.videoGeneration, {
       method: "POST",
-      body: JSON.stringify({ prompt: cleanPrompt, seconds: 8, size: "1280x720" })
+      body: JSON.stringify(videoRequest)
     });
     const videoId = String(created?.job?.id || "");
     if (!created?.success || !videoId) {
@@ -7427,6 +7476,7 @@ function dashboardAction(action) {
 
     setDashboardOpen(false);
     fileInput.dataset.transcribeAudio = "false";
+    fileInput.dataset.videoReference = "false";
     fileInput.click();
     return;
 
@@ -7472,6 +7522,16 @@ function dashboardAction(action) {
       setDashboardOpen(false);
       void generateMusicFromPrompt(musicPrompt);
     }
+    return;
+  }
+
+  if (action === "video-from-photo") {
+    if (!fileInput) return;
+    fileInput.dataset.transcribeAudio = "false";
+    fileInput.dataset.videoReference = "true";
+    fileInput.setAttribute("accept", "image/jpeg,image/png,image/webp");
+    setDashboardOpen(false);
+    fileInput.click();
     return;
   }
 
@@ -7625,6 +7685,7 @@ if (
     () => {
 
       fileInput.dataset.transcribeAudio = "false";
+      fileInput.dataset.videoReference = "false";
       fileInput.click();
 
     }
