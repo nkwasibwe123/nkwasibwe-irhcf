@@ -16,6 +16,7 @@ const OpenAI = require("openai");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
+const { toFile } = require("openai/uploads");
 
 // ============================================================
 // INTERNAL MODULES
@@ -3983,6 +3984,102 @@ app.post("/api/media/music", authenticateToken, async (req, res) => {
         code: error?.code || "MUSIC_GENERATION_FAILED"
       });
     }
+  }
+});
+
+// ============================================================
+// AUTHENTICATED AUDIO TRANSCRIPTION
+// Accepts bounded base64 audio uploads and returns editable text.
+// ============================================================
+
+app.post("/api/media/transcribe", authenticateToken, async (req, res) => {
+  try {
+    if (!openai) {
+      return res.status(503).json({
+        success: false,
+        error: "Audio transcription is unavailable because the OpenAI provider is not configured.",
+        code: "MEDIA_PROVIDER_UNAVAILABLE"
+      });
+    }
+
+    const encoded = String(req.body?.audioBase64 || "");
+    const rawName = String(req.body?.fileName || "audio.webm").split(/[\\/]/).pop().slice(0, 120);
+    const extension = (rawName.split(".").pop() || "").toLowerCase();
+    const mimeByExtension = {
+      flac: "audio/flac",
+      mp3: "audio/mpeg",
+      mp4: "audio/mp4",
+      m4a: "audio/mp4",
+      mpeg: "audio/mpeg",
+      mpga: "audio/mpeg",
+      ogg: "audio/ogg",
+      wav: "audio/wav",
+      webm: "audio/webm"
+    };
+
+    if (!mimeByExtension[extension]) {
+      return res.status(400).json({
+        success: false,
+        error: "Unsupported audio file type. Use MP3, WAV, M4A, OGG, FLAC or WEBM.",
+        code: "UNSUPPORTED_AUDIO_TYPE"
+      });
+    }
+
+    if (!encoded || encoded.length > 8_500_000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)) {
+      return res.status(413).json({
+        success: false,
+        error: "Audio is missing or exceeds the 6 MB upload limit.",
+        code: "AUDIO_SIZE_LIMIT"
+      });
+    }
+
+    const audioBuffer = Buffer.from(encoded, "base64");
+    if (!audioBuffer.length || audioBuffer.length > 6 * 1024 * 1024) {
+      return res.status(413).json({
+        success: false,
+        error: "Audio exceeds the 6 MB upload limit.",
+        code: "AUDIO_SIZE_LIMIT"
+      });
+    }
+
+    req.setTimeout(90000);
+    res.setTimeout(90000);
+    const audioFile = await toFile(audioBuffer, rawName, {
+      type: mimeByExtension[extension]
+    });
+    const transcription = await openai.audio.transcriptions.create({
+      file: audioFile,
+      model: "gpt-4o-mini-transcribe"
+    });
+
+    const transcript = String(transcription?.text || "").trim();
+    if (!transcript) {
+      return res.status(502).json({
+        success: false,
+        error: "The transcription provider returned no text.",
+        code: "TRANSCRIPTION_EMPTY"
+      });
+    }
+
+    return res.json({
+      success: true,
+      text: transcript,
+      language: transcription?.language || null,
+      model: "gpt-4o-mini-transcribe",
+      fileName: rawName
+    });
+  } catch (error) {
+    console.error("[MEDIA_TRANSCRIBE] Failed:", {
+      code: error?.code || null,
+      status: error?.status || null,
+      message: String(error?.message || "Audio transcription failed").slice(0, 400)
+    });
+    const status = Number(error?.status);
+    return res.status(status >= 400 && status < 600 ? status : 502).json({
+      success: false,
+      error: "Audio transcription failed. Check provider availability, file format and account credits.",
+      code: error?.code || "AUDIO_TRANSCRIPTION_FAILED"
+    });
   }
 });
 
