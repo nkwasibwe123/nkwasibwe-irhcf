@@ -84,7 +84,10 @@ const API_ENDPOINTS = Object.freeze({
     "/api/action-center",
 
   imageGeneration:
-    "/api/media/image"
+    "/api/media/image",
+
+  capabilityExpansionPlan:
+    "/api/capabilities/expansion-plan"
 
 });
 
@@ -8442,6 +8445,43 @@ async function generateImageFromPrompt(prompt) {
   }
 }
 
+async function requestCapabilityExpansionPlan(requestedCapability, reason) {
+  const capability = String(requestedCapability || "").trim().slice(0, 200);
+  const details = String(reason || "").trim().slice(0, 2000);
+  if (!capability) return;
+
+  if (!authToken) {
+    setDashboardStatus("Banza winjire muri konti kugira ngo utegure kongera ubushobozi.");
+    showAuthenticationDialog();
+    return;
+  }
+
+  setDashboardStatus("IRHCF iri kugenzura inzira yizewe yo kongera ubushobozi...");
+  try {
+    const result = await apiRequest(API_ENDPOINTS.capabilityExpansionPlan, {
+      method: "POST",
+      body: JSON.stringify({ requestedCapability: capability, reason: details })
+    });
+    if (!result?.success || !result?.plan) {
+      throw new Error("Nta gahunda yemejwe yagaruwe na serivisi.");
+    }
+
+    const planText = [
+      "Gahunda yo kongera ubushobozi: " + capability,
+      "Imiterere: " + String(result.status || "plan_created"),
+      "Intambwe ikurikira: " + String(result.nextStep || "DISCOVER"),
+      "Production enabled: " + String(Boolean(result.productionEnabled)),
+      JSON.stringify(result.plan, null, 2),
+      String(result.message || "Nta code yakuruwe, yakoreshejwe cyangwa yemejwe mu production.")
+    ].join("\n\n");
+    addMessage(planText, "ai");
+    setDashboardStatus("Gahunda yakozwe; code ntirashyirwa muri production. Hakenewe discovery, sandbox, tests n'igenzura mbere yo kuyikoresha.");
+  } catch (error) {
+    console.error("[IRHCF CAPABILITY EXPANSION]", error);
+    setDashboardStatus("Gahunda ntiyakozwe: " + String(error?.message || "serivisi ntiboneka").slice(0, 180));
+  }
+}
+
 function dashboardAction(action) {
 
   const actions = {
@@ -8508,6 +8548,20 @@ function dashboardAction(action) {
     if (imagePrompt && imagePrompt.trim()) {
       setDashboardOpen(false);
       void generateImageFromPrompt(imagePrompt);
+    }
+    return;
+  }
+
+  if (action === "capabilities") {
+    const capability = window.prompt(
+      "Ni ubuhe bushobozi IRHCF ikeneye kongerwa?"
+    );
+    if (capability && capability.trim()) {
+      const reason = window.prompt(
+        "Sobanura icyo ubwo bushobozi buzakora n'ibyo bugomba kubahiriza (ushobora gusiga ubusa):"
+      ) || "";
+      setDashboardOpen(false);
+      void requestCapabilityExpansionPlan(capability, reason);
     }
     return;
   }
