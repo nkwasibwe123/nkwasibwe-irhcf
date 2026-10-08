@@ -110,8 +110,8 @@ test("capability expansion plan requires gated promotion", () => {
   assert.equal(plan.capability, "publish_videos");
   assert.equal(plan.risk, "high");
   assert.equal(plan.productionPromotion.allowed, false);
-  assert.ok(plan.stages.includes("SANDBOX"));
-  assert.ok(plan.stages.includes("SECURITY_REVIEW"));
+  assert.ok(plan.stages.some(stage => stage.stage === "SANDBOX"));
+  assert.ok(plan.stages.some(stage => stage.stage === "SECURITY_REVIEW"));
 });
 
 test("media contracts reject missing real providers instead of pretending success", async () => {
