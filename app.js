@@ -5474,7 +5474,10 @@ async function prepareMessageEdit(row, messageId, messageText) {
       encodeURIComponent(sessionId) + "/messages/" +
       encodeURIComponent(messageId) + "/prepare-edit";
 
-    const result = await apiRequest(endpoint, { method: "POST" });
+    const result = await apiRequest(endpoint, {
+      method: "POST",
+      body: JSON.stringify({})
+    });
     if (!result?.success) throw new Error("Ntibyashobotse gutegura guhindura ubutumwa.");
 
     await displayConversationHistory();
