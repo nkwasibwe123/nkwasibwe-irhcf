@@ -18260,6 +18260,60 @@ app.post(
       }
 
       // --------------------------------------------------------
+      // 5. LONG-RUNNING PROJECT HANDOFF
+      // --------------------------------------------------------
+      //
+      // Complex project requests become durable tasks instead of
+      // tying up a single HTTP request. The worker then executes,
+      // checkpoints, verifies, and retries according to policy.
+      //
+      if (
+        taskAnalysis?.classification?.type ===
+          "project_autopilot" ||
+        taskAnalysis?.classification?.type ===
+          "software_build"
+      ) {
+        const persistentTask =
+          await persistentTaskEngine.createTask({
+            userId: req.user.id,
+            task,
+            sessionId,
+            metadata: {
+              source: "chat",
+              requestId,
+              orchestration:
+                taskAnalysis?.classification || null,
+              capabilities:
+                taskAnalysis?.capabilities || []
+            }
+          });
+
+        return res
+          .status(202)
+          .json({
+            success: true,
+            requestId,
+            taskId: persistentTask.id,
+            taskStatus: persistentTask.status,
+            message:
+              "IRHCF has accepted this project as a persistent task and will continue through planning, execution, testing, repair, verification, and delivery.",
+            orchestration: {
+              status: "accepted",
+              engine:
+                taskAnalysis.engine,
+              classification:
+                taskAnalysis.classification,
+              capabilities:
+                taskAnalysis.capabilities,
+              plan:
+                taskAnalysis.plan,
+              verification:
+                taskAnalysis.verification
+            }
+          });
+      }
+
+      // --------------------------------------------------------
       // 5. EXECUTE AGENT
       // --------------------------------------------------------
 
