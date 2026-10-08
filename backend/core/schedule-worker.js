@@ -88,17 +88,25 @@ class ScheduleWorker {
       }
 
       const current = locked.rows[0];
-      const previousKey = current.last_run_at
-        ? new Intl.DateTimeFormat("en-CA", {
-            timeZone: current.timezone || "UTC",
-            year: "numeric",
-            month: "2-digit",
-            day: "2-digit",
-            hour: "2-digit",
-            minute: "2-digit",
-            hourCycle: "h23"
-          }).format(new Date(current.last_run_at))
-        : "";
+      let previousKey = "";
+      if (current.last_run_at) {
+        const previousParts = new Intl.DateTimeFormat("en-CA", {
+          timeZone: current.timezone || "UTC",
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+          hourCycle: "h23"
+        }).formatToParts(new Date(current.last_run_at));
+
+        const previousMap = Object.fromEntries(
+          previousParts.map((part) => [part.type, part.value])
+        );
+
+        previousKey =
+          `${previousMap.year}-${previousMap.month}-${previousMap.day} ${previousMap.hour}:${previousMap.minute}`;
+      }
 
       if (previousKey === runKey) {
         await client.query("COMMIT");
