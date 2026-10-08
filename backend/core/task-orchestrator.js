@@ -1,5 +1,7 @@
 "use strict";
 
+const { evaluateCapabilities } = require("./capability-engine");
+
 /*
  * ============================================================
  * NKWASIBWE IRHCF
@@ -27,7 +29,7 @@ const ENGINE_NAME =
   "Nkwasibwe Task Orchestration Engine";
 
 const ENGINE_VERSION =
-  "1.0.0";
+  "1.1.0";
 
 /* ============================================================
  * NORMALIZATION
@@ -582,6 +584,9 @@ function analyzeTask(task, context = {}) {
       classification
     );
 
+  const capabilityEvaluation =
+    evaluateCapabilities(capabilities);
+
   const plan =
     buildPlan(
       normalizedTask,
@@ -614,6 +619,8 @@ function analyzeTask(task, context = {}) {
     classification,
 
     capabilities,
+
+    capabilityEvaluation,
 
     plan,
 
