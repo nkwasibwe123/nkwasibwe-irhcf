@@ -14162,10 +14162,7 @@ async function resolveUserLongTermMemory(
       `SELECT
          id,
          user_id,
-         memory,
-         importance,
-         created_at,
-         updated_at
+         content,\n         memory_type,\n         importance,\n         source,\n         metadata,\n         created_at,\n         updated_at
        FROM long_term_memory
        WHERE id = $1
        AND user_id = $2
