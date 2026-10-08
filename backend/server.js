@@ -47,6 +47,13 @@ const {
 } = require("./integrations/google-oauth");
 
 const { encryptJson } = require("./core/secure-credentials");
+const {
+  createRecurringSchedule,
+  listSchedules,
+  pauseSchedule,
+  resumeSchedule
+} = require("./core/schedule-service");
+const { ScheduleWorker } = require("./core/schedule-worker");
 
 // ============================================================
 // APPLICATION IDENTITY
@@ -3516,6 +3523,122 @@ app.delete("/api/integrations/accounts/:id", authenticateToken, async (req, res)
       success: false,
       error: "Could not revoke connected account.",
       code: "INTEGRATION_REVOKE_FAILED"
+    });
+  }
+});
+
+// ============================================================
+// PERSISTENT AUTOMATION SCHEDULES
+// ============================================================
+
+app.get("/api/schedules", authenticateToken, async (req, res) => {
+  try {
+    const schedules = await listSchedules(pool, req.user.id);
+    return res.json({ success: true, schedules });
+  } catch (error) {
+    console.error("[SCHEDULE] List failed:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Could not list schedules.",
+      code: "SCHEDULE_LIST_FAILED"
+    });
+  }
+});
+
+app.post("/api/schedules", authenticateToken, async (req, res) => {
+  try {
+    const schedule = await createRecurringSchedule(pool, {
+      userId: req.user.id,
+      name: req.body?.name,
+      frequency: req.body?.frequency || "daily",
+      timezone: req.body?.timezone || "Africa/Kigali",
+      times: req.body?.times,
+      taskTemplate: req.body?.taskTemplate,
+      metadata: req.body?.metadata || {}
+    });
+
+    return res.status(201).json({
+      success: true,
+      schedule
+    });
+  } catch (error) {
+    console.error("[SCHEDULE] Create failed:", error);
+    return res.status(400).json({
+      success: false,
+      error: error?.message || "Could not create schedule.",
+      code: "SCHEDULE_CREATE_FAILED"
+    });
+  }
+});
+
+app.post("/api/schedules/youtube-two-per-day", authenticateToken, async (req, res) => {
+  try {
+    const timezone = req.body?.timezone || "Africa/Kigali";
+    const schedule = await createRecurringSchedule(pool, {
+      userId: req.user.id,
+      name: "YouTube — two songs per day",
+      frequency: "daily",
+      timezone,
+      times: ["09:00", "21:00"],
+      taskTemplate:
+        "Create a high-quality song video, verify the media, and publish it to the user's authorized YouTube channel. Do not publish unless the connected YouTube account and required authorization are available.",
+      metadata: {
+        workflow: "youtube_two_per_day",
+        requiresConnectedYouTubeAccount: true,
+        requiresPublishVerification: true
+      }
+    });
+
+    return res.status(201).json({
+      success: true,
+      schedule
+    });
+  } catch (error) {
+    console.error("[SCHEDULE] YouTube schedule failed:", error);
+    return res.status(400).json({
+      success: false,
+      error: error?.message || "Could not create YouTube schedule.",
+      code: "YOUTUBE_SCHEDULE_CREATE_FAILED"
+    });
+  }
+});
+
+app.post("/api/schedules/:id/pause", authenticateToken, async (req, res) => {
+  try {
+    const schedule = await pauseSchedule(pool, req.user.id, Number(req.params.id));
+    if (!schedule) {
+      return res.status(404).json({
+        success: false,
+        error: "Schedule not found.",
+        code: "SCHEDULE_NOT_FOUND"
+      });
+    }
+    return res.json({ success: true, schedule });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      error: "Could not pause schedule.",
+      code: "SCHEDULE_PAUSE_FAILED"
+    });
+  }
+});
+
+app.post("/api/schedules/:id/resume", authenticateToken, async (req, res) => {
+  try {
+    const schedule = await resumeSchedule(pool, req.user.id, Number(req.params.id));
+    if (!schedule) {
+      return res.status(404).json({
+        success: false,
+        error: "Schedule not found.",
+        code: "SCHEDULE_NOT_FOUND"
+      });
+    }
+    return res.json({ success: true, schedule });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      error: "Could not resume schedule.",
+      code: "SCHEDULE_RESUME_FAILED"
     });
   }
 });
@@ -36921,6 +37044,12 @@ let server = null;
 // The database schema is created before the worker starts.
 //
 
+const scheduleWorker =
+  new ScheduleWorker({
+    pool,
+    taskEngine: persistentTaskEngine
+  });
+
 const persistentTaskEngine =
   new TaskEngine({
     pool,
@@ -37014,9 +37143,14 @@ async function startServer() {
       await capabilityRegistry.syncBuiltIns();
 
       persistentTaskEngine.start();
+      scheduleWorker.start();
 
       console.log(
         "[TASK ENGINE] Persistent long-running worker is online."
+      );
+
+      console.log(
+        "[SCHEDULE ENGINE] Recurring automation worker is online."
       );
 
     } else {
