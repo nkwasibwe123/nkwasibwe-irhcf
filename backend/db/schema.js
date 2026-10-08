@@ -72,7 +72,31 @@ async function createSchema() {
   `);
 
   // ============================================================
-  // 4. USER MEMORY
+  // 4. MEDIA JOBS
+  // ============================================================
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS media_jobs (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      provider_id TEXT UNIQUE NOT NULL,
+      media_type TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'queued',
+      progress INTEGER NOT NULL DEFAULT 0,
+      prompt TEXT,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_media_jobs_user_created
+    ON media_jobs (user_id, created_at DESC);
+  `);
+
+  // ============================================================
+  // 5. USER MEMORY
   // ============================================================
 
   await pool.query(`
