@@ -18,7 +18,7 @@ Configure these in the backend host's environment/secrets settings, then restart
 | Image generation | `POST /api/media/image` | PNG image, prompt up to 4,000 characters |
 | Voice-over / spoken audio | `POST /api/media/speech` | MP3 speech from text, up to 4,000 characters |
 | Audio transcription | `POST /api/media/transcribe` | Editable transcript; supported audio files up to 6 MB |
-| HD video generation | `POST /api/media/video` | Sora 720p clip, 4/8/12 seconds; returns a job ID |
+| HD video generation | `POST /api/media/video` | Sora 720p clip, 4/8/12 seconds, with an optional JPEG/PNG/WEBP reference photo; returns a job ID |
 | Video job status | `GET /api/media/video/:videoId` | Current provider status/progress; user ownership is checked |
 | Download generated video | `GET /api/media/video/:videoId/content` | Streams the completed MP4; user ownership is checked |
 | Song generation | `POST /api/media/music` | MP3 song, default 3 minutes, maximum 5 minutes per request |
