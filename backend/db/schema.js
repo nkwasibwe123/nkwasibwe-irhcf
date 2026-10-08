@@ -351,6 +351,31 @@ async function createSchema() {
   `);
 
   // ============================================================
+  // 19. FINANCIAL TRANSACTIONS
+  // ============================================================
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS financial_transactions (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      direction TEXT NOT NULL,
+      action TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      amount NUMERIC(20,2) NOT NULL,
+      currency TEXT NOT NULL DEFAULT 'RWF',
+      status TEXT NOT NULL DEFAULT 'pending',
+      idempotency_key TEXT NOT NULL,
+      provider_reference TEXT,
+      destination TEXT,
+      error TEXT,
+      metadata JSONB DEFAULT '{}'::jsonb,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(user_id, idempotency_key)
+    );
+  `);
+
+  // ============================================================
   // 18. SCHEDULED JOBS
   // ============================================================
 
