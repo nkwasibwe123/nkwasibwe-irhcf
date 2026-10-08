@@ -8434,7 +8434,9 @@ function dashboardAction(action) {
     agents:
       "Analyze my request and assemble the specialist AI-agent team needed to complete it, with each agent owning a clear part of the work.",
     capabilities:
-      "Check the capabilities required for this request. If a required capability is missing, design a controlled discovery, build, sandbox, test and verification path before execution."
+      "Check the capabilities required for this request. If a required capability is missing, design a controlled discovery, build, sandbox, test and verification path before execution.",
+    economy:
+      "Start a safe economic discovery cycle: research lawful revenue opportunities, compare evidence, score risk and feasibility, and prepare an MVP plan. Do not move money or launch external actions without my authorization."
   };
 
   const prompt = prompts[action];
