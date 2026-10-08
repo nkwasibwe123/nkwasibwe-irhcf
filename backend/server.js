@@ -75,7 +75,7 @@ const {
   resumeSchedule
 } = require("./core/schedule-service");
 const { ScheduleWorker } = require("./core/schedule-worker");
-const { buildProjectPlan } = require("./core/project-autopilot");
+const { buildProjectPlan, shouldBecomeLongRunning } = require("./core/project-autopilot");
 const {
   buildOpportunity,
   buildRevenueProjectPlan
@@ -14621,12 +14621,20 @@ app.post(
       // tying up a single HTTP request. The worker then executes,
       // checkpoints, verifies, and retries according to policy.
       //
-      if (
-        taskAnalysis?.classification?.type ===
-          "project_autopilot" ||
-        taskAnalysis?.classification?.type ===
-          "software_build"
-      ) {
+      const detectedProjectPlan =
+        buildProjectPlan({
+          idea: task,
+          userId: req.user.id
+        });
+
+      const longRunningRequested =
+        Boolean(
+          taskAnalysis?.classification?.type === "project_autopilot" ||
+          taskAnalysis?.classification?.type === "software_build" ||
+          shouldBecomeLongRunning(detectedProjectPlan)
+        );
+
+      if (longRunningRequested) {
         const persistentTask =
           await persistentTaskEngine.createTask({
             userId: req.user.id,
@@ -14635,6 +14643,7 @@ app.post(
             metadata: {
               source: "chat",
               requestId,
+              project: detectedProjectPlan,
               orchestration:
                 taskAnalysis?.classification || null,
               capabilities:
