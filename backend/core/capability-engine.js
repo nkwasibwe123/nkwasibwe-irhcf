@@ -29,6 +29,10 @@
  */
 
 const ENGINE_NAME = "Nkwasibwe Capability Engine";
+
+const {
+  buildCapabilityExpansionPlan
+} = require("../capabilities/discovery");
 const ENGINE_VERSION = "1.0.0";
 
 const STATUS = Object.freeze({
@@ -401,6 +405,15 @@ function evaluateCapabilities(requiredCapabilities = []) {
     },
     ...checked,
     expansion: buildExpansionPlan(checked),
+    controlledExpansion:
+      checked.missing?.length
+        ? buildCapabilityExpansionPlan({
+            requestedCapability:
+              checked.missing[0],
+            reason:
+              "A required capability is not currently registered as available."
+          })
+        : null,
     generatedAt: new Date().toISOString()
   };
 }
