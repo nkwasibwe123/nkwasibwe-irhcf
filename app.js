@@ -5581,10 +5581,6 @@ function addMessage(
     meta
   );
 
-  if (role === "user" && options.id) {
-    attachMessageEditButton(row, options.id, text);
-  }
-
   if (role === "user") {
 
     row.appendChild(
@@ -5610,6 +5606,10 @@ function addMessage(
   messages.appendChild(
     row
   );
+
+  if (role === "user" && options.id) {
+    attachMessageEditButton(row, options.id, text);
+  }
 
   updateWelcomeVisibility();
   scrollToBottom();
