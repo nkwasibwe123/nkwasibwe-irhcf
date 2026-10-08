@@ -1537,7 +1537,9 @@ async function apiRequest(
         controller.abort();
 
       },
-      APP_CONFIG.apiTimeout
+      Number(options.timeoutMs) > 0
+        ? Math.min(Number(options.timeoutMs), 300000)
+        : APP_CONFIG.apiTimeout
     );
 
 
@@ -5767,6 +5769,7 @@ async function transcribeAudioFile(file) {
     const audioBase64 = dataUrl.includes(",") ? dataUrl.slice(dataUrl.indexOf(",") + 1) : "";
     const result = await apiRequest(API_ENDPOINTS.audioTranscription, {
       method: "POST",
+      timeoutMs: 90000,
       body: JSON.stringify({ fileName: file.name, mimeType: file.type, audioBase64 })
     });
     const transcript = String(result?.text || "").trim();
