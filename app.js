@@ -5796,7 +5796,10 @@ function handleFileSelection(
   if (fileInput?.dataset.transcribeAudio === "true") {
     fileInput.dataset.transcribeAudio = "false";
     const selectedAudio = Array.from(event.target.files || []).find(file =>
-      String(file.type || "").startsWith("audio/") || /\\.(mp3|wav|m4a|ogg|flac|webm|mp4)$/i.test(file.name)
+      String(file.type || "").startsWith("audio/") ||
+      ["mp3", "wav", "m4a", "ogg", "flac", "webm", "mp4"].includes(
+        String(file.name || "").split(".").pop().toLowerCase()
+      )
     );
     event.target.value = "";
     if (!selectedAudio) {
