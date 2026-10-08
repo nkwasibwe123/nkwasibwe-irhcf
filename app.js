@@ -78,7 +78,10 @@ const API_ENDPOINTS = Object.freeze({
     "/api/me",
 
   conversations:
-    "/api/conversations"
+    "/api/conversations",
+
+  actionCenter:
+    "/api/action-center"
 
 });
 
@@ -102,6 +105,51 @@ const sendButton =
 const attachButton =
   document.getElementById(
     "attachButton"
+  );
+
+const dashboardButton =
+  document.getElementById(
+    "dashboardButton"
+  );
+
+const capabilityDashboard =
+  document.getElementById(
+    "capabilityDashboard"
+  );
+
+const dashboardCloseButton =
+  document.getElementById(
+    "dashboardCloseButton"
+  );
+
+const dashboardStatus =
+  document.getElementById(
+    "dashboardStatus"
+  );
+
+const actionCenterButton =
+  document.getElementById(
+    "actionCenterButton"
+  );
+
+const actionCenterBadge =
+  document.getElementById(
+    "actionCenterBadge"
+  );
+
+const actionCenter =
+  document.getElementById(
+    "actionCenter"
+  );
+
+const actionCenterCloseButton =
+  document.getElementById(
+    "actionCenterCloseButton"
+  );
+
+const actionCenterList =
+  document.getElementById(
+    "actionCenterList"
   );
 
 const fileInput =
@@ -1795,6 +1843,21 @@ async function apiRequest(
 
     error.response =
       data;
+
+    if (
+      data?.requiredAction &&
+      typeof renderActionCenter === "function"
+    ) {
+      renderActionCenter([
+        data.requiredAction
+      ]);
+
+      if (
+        typeof setActionCenterOpen === "function"
+      ) {
+        setActionCenterOpen(true);
+      }
+    }
 
 
     console.error(
@@ -8091,8 +8154,350 @@ document.addEventListener(
 
 
 // ============================================================
+// ACTION CENTER / REQUIRED ACTIONS
+// ============================================================
+
+function setActionCenterOpen(open) {
+  if (!actionCenter) return;
+
+  actionCenter.classList.toggle("open", Boolean(open));
+  actionCenter.setAttribute(
+    "aria-hidden",
+    String(!open)
+  );
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function renderActionCenter(actions = []) {
+  if (!actionCenterList) return;
+
+  if (!actions.length) {
+    actionCenterList.innerHTML =
+      '<div class="action-center-empty">Nta kintu gikeneye intervention yawe ubu. IRHCF iriteguye. ✅</div>';
+  } else {
+    actionCenterList.innerHTML =
+      actions.map(action => {
+        let link = "";
+        if (action.actionUrl) {
+          const service = action?.metadata?.service;
+          if (service === "youtube" || service === "google_meet") {
+            link =
+              '<button class="action-center-link action-center-action" type="button" data-oauth-service="' +
+              escapeHtml(service) +
+              '">' +
+              escapeHtml(action.actionLabel || "Kora ubu") +
+              " →</button>";
+          } else {
+            link =
+              '<a class="action-center-link" href="' +
+              escapeHtml(action.actionUrl) +
+              '">' +
+              escapeHtml(action.actionLabel || "Kora ubu") +
+              " →</a>";
+          }
+        }
+
+        return (
+          '<article class="action-center-item">' +
+          "<strong>" +
+          escapeHtml(action.title) +
+          "</strong>" +
+          "<p>" +
+          escapeHtml(action.message) +
+          "</p>" +
+          link +
+          "</article>"
+        );
+      }).join("");
+  }
+
+  if (actionCenterBadge) {
+    const count = actions.length;
+    actionCenterBadge.textContent = String(count);
+    actionCenterBadge.hidden = count === 0;
+  }
+}
+
+async function startGoogleOAuth(service) {
+  const platform =
+    service === "google_meet"
+      ? "meet"
+      : "youtube";
+
+  try {
+    const data = await apiRequest(
+      `/api/integrations/google/authorize?platform=${encodeURIComponent(platform)}`,
+      { method: "GET" }
+    );
+
+    if (data?.authorizationUrl) {
+      window.location.href =
+        data.authorizationUrl;
+      return;
+    }
+
+    throw new Error(
+      data?.error ||
+      "Authorization URL ntiyabonetse."
+    );
+  } catch (error) {
+    console.error(
+      "Google OAuth start failed:",
+      error
+    );
+    if (dashboardStatus) {
+      dashboardStatus.textContent =
+        error?.message ||
+        "Ntibyashobotse gutangiza authorization.";
+    }
+  }
+}
+
+async function loadActionCenter({ open = false } = {}) {
+  if (!authToken) {
+    renderActionCenter([
+      {
+        title: "Injira muri konti yawe",
+        message: "Injira kugira ngo ubone ibisabwa bya integrations, automation na long-running tasks.",
+        actionLabel: "Fungura / Injira",
+        actionUrl: "/"
+      }
+    ]);
+
+    if (open) setActionCenterOpen(true);
+    return;
+  }
+
+  try {
+    const data = await apiRequest(
+      API_ENDPOINTS.actionCenter,
+      { method: "GET" }
+    );
+
+    renderActionCenter(
+      Array.isArray(data?.actions)
+        ? data.actions
+        : []
+    );
+
+    if (open) setActionCenterOpen(true);
+  } catch (error) {
+    console.warn(
+      "Could not load action center:",
+      error
+    );
+
+    renderActionCenter([
+      {
+        title: "Ntabwo nabashije kugenzura ibisabwa",
+        message: "Server ntiyatanze action center. Gerageza kongera gufungura nyuma.",
+        actionLabel: null,
+        actionUrl: null
+      }
+    ]);
+
+    if (open) setActionCenterOpen(true);
+  }
+}
+
+if (actionCenterButton) {
+  actionCenterButton.addEventListener(
+    "click",
+    () => loadActionCenter({ open: true })
+  );
+}
+
+if (actionCenterCloseButton) {
+  actionCenterCloseButton.addEventListener(
+    "click",
+    () => setActionCenterOpen(false)
+  );
+}
+
+if (actionCenterList) {
+  actionCenterList.addEventListener(
+    "click",
+    event => {
+      const button =
+        event.target?.closest?.("[data-oauth-service]");
+      if (!button) return;
+
+      startGoogleOAuth(
+        button.getAttribute("data-oauth-service")
+      );
+    }
+  );
+}
+
+document.addEventListener(
+  "click",
+  event => {
+    if (
+      event.target?.matches &&
+      event.target.matches("[data-action-center-close]")
+    ) {
+      setActionCenterOpen(false);
+    }
+  }
+);
+
+// ============================================================
+// CAPABILITY DASHBOARD
+// ============================================================
+
+function setDashboardOpen(open) {
+
+  if (!capabilityDashboard) {
+    return;
+  }
+
+  capabilityDashboard.classList.toggle(
+    "open",
+    Boolean(open)
+  );
+
+  capabilityDashboard.setAttribute(
+    "aria-hidden",
+    String(!open)
+  );
+
+}
+
+function setDashboardStatus(message) {
+
+  if (dashboardStatus) {
+    dashboardStatus.textContent =
+      String(message || "Ready.");
+  }
+
+}
+
+function dashboardAction(action) {
+
+  const actions = {
+    file: {
+      label: "Choose files to attach.",
+      accept: "*/*"
+    },
+    photo: {
+      label: "Choose photos to attach.",
+      accept: "image/*"
+    },
+    video: {
+      label: "Choose videos to attach.",
+      accept: "video/*"
+    },
+    audio: {
+      label: "Choose audio to attach.",
+      accept: "audio/*"
+    }
+  };
+
+  if (actions[action] && fileInput) {
+
+    setDashboardStatus(
+      actions[action].label
+    );
+
+    fileInput.setAttribute(
+      "accept",
+      actions[action].accept
+    );
+
+    setDashboardOpen(false);
+    fileInput.click();
+    return;
+
+  }
+
+  const prompts = {
+    "image-create":
+      "Create an image based on my instructions. First understand the requested style, dimensions and content, then use an available image-generation capability and verify the result.",
+    "video-create":
+      "Create a high-quality HD video/film based on my instructions. Plan the script, storyboard, scenes, audio, editing, effects and quality verification.",
+    "music-create":
+      "Create high-quality music/audio based on my instructions, in the language and style I specify, then verify the final audio.",
+    software:
+      "Build the software I describe. Analyze requirements, design the architecture, implement it, test it, repair failures, security-review it and verify the final result.",
+    research:
+      "Perform deep research on my request using current reliable sources, compare evidence and verify the final answer.",
+    tasks:
+      "Create and manage this as a long-running task. Save progress and checkpoints and continue until it is verified or needs my input.",
+    agents:
+      "Analyze my request and assemble the specialist AI-agent team needed to complete it, with each agent owning a clear part of the work.",
+    capabilities:
+      "Check the capabilities required for this request. If a required capability is missing, design a controlled discovery, build, sandbox, test and verification path before execution.",
+    economy:
+      "Start a safe economic discovery cycle: research lawful revenue opportunities, compare evidence, score risk and feasibility, and prepare an MVP plan. Do not move money or launch external actions without my authorization."
+  };
+
+  const prompt = prompts[action];
+
+  if (prompt && userInput) {
+
+    userInput.value = prompt;
+    autoResizeInput();
+    setDashboardOpen(false);
+    userInput.focus();
+
+    setDashboardStatus(
+      "Task prepared in the composer."
+    );
+
+  }
+
+}
+
+if (dashboardButton) {
+  dashboardButton.addEventListener(
+    "click",
+    () => setDashboardOpen(true)
+  );
+}
+
+if (dashboardCloseButton) {
+  dashboardCloseButton.addEventListener(
+    "click",
+    () => setDashboardOpen(false)
+  );
+}
+
+if (capabilityDashboard) {
+  capabilityDashboard
+    .querySelectorAll("[data-dashboard-close]")
+    .forEach((element) => {
+      element.addEventListener(
+        "click",
+        () => setDashboardOpen(false)
+      );
+    });
+
+  capabilityDashboard
+    .querySelectorAll("[data-dashboard-action]")
+    .forEach((button) => {
+      button.addEventListener(
+        "click",
+        () =>
+          dashboardAction(
+            button.dataset.dashboardAction
+          )
+      );
+    });
+}
+
+// ============================================================
 // SEND BUTTON EVENT
 // ============================================================
+
+
 
 if (sendButton) {
 
@@ -9474,6 +9879,18 @@ async function initializeApp() {
 
       }
 
+    }
+
+
+    // ----------------------------------------------------------
+    // REFRESH ACTION CENTER
+    // ----------------------------------------------------------
+    if (typeof loadActionCenter === "function") {
+      try {
+        await loadActionCenter();
+      } catch (error) {
+        console.warn("Action center refresh skipped:", error);
+      }
     }
 
 

@@ -134,11 +134,21 @@ async function createSchema() {
       id SERIAL PRIMARY KEY,
       user_id INTEGER,
       task TEXT NOT NULL,
-      status TEXT DEFAULT 'pending',
+      status TEXT DEFAULT 'PLANNED',
       priority INTEGER DEFAULT 1,
       result TEXT,
       error TEXT,
       attempts INTEGER DEFAULT 0,
+      max_attempts INTEGER DEFAULT 3,
+      session_id TEXT,
+      progress NUMERIC(5,2) DEFAULT 0,
+      progress_message TEXT,
+      checkpoint JSONB DEFAULT '{}'::jsonb,
+      worker_id TEXT,
+      locked_at TIMESTAMP,
+      next_run_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      started_at TIMESTAMP,
+      completed_at TIMESTAMP,
       metadata JSONB DEFAULT '{}'::jsonb,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -283,7 +293,112 @@ async function createSchema() {
   `);
 
   // ============================================================
-  // 15. SYSTEM SETTINGS
+  // 15. CONNECTED ACCOUNTS
+  // ============================================================
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS connected_accounts (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      platform TEXT NOT NULL,
+      provider_type TEXT DEFAULT 'oauth',
+      external_account_id TEXT,
+      display_name TEXT,
+      scopes JSONB DEFAULT '[]'::jsonb,
+      status TEXT DEFAULT 'active',
+      encrypted_credentials TEXT,
+      metadata JSONB DEFAULT '{}'::jsonb,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(user_id, platform, external_account_id)
+    );
+  `);
+
+  // ============================================================
+  // 16. OAUTH STATES
+  // ============================================================
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS oauth_states (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      platform TEXT NOT NULL,
+      state_hash TEXT UNIQUE NOT NULL,
+      scopes JSONB DEFAULT '[]'::jsonb,
+      redirect_uri TEXT,
+      expires_at TIMESTAMP NOT NULL,
+      consumed_at TIMESTAMP,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  // ============================================================
+  // 17. AUDIT EVENTS
+  // ============================================================
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS audit_events (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER,
+      action TEXT NOT NULL,
+      platform TEXT,
+      resource TEXT,
+      status TEXT NOT NULL,
+      risk TEXT,
+      metadata JSONB DEFAULT '{}'::jsonb,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  // ============================================================
+  // 19. FINANCIAL TRANSACTIONS
+  // ============================================================
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS financial_transactions (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      direction TEXT NOT NULL,
+      action TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      amount NUMERIC(20,2) NOT NULL,
+      currency TEXT NOT NULL DEFAULT 'RWF',
+      status TEXT NOT NULL DEFAULT 'pending',
+      idempotency_key TEXT NOT NULL,
+      provider_reference TEXT,
+      destination TEXT,
+      error TEXT,
+      metadata JSONB DEFAULT '{}'::jsonb,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(user_id, idempotency_key)
+    );
+  `);
+
+  // ============================================================
+  // 18. SCHEDULED JOBS
+  // ============================================================
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS scheduled_jobs (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      frequency TEXT NOT NULL,
+      timezone TEXT NOT NULL,
+      times JSONB DEFAULT '[]'::jsonb,
+      task_template TEXT NOT NULL,
+      status TEXT DEFAULT 'active',
+      metadata JSONB DEFAULT '{}'::jsonb,
+      last_run_at TIMESTAMP,
+      next_run_at TIMESTAMP,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  // ============================================================
+  // 18. SYSTEM SETTINGS
   // ============================================================
 
   await pool.query(`
@@ -531,7 +646,7 @@ await pool.query(`
 
     ALTER TABLE tasks
       ADD COLUMN IF NOT EXISTS status TEXT
-        DEFAULT 'pending';
+        DEFAULT 'PLANNED';
 
     ALTER TABLE tasks
       ADD COLUMN IF NOT EXISTS priority INTEGER
@@ -548,6 +663,40 @@ await pool.query(`
         DEFAULT 0;
 
     ALTER TABLE tasks
+      ADD COLUMN IF NOT EXISTS max_attempts INTEGER
+        DEFAULT 3;
+
+    ALTER TABLE tasks
+      ADD COLUMN IF NOT EXISTS session_id TEXT;
+
+    ALTER TABLE tasks
+      ADD COLUMN IF NOT EXISTS progress NUMERIC(5,2)
+        DEFAULT 0;
+
+    ALTER TABLE tasks
+      ADD COLUMN IF NOT EXISTS progress_message TEXT;
+
+    ALTER TABLE tasks
+      ADD COLUMN IF NOT EXISTS checkpoint JSONB
+        DEFAULT '{}'::jsonb;
+
+    ALTER TABLE tasks
+      ADD COLUMN IF NOT EXISTS worker_id TEXT;
+
+    ALTER TABLE tasks
+      ADD COLUMN IF NOT EXISTS locked_at TIMESTAMP;
+
+    ALTER TABLE tasks
+      ADD COLUMN IF NOT EXISTS next_run_at TIMESTAMP
+        DEFAULT CURRENT_TIMESTAMP;
+
+    ALTER TABLE tasks
+      ADD COLUMN IF NOT EXISTS started_at TIMESTAMP;
+
+    ALTER TABLE tasks
+      ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP;
+
+    ALTER TABLE tasks
       ADD COLUMN IF NOT EXISTS metadata JSONB
         DEFAULT '{}'::jsonb;
 
@@ -558,6 +707,44 @@ await pool.query(`
     ALTER TABLE tasks
       ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP
         DEFAULT CURRENT_TIMESTAMP;
+  `);
+
+  // ------------------------------------------------------------
+  // TASK STATUS NORMALIZATION
+  // ------------------------------------------------------------
+
+  await pool.query(`
+    UPDATE tasks
+    SET status = CASE LOWER(COALESCE(status, 'planned'))
+      WHEN 'pending' THEN 'PLANNED'
+      WHEN 'planning' THEN 'PLANNED'
+      WHEN 'running' THEN 'RUNNING'
+      WHEN 'testing' THEN 'VERIFYING'
+      WHEN 'repairing' THEN 'REPAIRING'
+      WHEN 'verifying' THEN 'VERIFYING'
+      WHEN 'completed' THEN 'COMPLETED'
+      WHEN 'failed' THEN 'FAILED'
+      WHEN 'cancelled' THEN 'FAILED'
+      WHEN 'paused' THEN 'PAUSED'
+      WHEN 'waiting_for_tool' THEN 'WAITING_FOR_TOOL'
+      WHEN 'waiting_for_user' THEN 'WAITING_FOR_USER'
+      ELSE 'PLANNED'
+    END;
+
+    ALTER TABLE tasks
+      ALTER COLUMN status SET DEFAULT 'PLANNED';
+
+    UPDATE tasks
+      SET max_attempts = 3
+      WHERE max_attempts IS NULL OR max_attempts < 1;
+
+    UPDATE tasks
+      SET progress = 0
+      WHERE progress IS NULL;
+
+    UPDATE tasks
+      SET checkpoint = '{}'::jsonb
+      WHERE checkpoint IS NULL;
   `);
 
   // ------------------------------------------------------------
@@ -1408,29 +1595,24 @@ await pool.query(`
     DO $$
     BEGIN
 
-      IF NOT EXISTS (
-        SELECT 1
-        FROM pg_constraint
-        WHERE conname = 'chk_tasks_status'
-      ) THEN
+      ALTER TABLE tasks
+        DROP CONSTRAINT IF EXISTS chk_tasks_status;
 
-        ALTER TABLE tasks
-        ADD CONSTRAINT chk_tasks_status
-        CHECK (
-          status IN (
-            'pending',
-            'planning',
-            'running',
-            'testing',
-            'repairing',
-            'verifying',
-            'completed',
-            'failed',
-            'cancelled'
-          )
-        );
-
-      END IF;
+      ALTER TABLE tasks
+      ADD CONSTRAINT chk_tasks_status
+      CHECK (
+        status IN (
+          'PLANNED',
+          'RUNNING',
+          'PAUSED',
+          'WAITING_FOR_TOOL',
+          'WAITING_FOR_USER',
+          'REPAIRING',
+          'VERIFYING',
+          'COMPLETED',
+          'FAILED'
+        )
+      );
 
     END
     $$;
@@ -1609,6 +1791,30 @@ await pool.query(`
       )
     ON CONFLICT (setting_key)
     DO NOTHING;
+  `);
+
+  // ============================================================
+  // LONG-RUNNING TASK ENGINE INDEXES
+  // ============================================================
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_tasks_worker_queue
+      ON tasks(status, priority DESC, created_at ASC);
+
+    CREATE INDEX IF NOT EXISTS idx_tasks_next_run
+      ON tasks(status, next_run_at);
+
+    CREATE INDEX IF NOT EXISTS idx_tasks_user_status
+      ON tasks(user_id, status, updated_at DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_tasks_worker_lock
+      ON tasks(worker_id, locked_at);
+
+    CREATE INDEX IF NOT EXISTS idx_task_runs_task
+      ON task_runs(task_id, run_number DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_agent_runs_task
+      ON agent_runs(task_id, started_at DESC);
   `);
 
   console.log("System settings checked.");

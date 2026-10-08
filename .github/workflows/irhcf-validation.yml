@@ -1,0 +1,25 @@
+name: IRHCF Architecture Validation
+
+on:
+  push:
+    branches: ["main", "irhcf-final-architecture-2026-10-08"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Validate JavaScript architecture
+        run: npm test

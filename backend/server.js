@@ -30,6 +30,64 @@ const {
   summarizePlan
 } = require("./core/task-orchestrator");
 
+const {
+  TaskEngine,
+  createTaskRouter
+} = require("./core/task-engine");
+
+const { AdapterRegistry } = require("./core/adapter-registry");
+const { ExecutionEngine } = require("./core/execution-engine");
+const { registerTextProviders } = require("./core/provider-adapters");
+const adapterRegistry = new AdapterRegistry();
+
+const executionEngine = new ExecutionEngine({
+  adapterRegistry,
+  providerSelector: async ({ candidates }) => {
+    const available = getAvailableProviders();
+    const preferred = available.find(provider =>
+      candidates.some(candidate => candidate.provider === provider.name)
+    );
+    return preferred
+      ? candidates.find(candidate => candidate.provider === preferred.name)
+      : candidates[0] || null;
+  },
+  verifier: async ({ execution }) => ({
+    verified: Boolean(execution?.result),
+    reason: execution?.result
+      ? "Provider returned a response."
+      : "Provider returned no response."
+  })
+});
+const { CapabilityRegistry } = require("./capabilities/registry");
+const capabilityRegistry = new CapabilityRegistry(pool);
+
+const {
+  buildAuthorizationUrl,
+  exchangeAuthorizationCode,
+  createState
+} = require("./integrations/google-oauth");
+
+const { encryptJson } = require("./core/secure-credentials");
+const {
+  createRecurringSchedule,
+  listSchedules,
+  pauseSchedule,
+  resumeSchedule
+} = require("./core/schedule-service");
+const { ScheduleWorker } = require("./core/schedule-worker");
+const { buildProjectPlan, shouldBecomeLongRunning } = require("./core/project-autopilot");
+const {
+  buildOpportunity,
+  buildRevenueProjectPlan
+} = require("./core/economic-autopilot");
+const { buildActionCenter, buildRequiredAction } = require("./core/action-center");
+const {
+  createTransaction,
+  updateTransaction,
+  listTransactions,
+  preparePayout
+} = require("./integrations/financial-ledger");
+
 // ============================================================
 // APPLICATION IDENTITY
 // ============================================================
@@ -3315,6 +3373,472 @@ return res.json({
       
 
 // ============================================================
+// ============================================================
+// CONNECTED ACCOUNT AUTHORIZATION
+// ============================================================
+
+const GOOGLE_INTEGRATION_SCOPES = Object.freeze({
+  youtube: ["https://www.googleapis.com/auth/youtube.upload"],
+  meet: ["https://www.googleapis.com/auth/meetings.space.created"]
+});
+
+app.get("/api/integrations/google/authorize", authenticateToken, async (req, res) => {
+  try {
+    const platform = String(req.query?.platform || "youtube").trim().toLowerCase();
+    const scopes = GOOGLE_INTEGRATION_SCOPES[platform];
+
+    if (!scopes) {
+      return res.status(400).json({
+        success: false,
+        error: "Unsupported Google integration platform.",
+        code: "INTEGRATION_PLATFORM_UNSUPPORTED"
+      });
+    }
+
+    const redirectUri = process.env.GOOGLE_OAUTH_REDIRECT_URI || "";
+    if (!redirectUri) {
+      return res.status(503).json({
+        success: false,
+        error: "GOOGLE_OAUTH_REDIRECT_URI is not configured.",
+        code: "GOOGLE_OAUTH_NOT_CONFIGURED"
+      });
+    }
+
+    const state = createState();
+    const stateHash = crypto.createHash("sha256").update(state).digest("hex");
+
+    await pool.query(
+      `INSERT INTO oauth_states
+        (user_id, platform, state_hash, scopes, redirect_uri, expires_at)
+       VALUES
+        ($1, $2, $3, $4::jsonb, $5, CURRENT_TIMESTAMP + INTERVAL '10 minutes')`,
+      [
+        req.user.id,
+        platform,
+        stateHash,
+        JSON.stringify(scopes),
+        redirectUri
+      ]
+    );
+
+    const authorization = buildAuthorizationUrl({
+      scopes,
+      state,
+      redirectUri
+    });
+
+    return res.json({
+      success: true,
+      platform,
+      authorizationUrl: authorization.url,
+      expiresInSeconds: 600
+    });
+  } catch (error) {
+    console.error("[OAUTH] Authorization URL failed:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Could not start account authorization.",
+      code: "OAUTH_AUTHORIZE_FAILED"
+    });
+  }
+});
+
+app.get("/api/integrations/google/callback", async (req, res) => {
+  try {
+    const code = String(req.query?.code || "").trim();
+    const state = String(req.query?.state || "").trim();
+
+    if (!code || !state) {
+      return res.status(400).send("Missing OAuth code or state.");
+    }
+
+    const stateHash = crypto.createHash("sha256").update(state).digest("hex");
+
+    const stateResult = await pool.query(
+      `SELECT *
+       FROM oauth_states
+       WHERE state_hash = $1
+         AND consumed_at IS NULL
+         AND expires_at > CURRENT_TIMESTAMP
+       LIMIT 1`,
+      [stateHash]
+    );
+
+    if (!stateResult.rows.length) {
+      return res.status(400).send("OAuth state is invalid or expired.");
+    }
+
+    const oauthState = stateResult.rows[0];
+    const tokens = await exchangeAuthorizationCode({
+      code,
+      redirectUri: oauthState.redirect_uri
+    });
+
+    await pool.query(
+      `UPDATE oauth_states
+       SET consumed_at = CURRENT_TIMESTAMP
+       WHERE id = $1`,
+      [oauthState.id]
+    );
+
+    await pool.query(
+      `INSERT INTO connected_accounts
+        (user_id, platform, provider_type, scopes, status, encrypted_credentials, metadata)
+       VALUES
+        ($1, $2, 'oauth', $3::jsonb, 'active', $4, $5::jsonb)`,
+      [
+        oauthState.user_id,
+        oauthState.platform,
+        JSON.stringify(oauthState.scopes || []),
+        encryptJson(tokens),
+        JSON.stringify({ connectedAt: new Date().toISOString() })
+      ]
+    );
+
+    return res.send(
+      "Account connected successfully. You can close this window and return to Nkwasibwe IRHCF."
+    );
+  } catch (error) {
+    console.error("[OAUTH] Callback failed:", error);
+    return res.status(500).send(
+      "Account authorization failed. Please return to Nkwasibwe IRHCF and try again."
+    );
+  }
+});
+
+app.get("/api/integrations/accounts", authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT
+         id, platform, provider_type, external_account_id,
+         display_name, scopes, status, metadata, created_at, updated_at
+       FROM connected_accounts
+       WHERE user_id = $1
+       ORDER BY updated_at DESC`,
+      [req.user.id]
+    );
+
+    return res.json({ success: true, accounts: result.rows });
+  } catch (error) {
+    console.error("[INTEGRATIONS] Account list failed:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Could not list connected accounts.",
+      code: "INTEGRATION_LIST_FAILED"
+    });
+  }
+});
+
+app.delete("/api/integrations/accounts/:id", authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `UPDATE connected_accounts
+       SET status = 'revoked',
+           encrypted_credentials = NULL,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1 AND user_id = $2
+       RETURNING id, platform, status, updated_at`,
+      [Number(req.params.id), req.user.id]
+    );
+
+    if (!result.rows.length) {
+      return res.status(404).json({
+        success: false,
+        error: "Connected account not found.",
+        code: "INTEGRATION_ACCOUNT_NOT_FOUND"
+      });
+    }
+
+    return res.json({ success: true, account: result.rows[0] });
+  } catch (error) {
+    console.error("[INTEGRATIONS] Account revoke failed:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Could not revoke connected account.",
+      code: "INTEGRATION_REVOKE_FAILED"
+    });
+  }
+});
+
+// ============================================================
+// PERSISTENT AUTOMATION SCHEDULES
+// ============================================================
+
+app.get("/api/schedules", authenticateToken, async (req, res) => {
+  try {
+    const schedules = await listSchedules(pool, req.user.id);
+    return res.json({ success: true, schedules });
+  } catch (error) {
+    console.error("[SCHEDULE] List failed:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Could not list schedules.",
+      code: "SCHEDULE_LIST_FAILED"
+    });
+  }
+});
+
+app.post("/api/schedules", authenticateToken, async (req, res) => {
+  try {
+    const schedule = await createRecurringSchedule(pool, {
+      userId: req.user.id,
+      name: req.body?.name,
+      frequency: req.body?.frequency || "daily",
+      timezone: req.body?.timezone || "Africa/Kigali",
+      times: req.body?.times,
+      taskTemplate: req.body?.taskTemplate,
+      metadata: req.body?.metadata || {}
+    });
+
+    return res.status(201).json({
+      success: true,
+      schedule
+    });
+  } catch (error) {
+    console.error("[SCHEDULE] Create failed:", error);
+    return res.status(400).json({
+      success: false,
+      error: error?.message || "Could not create schedule.",
+      code: "SCHEDULE_CREATE_FAILED"
+    });
+  }
+});
+
+app.post("/api/schedules/youtube-two-per-day", authenticateToken, async (req, res) => {
+  try {
+    const timezone = req.body?.timezone || "Africa/Kigali";
+    const schedule = await createRecurringSchedule(pool, {
+      userId: req.user.id,
+      name: "YouTube — two songs per day",
+      frequency: "daily",
+      timezone,
+      times: ["09:00", "21:00"],
+      taskTemplate:
+        "Create a high-quality song video, verify the media, and publish it to the user's authorized YouTube channel. Do not publish unless the connected YouTube account and required authorization are available.",
+      metadata: {
+        workflow: "youtube_two_per_day",
+        requiresConnectedYouTubeAccount: true,
+        requiresPublishVerification: true
+      }
+    });
+
+    return res.status(201).json({
+      success: true,
+      schedule
+    });
+  } catch (error) {
+    console.error("[SCHEDULE] YouTube schedule failed:", error);
+    return res.status(400).json({
+      success: false,
+      error: error?.message || "Could not create YouTube schedule.",
+      code: "YOUTUBE_SCHEDULE_CREATE_FAILED"
+    });
+  }
+});
+
+app.post("/api/schedules/:id/pause", authenticateToken, async (req, res) => {
+  try {
+    const schedule = await pauseSchedule(pool, req.user.id, Number(req.params.id));
+    if (!schedule) {
+      return res.status(404).json({
+        success: false,
+        error: "Schedule not found.",
+        code: "SCHEDULE_NOT_FOUND"
+      });
+    }
+    return res.json({ success: true, schedule });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      error: "Could not pause schedule.",
+      code: "SCHEDULE_PAUSE_FAILED"
+    });
+  }
+});
+
+app.post("/api/schedules/:id/resume", authenticateToken, async (req, res) => {
+  try {
+    const schedule = await resumeSchedule(pool, req.user.id, Number(req.params.id));
+    if (!schedule) {
+      return res.status(404).json({
+        success: false,
+        error: "Schedule not found.",
+        code: "SCHEDULE_NOT_FOUND"
+      });
+    }
+    return res.json({ success: true, schedule });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      error: "Could not resume schedule.",
+      code: "SCHEDULE_RESUME_FAILED"
+    });
+  }
+});
+
+// ============================================================
+// ECONOMIC AUTOPILOT
+// ============================================================
+//
+// IRHCF can research and prepare lawful revenue opportunities.
+// It must not guarantee profit or move funds without authorization.
+
+app.post("/api/economy/opportunities", authenticateToken, async (req, res) => {
+  try {
+    const opportunity = buildOpportunity(req.body || {});
+    const projectPlan = buildRevenueProjectPlan(
+      opportunity,
+      req.user.id
+    );
+
+    return res.status(201).json({
+      success: true,
+      opportunity,
+      projectPlan
+    });
+  } catch (error) {
+    return res.status(400).json({
+      success: false,
+      error: error?.message || "Could not create opportunity.",
+      code: "ECONOMIC_OPPORTUNITY_INVALID"
+    });
+  }
+});
+
+// ============================================================
+// FINANCIAL LEDGER + CONTROLLED PAYOUT PREPARATION
+// ============================================================
+//
+// The ledger is durable, idempotent and user-isolated.
+// Actual money movement is still blocked unless an approved
+// provider, explicit authorization and verified destination exist.
+// ============================================================
+
+app.get(
+  "/api/finance/transactions",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const transactions = await listTransactions(
+        pool,
+        req.user.id,
+        {
+          limit: req.query?.limit,
+          offset: req.query?.offset
+        }
+      );
+
+      return res.json({
+        success: true,
+        transactions
+      });
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        error: "Could not load financial transactions.",
+        code: "FINANCE_LEDGER_READ_FAILED"
+      });
+    }
+  }
+);
+
+app.post(
+  "/api/finance/transactions",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const transaction = await createTransaction(pool, {
+        userId: req.user.id,
+        direction: req.body?.direction,
+        action: req.body?.action,
+        provider: req.body?.provider,
+        amount: req.body?.amount,
+        currency: req.body?.currency || "RWF",
+        idempotencyKey: req.body?.idempotencyKey,
+        destination: req.body?.destination || null,
+        metadata: req.body?.metadata || {}
+      });
+
+      return res.status(201).json({
+        success: true,
+        transaction
+      });
+    } catch (error) {
+      return res.status(400).json({
+        success: false,
+        error: error?.message || "Could not create financial transaction.",
+        code: "FINANCE_LEDGER_WRITE_FAILED"
+      });
+    }
+  }
+);
+
+app.patch(
+  "/api/finance/transactions/:id",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const transaction = await updateTransaction(pool, {
+        userId: req.user.id,
+        id: Number(req.params.id),
+        status: req.body?.status,
+        providerReference: req.body?.providerReference || null,
+        error: req.body?.error || null,
+        metadata: req.body?.metadata || null
+      });
+
+      if (!transaction) {
+        return res.status(404).json({
+          success: false,
+          error: "Financial transaction not found.",
+          code: "FINANCE_TRANSACTION_NOT_FOUND"
+        });
+      }
+
+      return res.json({
+        success: true,
+        transaction
+      });
+    } catch (error) {
+      return res.status(400).json({
+        success: false,
+        error: error?.message || "Could not update financial transaction.",
+        code: "FINANCE_LEDGER_UPDATE_FAILED"
+      });
+    }
+  }
+);
+
+app.post(
+  "/api/finance/payout/prepare",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const prepared = preparePayout({
+        amount: req.body?.amount,
+        currency: req.body?.currency || "RWF",
+        idempotencyKey: req.body?.idempotencyKey,
+        providerAvailable: Boolean(req.body?.providerAvailable),
+        authorized: req.body?.authorized === true,
+        destinationVerified: req.body?.destinationVerified === true,
+        destination: req.body?.destination
+      });
+
+      return res.json({
+        success: true,
+        payout: prepared
+      });
+    } catch (error) {
+      return res.status(403).json({
+        success: false,
+        error: error?.message || "Payout preparation is blocked.",
+        code: error?.code || "FINANCIAL_ACTION_BLOCKED"
+      });
+    }
+  }
+);
+
+
 // CURRENT USER
 // ============================================================
 
@@ -13123,3765 +13647,63 @@ async function executeAIProvider(
   messages,
   options = {}
 ) {
-
-  const providers = [];
-
-  // ----------------------------------------------------------
-  // OPENAI
-  // ----------------------------------------------------------
-
-  if (openai) {
-
-    providers.push({
-
-      name:
-        "openai",
-
-      execute:
-        providerOptions =>
-          callOpenAIWithTimeout(
-            messages,
-            providerOptions
-          )
-
-    });
-
-  }
-
-  // ----------------------------------------------------------
-  // GEMINI
-  // ----------------------------------------------------------
-
-  if (GEMINI_API_KEY) {
-
-    providers.push({
-
-      name:
-        "gemini",
-
-      execute:
-        providerOptions =>
-          callGeminiWithTimeout(
-            messages,
-            providerOptions
-          )
-
-    });
-
-  }
-
-  // ----------------------------------------------------------
-  // GROQ
-  // ----------------------------------------------------------
-
-  if (GROQ_API_KEY) {
-
-    providers.push({
-
-      name:
-        "groq",
-
-      execute:
-        providerOptions =>
-          callGroqWithTimeout(
-            messages,
-            providerOptions
-          )
-
-    });
-
-  }
-
-  // ----------------------------------------------------------
-  // NO CONFIGURED PROVIDERS
-  // ----------------------------------------------------------
-
-  if (
-    providers.length === 0
-  ) {
-
-    const error =
-      new Error(
-        "No AI provider is configured"
-      );
-
-    error.code =
-      "AI_PROVIDER_NOT_CONFIGURED";
-
-    error.status =
-      503;
-
-    throw error;
-
-  }
-
-  let lastError =
-    null;
-
-  // ----------------------------------------------------------
-  // HEALTHY PROVIDERS FIRST
-  // ----------------------------------------------------------
-
-  let providersToTry =
-    providers.filter(
-      provider =>
-        isProviderHealthy(
-          provider.name
-        )
-    );
-
-  // ----------------------------------------------------------
-  // ALL PROVIDERS IN COOLDOWN
-  // ----------------------------------------------------------
-  //
-  // Do NOT probe them.
-  //
-  // However, distinguish a real cooldown from a provider whose
-  // health state is stale or already expired.
-  //
-  // ----------------------------------------------------------
-
-  if (
-    providersToTry.length === 0
-  ) {
-
-    const now =
-      Date.now();
-
-    const cooldowns =
-      providers
-        .map(
-          provider => {
-
-            const health =
-              AI_PROVIDER_HEALTH[
-                provider.name
-              ];
-
-            const cooldownUntil =
-              Number(
-                health?.cooldownUntil ||
-                0
-              );
-
-            const remainingMs =
-              Math.max(
-                0,
-                cooldownUntil -
-                now
-              );
-
-            return {
-              provider:
-                provider.name,
-
-              cooldownUntil,
-
-              remainingMs
-            };
-
-          }
-        )
-        .sort(
-          (a, b) =>
-            a.remainingMs -
-            b.remainingMs
-        );
-
-    // --------------------------------------------------------
-    // RE-EVALUATE EXPIRED COOLDOWNS
-    // --------------------------------------------------------
-
-    const expiredProviders =
-      cooldowns
-        .filter(
-          item =>
-            item.remainingMs <= 0
-        )
-        .map(
-          item =>
-            item.provider
-        );
-
-    if (
-      expiredProviders.length > 0
-    ) {
-
-      providersToTry =
-        providers.filter(
-          provider =>
-            expiredProviders.includes(
-              provider.name
-            )
-        );
-
-      console.log(
-        "[AI HEALTH] Cooldown expired; rebuilding provider list",
-        {
-          providers:
-            providersToTry.map(
-              provider =>
-                provider.name
-            )
-        }
-      );
-
-    }
-
-    // --------------------------------------------------------
-    // STILL ALL IN COOLDOWN
-    // --------------------------------------------------------
-
-    if (
-      providersToTry.length === 0
-    ) {
-
-      const nextProvider =
-        cooldowns[0] ||
-        null;
-
-      const retryAfterMs =
-        nextProvider
-          ? nextProvider.remainingMs
-          : 0;
-
-      const finalError =
-        new Error(
-          nextProvider &&
-          retryAfterMs > 0
-
-            ? `All AI providers are temporarily unavailable. Next provider may recover in approximately ${Math.ceil(
-                retryAfterMs /
-                1000
-              )} seconds.`
-
-            : "All AI providers are temporarily unavailable."
-        );
-
-      finalError.code =
-        "AI_ALL_PROVIDERS_COOLDOWN";
-
-      // ------------------------------------------------------
-      // 503 IS MORE ACCURATE THAN 429 HERE.
-      //
-      // 429 means the request itself is being rate limited.
-      // Here the platform knows that its configured providers
-      // are temporarily unavailable.
-      // ------------------------------------------------------
-
-      finalError.status =
-        503;
-
-      finalError.retryAfterMs =
-        retryAfterMs;
-
-      finalError.providerHealth =
-        getProviderHealthSnapshot();
-
-      console.warn(
-        "[AI HEALTH] All providers are temporarily unavailable",
-        {
-          nextProvider:
-            nextProvider?.provider ||
-            null,
-
-          retryAfterMs,
-
-          providerHealth:
-            finalError.providerHealth
-        }
-      );
-
-      throw finalError;
-
-    }
-
-  }
-
-  // ----------------------------------------------------------
-  // EXECUTE PROVIDERS
-  // ----------------------------------------------------------
-
-  for (
-    const provider
-    of providersToTry
-  ) {
-
-    try {
-
-      console.log(
-        `[AI] Trying provider: ${provider.name}`
-      );
-
-      // ------------------------------------------------------
-      // PROVIDER-SPECIFIC OPTIONS
-      // ------------------------------------------------------
-
-      const providerOptions = {
-
-        ...options,
-
-        maxTokens:
-          provider.name === "groq"
-
-            ? (
-                options.groqMaxTokens ||
-                options.maxTokens ||
-                1500
-              )
-
-            : provider.name === "gemini"
-
-              ? (
-                  options.geminiMaxTokens ||
-                  options.maxTokens ||
-                  1500
-                )
-
-              : (
-                  options.openaiMaxTokens ||
-                  options.maxTokens ||
-                  1500
-                )
-
-      };
-
-      // ------------------------------------------------------
-      // PROVIDER RETRY
-      // ------------------------------------------------------
-      //
-      // Retry only transient EMPTY response failures.
-      // Do NOT blindly retry quota, authentication, or other
-      // provider failures.
-      //
-      // ------------------------------------------------------
-
-      const MAX_PROVIDER_ATTEMPTS =
-        2;
-
-      let response =
-        null;
-
-      let providerError =
-        null;
-
-      for (
-        let attempt = 1;
-        attempt <= MAX_PROVIDER_ATTEMPTS;
-        attempt++
-      ) {
-
-        try {
-
-          response =
-            await provider.execute(
-              providerOptions
-            );
-
-          providerError =
-            null;
-
-          break;
-
-        } catch (error) {
-
-          providerError =
-            error;
-
-          const code =
-            error?.code ||
-            "";
-
-          const isEmptyResponse =
-            code ===
-              "GROQ_EMPTY_RESPONSE" ||
-            code ===
-              "GEMINI_EMPTY_RESPONSE" ||
-            code ===
-              "OPENAI_EMPTY_RESPONSE";
-
-          if (
-            !isEmptyResponse ||
-            attempt >=
-              MAX_PROVIDER_ATTEMPTS
-          ) {
-
-            break;
-
-          }
-
-          console.warn(
-            `[AI] ${provider.name} returned an empty response; retrying`,
-            {
-              attempt,
-
-              maxAttempts:
-                MAX_PROVIDER_ATTEMPTS
-            }
-          );
-
-          await new Promise(
-            resolve =>
-              setTimeout(
-                resolve,
-                250
-              )
-          );
-
-        }
-
-      }
-
-      // ------------------------------------------------------
-      // FINAL PROVIDER FAILURE
-      // ------------------------------------------------------
-
-      if (
-        providerError
-      ) {
-
-        throw providerError;
-
-      }
-
-      // ------------------------------------------------------
-      // VALIDATE PROVIDER RESPONSE
-      // ------------------------------------------------------
-
-      if (
-        !response
-      ) {
-
-        const error =
-          new Error(
-            `${provider.name} returned no response`
-          );
-
-        error.code =
-          `${provider.name.toUpperCase()}_EMPTY_RESPONSE`;
-
-        throw error;
-
-      }
-
-      // ------------------------------------------------------
-      // SUCCESS
-      // ------------------------------------------------------
-
-      markProviderSuccess(
-        provider.name
-      );
-
-      // ------------------------------------------------------
-      // ATTACH PROVIDER METADATA
-      // ------------------------------------------------------
-      //
-      // Keep the original response shape unchanged.
-      //
-      // Existing extractAIResponse() can therefore continue
-      // working without modification.
-      //
-      // ------------------------------------------------------
-
-      try {
-
-        Object.defineProperty(
-          response,
-          "__agentProvider",
-          {
-            value:
-              provider.name,
-
-            enumerable:
-              false,
-
-            configurable:
-              true
-          }
-        );
-
-        const actualModel =
-          provider.name === "groq"
-
-            ? (
-                providerOptions.groqModel ||
-
-                (
-                  typeof GROQ_MODEL !==
-                    "undefined"
-
-                    ? GROQ_MODEL
-
-                    : providerOptions.model
-                )
-              )
-
-            : provider.name === "gemini"
-
-              ? (
-                  providerOptions.geminiModel ||
-
-                  (
-                    typeof GEMINI_MODEL !==
-                      "undefined"
-
-                      ? GEMINI_MODEL
-
-                      : providerOptions.model
-                  )
-                )
-
-              : (
-                  providerOptions.openaiModel ||
-                  providerOptions.model
-                );
-
-        Object.defineProperty(
-          response,
-          "__agentModel",
-          {
-            value:
-              actualModel ||
-              "unknown",
-
-            enumerable:
-              false,
-
-            configurable:
-              true
-          }
-        );
-
-      } catch (
-        metadataError
-      ) {
-
-        console.warn(
-          "[AI] Could not attach provider metadata",
-
-          metadataError?.message ||
-          metadataError
-        );
-
-      }
-
-      console.log(
-        `[AI] Provider succeeded: ${provider.name}`,
-        {
-          model:
-            response?.__agentModel ||
-            "unknown"
-        }
-      );
-
-      return response;
-
-    } catch (error) {
-
-      lastError =
-        error;
-
-      const status =
-        Number(
-          error?.status ||
-          error?.statusCode ||
-          0
-        );
-
-      const code =
-        error?.code ||
-        "UNKNOWN_ERROR";
-
-      console.warn(
-        `[AI] Provider failed: ${provider.name}`,
-        {
-          status,
-
-          code,
-
-          message:
-            error?.message ||
-            "Unknown provider error"
-        }
-      );
-
-      // ------------------------------------------------------
-      // CIRCUIT BREAKER
-      // ------------------------------------------------------
-
-      markProviderFailure(
-        provider.name,
-        error
-      );
-
-      // ------------------------------------------------------
-      // TRY NEXT HEALTHY PROVIDER
-      // ------------------------------------------------------
-
-      continue;
-
-    }
-
-  }
-
-  // ----------------------------------------------------------
-  // ALL PROVIDERS FAILED
-  // ----------------------------------------------------------
-
-  const finalError =
-    lastError ||
-    new Error(
-      "All AI providers failed"
-    );
-
-  console.error(
-    "[AI HEALTH] All attempted AI providers failed",
-    {
-      error:
-        finalError?.message ||
-        "Unknown error",
-
-      code:
-        finalError?.code ||
-        "UNKNOWN_ERROR",
-
-      providerHealth:
-        getProviderHealthSnapshot()
-    }
-  );
-
-  throw finalError;
-
-    }
-
-
-// ============================================================
-// EXTRACT AI RESPONSE
-// ============================================================
-
-// Normalizes and protects AI output before it is persisted
-// and returned to the frontend.
-// ============================================================
-
-function extractAIResponse(
-  response
-) {
-
-  const content =
-    response
-      ?.choices?.[0]
-      ?.message
-      ?.content;
-
-  if (
-    typeof content !==
-    "string"
-  ) {
-
-    const error =
-      new Error(
-        "AI provider returned an invalid response"
-      );
-
-    error.code =
-      "INVALID_AI_RESPONSE";
-
-    throw error;
-
-  }
-
-  const value =
-    content.trim();
-
-  if (!value) {
-
-    const error =
-      new Error(
-        "AI provider returned an empty response"
-      );
-
-    error.code =
-      "EMPTY_AI_RESPONSE";
-
-    throw error;
-
-  }
-
-  // ----------------------------------------------------------
-  // REMOVE OBVIOUS EXACT REPETITIONS
-  // ----------------------------------------------------------
-
-  const cleaned =
-    typeof collapseRepeatedText ===
-    "function"
-      ? collapseRepeatedText(
-          value
-        )
-      : value;
-
-  // ----------------------------------------------------------
-  // FINAL OUTPUT LIMIT
-  // ----------------------------------------------------------
-
-  if (
-    cleaned.length >
-    AGENT_CONFIG.MAX_OUTPUT_LENGTH
-  ) {
-
-    return cleaned.slice(
-      0,
-      AGENT_CONFIG.MAX_OUTPUT_LENGTH
-    );
-
-  }
-
-  return cleaned;
-}
-
-
-// ============================================================
-// NORMALIZE AI ERROR
-// ============================================================
-
-function normalizeAIError(
-  error
-) {
-
-  const status =
-    Number(
-      error?.status ||
-      error?.statusCode ||
-      0
-    );
-
-
-  if (
-    error?.code ===
-    "AI_PROVIDER_NOT_CONFIGURED"
-  ) {
-
-    return {
-
-      status:
-        503,
-
-      code:
-        "AI_PROVIDER_NOT_CONFIGURED",
-
-      message:
-        "AI service is not configured"
-
-    };
-
-  }
-
-
-  if (
-    error?.code ===
-    "AI_PROVIDER_TIMEOUT"
-  ) {
-
-    return {
-
-      status:
-        504,
-
-      code:
-        "AI_PROVIDER_TIMEOUT",
-
-      message:
-        "AI service request timed out"
-
-    };
-
-  }
-
-
-  if (
-    status === 401
-  ) {
-
-    return {
-
-      status:
-        502,
-
-      code:
-        "AI_PROVIDER_AUTH_ERROR",
-
-      message:
-        "AI provider authentication failed"
-
-    };
-
-  }
-
-
-  if (
-    status === 429
-  ) {
-
-    return {
-
-      status:
-        429,
-
-      code:
-        "AI_PROVIDER_RATE_LIMIT",
-
-      message:
-        "AI service is temporarily rate limited"
-
-    };
-
-  }
-
-
-  if (
-    status >= 500
-  ) {
-
-    return {
-
-      status:
-        502,
-
-      code:
-        "AI_PROVIDER_ERROR",
-
-      message:
-        "AI provider is temporarily unavailable"
-
-    };
-
-  }
-
-
-  return {
-
-    status:
-      500,
-
-    code:
-      "AI_AGENT_ERROR",
-
-    message:
-      "AI agent could not complete the request"
-
+  const configured = {
+    openai: Boolean(openai),
+    gemini: Boolean(GEMINI_API_KEY),
+    groq: Boolean(GROQ_API_KEY)
   };
 
-}
-
-
-// ============================================================
-// PERSIST USER MESSAGE
-// ============================================================
-
-async function persistAgentUserMessage(
-  conversation,
-  content
-) {
-
-  if (
-    !conversation ||
-    !conversation.id
-  ) {
-
-    throw new Error(
-      "Conversation is required"
-    );
-
-  }
-
-
-  const validation =
-    validateMessageContent(
-      content
-    );
-
-
-  if (
-    !validation.valid
-  ) {
-
-    const error =
-      new Error(
-        validation.error
-      );
-
-    error.code =
-      "INVALID_USER_MESSAGE";
-
+  if (!Object.values(configured).some(Boolean)) {
+    const error = new Error("No AI provider is configured");
+    error.code = "AI_PROVIDER_NOT_CONFIGURED";
+    error.status = 503;
     throw error;
-
   }
 
-
-  const result =
-    await pool.query(
-
-      `INSERT INTO messages
-       (
-         conversation_id,
-         role,
-         content
-       )
-       VALUES
-       (
-         $1,
-         'user',
-         $2
-       )
-       RETURNING
-         id,
-         role,
-         content,
-         created_at`,
-
-      [
-
-        conversation.id,
-
-        validation.value
-
-      ]
-
-    );
-
-
-  await pool.query(
-
-    `UPDATE conversations
-     SET updated_at = CURRENT_TIMESTAMP
-     WHERE id = $1`,
-
-    [
-      conversation.id
-    ]
-
-  );
-
-
-  return result.rows[0];
-
-}
-
-
-// ============================================================
-// PERSIST ASSISTANT MESSAGE
-// ============================================================
-
-async function persistAgentAssistantMessage(
-  conversation,
-  content
-) {
-
-  if (
-    !conversation ||
-    !conversation.id
-  ) {
-
-    throw new Error(
-      "Conversation is required"
-    );
-
-  }
-
-
-  const validation =
-    validateMessageContent(
-      content
-    );
-
-
-  if (
-    !validation.valid
-  ) {
-
-    const error =
-      new Error(
-        validation.error
-      );
-
-    error.code =
-      "INVALID_ASSISTANT_MESSAGE";
-
-    throw error;
-
-  }
-
-
-  const result =
-    await pool.query(
-
-      `INSERT INTO messages
-       (
-         conversation_id,
-         role,
-         content
-       )
-       VALUES
-       (
-         $1,
-         'assistant',
-         $2
-       )
-       RETURNING
-         id,
-         role,
-         content,
-         created_at`,
-
-      [
-
-        conversation.id,
-
-        validation.value
-
-      ]
-
-    );
-
-
-  await pool.query(
-
-    `UPDATE conversations
-     SET updated_at = CURRENT_TIMESTAMP
-     WHERE id = $1`,
-
-    [
-      conversation.id
-    ]
-
-  );
-
-
-  return result.rows[0];
-
-}
-
-
-// ============================================================
-// CREATE CONVERSATION FOR AGENT
-// ============================================================
-
-async function createAgentConversation(
-  userId,
-  initialTask
-) {
-
-  if (!userId) {
-
-    throw new Error(
-      "User ID is required"
-    );
-
-  }
-
-
-  const title =
-    buildConversationTitle(
-      initialTask
-    );
-
-
-  const sessionId =
-    crypto.randomUUID();
-
-
-  const result =
-    await pool.query(
-
-      `INSERT INTO conversations
-       (
-         user_id,
-         session_id,
-         title
-       )
-       VALUES
-       (
-         $1,
-         $2,
-         $3
-       )
-       RETURNING
-         id,
-         user_id,
-         session_id,
-         title,
-         created_at,
-         updated_at`,
-
-      [
-
-        userId,
-
-        sessionId,
-
-        title
-
-      ]
-
-    );
-
-
-  if (
-    result.rows.length ===
-    0
-  ) {
-
-    throw new Error(
-      "Could not create agent conversation"
-    );
-
-  }
-
-
-  return result.rows[0];
-
-}
-
-// ============================================================
-// RESPONSE QUALITY ENGINE
-// ============================================================
-// Responsibilities:
-// - Detect the user's language.
-// - Lock the response to that language.
-// - Keep answers concise unless detail is requested.
-// - Preserve Markdown structure.
-// - Remove obvious repeated paragraphs.
-// - Improve spacing and readability.
-// - Prevent empty or malformed answers.
-// ============================================================
-
-function detectAgentLanguage(text) {
-
-  const value =
-    String(text || "")
-      .trim()
-      .toLowerCase();
-
-  if (!value) {
-    return "unknown";
-  }
-
-  // ----------------------------------------------------------
-  // KINYARWANDA
-  // ----------------------------------------------------------
-
-  const kinyarwandaWords = [
-    "ni",
-    "iki",
-    "iki?",
-    "ese",
-    "nigute",
-    "nigute",
-    "gute",
-    "kuki",
-    "mbese",
-    "none",
-    "nonese",
-    "ndifuza",
-    "ndashaka",
-    "nakora",
-    "nabigenza",
-    "wambwira",
-    "urakoze",
-    "murakoze",
-    "yego",
-    "oya",
-    "igihe",
-    "umuntu",
-    "abantu",
-    "amazi",
-    "ibiryo",
-    "kwiga",
-    "ishuri",
-    "umuti",
-    "gukora",
-    "guteza",
-    "uburyo",
-    "nshaka",
-    "mfasha",
-    "mfite",
-    "nkeneye",
-    "mbwira"
-  ];
-
-  // ----------------------------------------------------------
-  // FRENCH
-  // ----------------------------------------------------------
-
-  const frenchWords = [
-    "bonjour",
-    "comment",
-    "pourquoi",
-    "quelle",
-    "quel",
-    "quels",
-    "quelles",
-    "avec",
-    "dans",
-    "pour",
-    "mais",
-    "vous",
-    "nous",
-    "je",
-    "suis",
-    "faire",
-    "besoin",
-    "merci",
-    "est",
-    "une",
-    "des",
-    "les",
-    "que"
-  ];
-
-  // ----------------------------------------------------------
-  // SWAHILI
-  // ----------------------------------------------------------
-
-  const swahiliWords = [
-    "nini",
-    "kwa",
-    "jinsi",
-    "gani",
-    "kwa nini",
-    "nina",
-    "nataka",
-    "naweza",
-    "unaweza",
-    "tafadhali",
-    "asante",
-    "habari",
-    "yangu",
-    "yako",
-    "watu",
-    "chakula",
-    "kujifunza",
-    "shule",
-    "kufanya"
-  ];
-
-  // ----------------------------------------------------------
-  // ENGLISH
-  // ----------------------------------------------------------
-
-  const englishWords = [
-    "what",
-    "why",
-    "how",
-    "when",
-    "where",
-    "who",
-    "which",
-    "can",
-    "could",
-    "would",
-    "should",
-    "please",
-    "help",
-    "need",
-    "want",
-    "give",
-    "tell",
-    "explain",
-    "show",
-    "make",
-    "create",
-    "learn",
-    "school",
-    "answer",
-    "question",
-    "hello",
-    "thanks",
-    "thank"
-  ];
-
-  const countMatches =
-    (words) => {
-
-      let score = 0;
-
-      for (
-        const word
-        of words
-      ) {
-
-        const pattern =
-          new RegExp(
-            `(^|\\s)${word.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&")}(?=\\s|[?.!,;:]|$)`,
-            "i"
-          );
-
-        if (
-          pattern.test(value)
-        ) {
-          score++;
-        }
-
-      }
-
-      return score;
-    };
-
-
-  const scores = {
-
-    rw:
-      countMatches(
-        kinyarwandaWords
-      ),
-
-    fr:
-      countMatches(
-        frenchWords
-      ),
-
-    sw:
-      countMatches(
-        swahiliWords
-      ),
-
-    en:
-      countMatches(
-        englishWords
-      )
-
-  };
-
-
-  const ranked =
-    Object.entries(
-      scores
-    )
-      .sort(
-        (a, b) =>
-          b[1] - a[1]
-      );
-
-
-  const winner =
-    ranked[0];
-
-
-  if (
-    !winner ||
-    winner[1] === 0
-  ) {
-    return "unknown";
-  }
-
-
-  return winner[0];
-
-}
-
-
-// ============================================================
-// RESPONSE FORMAT NORMALIZER
-// ============================================================
-
-function normalizeAgentResponse(
-  text
-) {
-
-  if (
-    typeof text !==
-    "string"
-  ) {
-    return "";
-  }
-
-
-  let value =
-    text
-      .replace(/\r\n/g, "\n")
-      .replace(/\r/g, "\n")
-      .trim();
-
-
-  if (!value) {
-    return "";
-  }
-
-
-  // ----------------------------------------------------------
-  // REMOVE EXCESSIVE EMPTY LINES
-  // ----------------------------------------------------------
-
-  value =
-    value.replace(
-      /\n{4,}/g,
-      "\n\n"
-    );
-
-
-  // ----------------------------------------------------------
-  // CLEAN SPACES AROUND HEADINGS
-  // ----------------------------------------------------------
-
-  value =
-    value.replace(
-      /[ \t]+\n/g,
-      "\n"
-    );
-
-
-  // ----------------------------------------------------------
-  // SEPARATE MARKDOWN HEADINGS
-  // ----------------------------------------------------------
-
-  value =
-    value.replace(
-      /([^\n])\n(#{1,6}\s)/g,
-      "$1\n\n$2"
-    );
-
-
-  // ----------------------------------------------------------
-  // SEPARATE NUMBERED SECTIONS
-  // ----------------------------------------------------------
-
-  value =
-    value.replace(
-      /([.!?])\s+(\d+\.\s+)/g,
-      "$1\n\n$2"
-    );
-
-
-  // ----------------------------------------------------------
-  // SEPARATE BULLET GROUPS
-  // ----------------------------------------------------------
-
-  value =
-    value.replace(
-      /([.!?])\s+([-*]\s+)/g,
-      "$1\n\n$2"
-    );
-
-
-  // ----------------------------------------------------------
-  // COLLAPSE OBVIOUS DUPLICATES
-  // ----------------------------------------------------------
-
-  if (
-    typeof collapseRepeatedText ===
-    "function"
-  ) {
-
-    value =
-      collapseRepeatedText(
-        value
-      );
-
-  }
-
-
-  return value.trim();
-
-}
-
-
-// ============================================================
-// RESPONSE QUALITY INSTRUCTIONS
-// ============================================================
-
-function buildResponseQualityInstruction(
-  language,
-  task
-) {
-
-  const languageRules = {
-
-    rw:
-      "Respond ONLY in Kinyarwanda. Do not switch to English, French, or another language unless the user explicitly asks for it.",
-
-    en:
-      "Respond ONLY in English. Do not switch to Kinyarwanda, French, Swahili, or another language unless the user explicitly asks for it.",
-
-    fr:
-      "Répondez UNIQUEMENT en français. Ne passez pas à l'anglais, au kinyarwanda ou à une autre langue sauf si l'utilisateur le demande explicitement.",
-
-    sw:
-      "Jibu KWA KISWAHILI TU. Usibadilishe kwenda Kiingereza, Kinyarwanda au lugha nyingine isipokuwa mtumiaji akiomba waziwazi.",
-
-    unknown:
-      "Use the same language as the user's current request. Do not unnecessarily mix languages."
-
-  };
-
-
-  const taskText =
-  String(
-    task || ""
-  )
-    .toLowerCase()
-    .trim();
-
-
-const explicitDetailRequest =
-  [
-    "detailed",
-    "detail",
-    "deeply",
-    "deep",
-    "full",
-    "complete",
-    "comprehensive",
-    "explain fully",
-    "step by step",
-    "in detail",
-
-    "birambuye",
-    "neza cyane",
-    "ibisobanuro birambuye",
-    "ku buryo burambuye",
-    "byose"
-  ]
-  .some(
-    phrase =>
-      taskText.includes(
-        phrase
-      )
-  );
-
-
-  const lengthRule =
-    explicitDetailRequest
-
-      ? "The user requested detail. Give enough detail to fully answer the request, but keep the structure clean and avoid repetition."
-
-      : "Keep the answer concise. Give only the information necessary to answer the current request clearly. Do not produce a long essay unless the task requires it.";
-
-
-  return [
-
-    "RESPONSE QUALITY POLICY:",
-
-    languageRules[
-      language
-    ] || languageRules.unknown,
-
-    lengthRule,
-
-    "Answer the CURRENT USER TASK, not an older task.",
-
-    "Do not repeat the same sentence, paragraph, idea, or instruction.",
-
-    "Use clean Markdown when useful.",
-
-    "If there are multiple distinct points, separate them with headings, bullets, numbered steps, or blank lines.",
-
-    "Avoid giant paragraphs when the information can be structured more clearly.",
-
-    "Do not add unnecessary introductions, conclusions, or filler.",
-
-    "Do not mix languages inside the same answer unless the user asks for translation or the content itself requires another language.",
-
-    "Do not claim that an action was completed unless the agent actually performed that action.",
-
-    "Preserve important technical content, code, commands, URLs, names, numbers, and terminology.",
-
-    "Prefer a short, direct answer followed by structured details when additional explanation is necessary."
-
-  ].join("\n");
-
-}
-
-
-// ============================================================
-// APPLY RESPONSE QUALITY
-// ============================================================
-
-function applyResponseQuality(
-  answer,
-  task
-) {
-
-  const original =
-    String(
-      answer || ""
-    ).trim();
-
-
-  if (!original) {
-
-    const error =
-      new Error(
-        "AI agent produced an empty response"
-      );
-
-    error.code =
-      "EMPTY_QUALITY_RESPONSE";
-
-    throw error;
-
-  }
-
-
-  const language =
-    detectAgentLanguage(
-      task
-    );
-
-
-  let systemQualityInstruction =
-    buildResponseQualityInstruction(
-      language,
-      task
-    );
-
-
-  // ----------------------------------------------------------
-  // NORMALIZE STRUCTURE
-  // ----------------------------------------------------------
-
-  let cleaned =
-    normalizeAgentResponse(
-      original
-    );
-
-
-  if (!cleaned) {
-
-    const error =
-      new Error(
-        "AI agent response became empty after quality processing"
-      );
-
-    error.code =
-      "INVALID_QUALITY_RESPONSE";
-
-    throw error;
-
-  }
-
-
-  // ----------------------------------------------------------
-  // OUTPUT SAFETY LIMIT
-  // ----------------------------------------------------------
-
-  const maxLength =
-    Number(
-      AGENT_CONFIG.MAX_OUTPUT_LENGTH
-    ) || 12000;
-
-
-  if (
-    cleaned.length >
-    maxLength
-  ) {
-
-    cleaned =
-      cleaned.slice(
-        0,
-        maxLength
-      ).trim();
-
-  }
-
-
-  return {
-
-    answer:
-      cleaned,
-
-    language,
-
-    qualityInstruction:
-      systemQualityInstruction,
-
-    originalLength:
-      original.length,
-
-    finalLength:
-      cleaned.length
-
-  };
-
-}
-
-// ============================================================
-// RESPONSE VERIFICATION ENGINE
-// ============================================================
-// Verifies an AI response before it is persisted.
-//
-// Checks:
-// - Response exists
-// - Response is relevant to the current task
-// - Response is not obviously repetitive
-// - Response is not excessively large
-// - Response follows the requested language
-// - Response has reasonable structure
-// ============================================================
-
-function verifyAgentResponse(
-  task,
-  answer,
-  expectedLanguage
-) {
-
-  const issues = [];
-
-  const taskText =
-    String(
-      task || ""
-    ).trim();
-
-  const responseText =
-    String(
-      answer || ""
-    ).trim();
-
-
-  // ----------------------------------------------------------
-  // EMPTY RESPONSE
-  // ----------------------------------------------------------
-
-  if (!responseText) {
-
-    issues.push(
-      "EMPTY_RESPONSE"
-    );
-
-  }
-
-
-  // ----------------------------------------------------------
-  // MINIMUM RESPONSE
-  // ----------------------------------------------------------
-
-  if (
-    responseText &&
-    responseText.length < 2
-  ) {
-
-    issues.push(
-      "RESPONSE_TOO_SHORT"
-    );
-
-  }
-
-
-  // ----------------------------------------------------------
-  // MAXIMUM RESPONSE
-  // ----------------------------------------------------------
-
-  const maxOutputLength =
-    Number(
-      AGENT_CONFIG.MAX_OUTPUT_LENGTH
-    ) || 50000;
-
-
-  if (
-    responseText.length >
-    maxOutputLength
-  ) {
-
-    issues.push(
-      "RESPONSE_TOO_LONG"
-    );
-
-  }
-
-
-  // ----------------------------------------------------------
-  // EXACT REPETITION
-  // ----------------------------------------------------------
-
-  const normalizedLines =
-    responseText
-      .split(/\r?\n/)
-      .map(
-        line =>
-          line.trim()
-      )
-      .filter(
-        Boolean
-      );
-
-
-  const repeatedLines = {};
-
-  for (
-    const line
-    of normalizedLines
-  ) {
-
-    if (
-      line.length < 20
-    ) {
-      continue;
-    }
-
-    const key =
-      line.toLowerCase();
-
-    repeatedLines[key] =
-      (
-        repeatedLines[key] ||
-        0
-      ) + 1;
-
-  }
-
-
-  const hasHeavyRepetition =
-    Object.values(
-      repeatedLines
-    ).some(
-      count =>
-        count >= 3
-    );
-
-
-  if (
-    hasHeavyRepetition
-  ) {
-
-    issues.push(
-      "REPETITION"
-    );
-
-  }
-
-
-  // ----------------------------------------------------------
-  // LANGUAGE CONSISTENCY
-  // ----------------------------------------------------------
-  // We only enforce this when the detector has a
-  // reasonably identifiable language.
-  //
-  // Technical words, code, names and URLs are allowed.
-  // ----------------------------------------------------------
-
-  if (
-    expectedLanguage &&
-    expectedLanguage !==
-      "unknown" &&
-    responseText
-  ) {
-
-    const responseLanguage =
-      detectAgentLanguage(
-        responseText
-      );
-
-
-    if (
-      responseLanguage !==
-        "unknown" &&
-      responseLanguage !==
-        expectedLanguage
-    ) {
-
-      issues.push(
-        "LANGUAGE_MISMATCH"
-      );
-
-    }
-
-  }
-
-
-  // ----------------------------------------------------------
-  // GIANT UNSTRUCTURED PARAGRAPH
-  // ----------------------------------------------------------
-
-  const paragraphCount =
-    responseText
-      .split(/\n\s*\n/)
-      .filter(
-        Boolean
-      )
-      .length;
-
-
-  const veryLongSingleParagraph =
-    paragraphCount <= 1 &&
-    responseText.length > 3500 &&
-    !responseText.includes(
-      "\n- "
-    ) &&
-    !responseText.includes(
-      "\n* "
-    ) &&
-    !responseText.includes(
-      "\n1. "
-    ) &&
-    !responseText.includes(
-      "\n#"
-    );
-
-
-  if (
-    veryLongSingleParagraph
-  ) {
-
-    issues.push(
-      "POOR_STRUCTURE"
-    );
-
-  }
-
-
-  // ----------------------------------------------------------
-  // BASIC TASK PRESENCE CHECK
-  // ----------------------------------------------------------
-  // This deliberately does NOT require exact task words because
-  // a good answer may paraphrase the user's question.
-  // ----------------------------------------------------------
-
-  if (
-    taskText &&
-    responseText
-  ) {
-
-    const taskWords =
-      taskText
-        .toLowerCase()
-        .replace(
-          /[^\p{L}\p{N}\s]/gu,
-          " "
-        )
-        .split(/\s+/)
-        .filter(
-          word =>
-            word.length >= 5
-        );
-
-
-    if (
-      taskWords.length >= 3
-    ) {
-
-      const responseLower =
-        responseText
-          .toLowerCase();
-
-
-      const matchedWords =
-        taskWords.filter(
-          word =>
-            responseLower.includes(
-              word
-            )
-        );
-
-
-      const relevanceRatio =
-        matchedWords.length /
-        taskWords.length;
-
-
-      // This is intentionally conservative.
-      // It only flags extremely disconnected answers.
-      if (
-        relevanceRatio <
-          0.05 &&
-        responseText.length <
-          1200
-      ) {
-
-        issues.push(
-          "POSSIBLY_OFF_TOPIC"
-        );
-
-      }
-
-    }
-
-  }
-
-
-  // ----------------------------------------------------------
-  // RESULT
-  // ----------------------------------------------------------
-
-  return {
-
-    valid:
-      issues.length === 0,
-
-    issues,
-
-    issueCount:
-      issues.length,
-
-    language:
-      expectedLanguage ||
-      "unknown",
-
-    responseLength:
-      responseText.length
-
-  };
-
-}
-
-
-// ============================================================
-// SELF-REPAIR ENGINE
-// ============================================================
-// Repairs a failed response by asking the configured AI
-// provider to rewrite the existing answer.
-//
-// Important:
-// - Does NOT create a second conversation.
-// - Does NOT persist the bad answer.
-// - Runs at most MAX_SELF_REPAIR_ATTEMPTS times.
-// ============================================================
-
-async function selfRepairAgentResponse(
-  task,
-  answer,
-  verification,
-  language,
-  model,
-  temperature
-) {
-
-  const maxAttempts =
-    Math.max(
-      0,
-      Number(
-        AGENT_CONFIG.MAX_SELF_REPAIR_ATTEMPTS
-      ) || 1
-    );
-
-
-  if (
-    maxAttempts === 0
-  ) {
-
-    return {
-
-      repaired:
-        false,
-
-      answer,
-
-      attempts:
-        0
-
-    };
-
-  }
-
-
-  let currentAnswer =
-    String(
-      answer || ""
-    ).trim();
-
-
-  let lastVerification =
-    verification;
-
-
-  for (
-    let attempt = 1;
-    attempt <= maxAttempts;
-    attempt++
-  ) {
-
-    console.log(
-      "[AGENT VERIFY] Self-repair attempt:",
-      {
-        attempt,
-        issues:
-          lastVerification?.issues ||
-          []
-      }
-    );
-
-
-    const languageInstruction =
-      language === "rw"
-
-        ? "Write the repaired answer ONLY in Kinyarwanda."
-
-        : language === "en"
-
-          ? "Write the repaired answer ONLY in English."
-
-          : language === "fr"
-
-            ? "Write the repaired answer ONLY in French."
-
-            : language === "sw"
-
-              ? "Write the repaired answer ONLY in Swahili."
-
-              : "Use the same language as the user's task.";
-
-
-    const repairMessages = [
-
-      {
-        role:
-          "system",
-
-        content:
-          [
-            "You are the Nkwasibwe IRHCF response repair engine.",
-
-            languageInstruction,
-
-            "Repair the existing answer instead of changing the user's task.",
-
-            "Keep the answer concise unless the task requires detail.",
-
-            "Remove repetition.",
-
-            "Improve clarity and spacing.",
-
-            "Use clean Markdown when useful.",
-
-            "Keep code, commands, URLs, names and important technical information intact.",
-
-            "Do not mention that a repair was performed.",
-
-            "Do not add information merely to make the answer longer."
-
-          ].join("\n")
-
-      },
-
-      {
-        role:
-          "user",
-
-        content:
-          [
-            "CURRENT USER TASK:",
-
-            task,
-
-            "",
-
-            "CURRENT ANSWER:",
-
-            currentAnswer,
-
-            "",
-
-            "VERIFICATION ISSUES:",
-
-            (
-              lastVerification?.issues ||
-              []
-            ).join(", ") ||
-            "unknown",
-
-            "",
-
-            "Return ONLY the repaired final answer."
-
-          ].join("\n")
-
-      }
-
-    ];
-
-
-    try {
-
-      const repairedProviderResponse =
-        await executeAIProvider(
-
-          repairMessages,
-
-          {
-
-            model,
-
-            temperature:
-
-              Math.min(
-                Number(
-                  temperature
-                ) || 0.2,
-                0.2
-              ),
-
-            maxTokens:
-              1500,
-
-            openaiMaxTokens:
-              1500,
-
-            geminiMaxTokens:
-              1500,
-
-            groqMaxTokens:
-              1500
-
-          }
-
-        );
-
-
-      const repairedRaw =
-        extractAIResponse(
-          repairedProviderResponse
-        );
-
-
-      const qualityResult =
-        applyResponseQuality(
-
-          repairedRaw,
-
-          task
-
-        );
-
-
-      currentAnswer =
-        qualityResult.answer;
-
-
-      lastVerification =
-        verifyAgentResponse(
-
-          task,
-
-          currentAnswer,
-
-          language
-
-        );
-
-
-      if (
-        lastVerification.valid
-      ) {
-
-        console.log(
-          "[AGENT VERIFY] Self-repair successful:",
-          {
-            attempt
-          }
-        );
-
-
-        return {
-
-          repaired:
-            true,
-
-          answer:
-            currentAnswer,
-
-          attempts:
-            attempt,
-
-          verification:
-            lastVerification
-
-        };
-
-      }
-
-    } catch (repairError) {
-
-      console.warn(
-        "[AGENT VERIFY] Self-repair failed:",
-        {
-          attempt,
-
-          code:
-            repairError?.code ||
-            "UNKNOWN_ERROR",
-
-          message:
-            repairError?.message ||
-            "Unknown repair error"
-
-        }
-      );
-
-    }
-
-  }
-
-
-  // ----------------------------------------------------------
-  // If repair could not produce a valid response,
-  // return the best available response rather than inventing
-  // a fake success.
-  // ----------------------------------------------------------
-
-  return {
-
-    repaired:
-      false,
-
-    answer:
-      currentAnswer,
-
-    attempts:
-      maxAttempts,
-
-    verification:
-      lastVerification
-
-  };
-
-      }
-
-// ============================================================
-// NKWASIBWE IRHCF — LIVE RESEARCH REQUIREMENT DETECTOR
-// ============================================================
-//
-// Purpose:
-// - Detect tasks that genuinely require current/external data.
-// - Respect explicit user instructions.
-// - Never trigger web research merely because a task mentions
-//   a generic word such as "website", "Rwanda", "amakuru",
-//   "official", or a year.
-// - Explicit "do not use the internet/web/research" instructions
-//   ALWAYS override automatic research detection.
-//
-// IMPORTANT:
-// This function decides WHETHER research is required.
-// It does NOT perform research.
-//
-// Research execution is handled separately by:
-//     performLiveResearch()
-//
-// ============================================================
-
-function taskNeedsLiveResearch(task) {
-
-  const text =
-    String(task || "")
-      .trim()
-      .toLowerCase();
-
-  // ----------------------------------------------------------
-  // EMPTY TASK
-  // ----------------------------------------------------------
-
-  if (!text) {
-    return false;
-  }
-
-  // ==========================================================
-  // 1. EXPLICIT USER RESEARCH OPT-OUT
-  // ==========================================================
-  //
-  // This MUST be checked BEFORE any positive research signal.
-  //
-  // Examples:
-  //
-  // "Ntukoreshe amakuru yo kuri internet"
-  // "Ntukoreshe internet"
-  // "Don't use the internet"
-  // "Do not browse"
-  // "No web search"
-  // "Without internet"
-  //
-  // If the user explicitly says not to use external research,
-  // the detector MUST return false.
-  //
-  // This is a user instruction and therefore has priority over
-  // automatic keyword detection.
-  //
-  // ==========================================================
-
-  const researchOptOutSignals = [
-
-    // --------------------------------------------------------
-    // KINYARWANDA
-    // --------------------------------------------------------
-
-    "ntukoreshe internet",
-    "ntukoreshe amakuru yo kuri internet",
-    "ntukoreshe amakuru kuri internet",
-    "ntukoreshe urubuga rwa internet",
-    "ntukoreshe web",
-    "ntukoreshe web search",
-    "ntukoreshe ubushakashatsi bwo kuri internet",
-    "ntukoreshe ubushakashatsi kuri internet",
-    "sinshaka amakuru yo kuri internet",
-    "sinshaka amakuru kuri internet",
-    "sinshaka ko ukoresha internet",
-    "sinshaka ko ukoresha web",
-    "sinshaka ko ushakisha kuri internet",
-    "ntushakishe kuri internet",
-    "ntushakishe internet",
-    "ntushakishe kuri web",
-    "ntukore web search",
-    "ntukore research",
-    "nta internet",
-    "nta web search",
-    "utakoreshe internet",
-    "udakoreshe internet",
-
-    // --------------------------------------------------------
-    // ENGLISH
-    // --------------------------------------------------------
-
-    "do not use the internet",
-    "don't use the internet",
-    "do not use internet",
-    "don't use internet",
-    "do not browse",
-    "don't browse",
-    "do not search the web",
-    "don't search the web",
-    "do not use web search",
-    "don't use web search",
-    "do not use the web",
-    "don't use the web",
-    "without internet",
-    "without using the internet",
-    "without web search",
-    "without browsing",
-    "no internet",
-    "no web search",
-    "no browsing",
-    "offline only",
-    "use your own knowledge",
-    "use only your knowledge",
-    "do not research",
-    "don't research",
-    "no research",
-
-    // --------------------------------------------------------
-    // FRENCH
-    // --------------------------------------------------------
-
-    "n'utilise pas internet",
-    "ne pas utiliser internet",
-    "sans internet",
-    "ne cherche pas sur internet",
-    "ne faites pas de recherche",
-
-    // --------------------------------------------------------
-    // SWAHILI
-    // --------------------------------------------------------
-
-    "usitumie internet",
-    "usitafute kwenye internet",
-    "bila internet",
-    "usitumie web search"
-  ];
-
-  const hasExplicitResearchOptOut =
-    researchOptOutSignals.some(
-      signal =>
-        text.includes(signal)
-    );
-
-  if (
-    hasExplicitResearchOptOut
-  ) {
-
-    console.log(
-      "[RESEARCH] Explicit user opt-out detected. Live research disabled.",
-      {
-        reason:
-          "USER_EXPLICITLY_DISABLED_WEB_RESEARCH"
-      }
-    );
-
-    return false;
-  }
-
-  // ==========================================================
-  // 2. EXPLICIT POSITIVE RESEARCH REQUESTS
-  // ==========================================================
-  //
-  // These are stronger than ordinary contextual keywords.
-  //
-  // Examples:
-  //
-  // "shakisha"
-  // "research"
-  // "investigate"
-  // "verify using official sources"
-  //
-  // ==========================================================
-
-  const explicitResearchSignals = [
-
-    // Kinyarwanda
-    "shakisha",
-    "gushakisha",
-    "gushaka amakuru",
-    "gukora ubushakashatsi",
-    "kora ubushakashatsi",
-    "genzura amakuru",
-    "genzura ukoresheje amasoko",
-    "genzura ukoresheje isoko",
-    "amasoko yemewe",
-    "isoko yemewe",
-    "urubuga rwa leta",
-    "urubuga rwemewe",
-
-    // English
-    "search for",
-    "search online",
-    "search the web",
-    "search the internet",
-    "web search",
-    "research",
-    "research this",
-    "research it",
-    "investigate",
-    "look this up",
-    "look it up",
-    "find current information",
-    "verify online",
-    "verify using official sources",
-    "check official sources",
-    "use official sources",
-    "use official websites",
-    "find official source",
-    "find official sources",
-
-    // French
-    "recherche",
-    "chercher sur internet",
-    "chercher en ligne",
-    "vérifier les sources",
-
-    // Swahili
-    "tafuta mtandaoni",
-    "tafuta kwenye internet",
-    "fanya utafiti",
-    "thibitisha kwa vyanzo rasmi"
-  ];
-
-  const hasExplicitResearchRequest =
-    explicitResearchSignals.some(
-      signal =>
-        text.includes(signal)
-    );
-
-  if (
-    hasExplicitResearchRequest
-  ) {
-
-    return true;
-  }
-
-  // ==========================================================
-  // 3. CURRENT / TIME-SENSITIVE INFORMATION
-  // ==========================================================
-  //
-  // Current information should trigger research because the
-  // model's internal knowledge may be outdated.
-  //
-  // ==========================================================
-
-  const currentInformationSignals = [
-
-    // Kinyarwanda
-    "ubu",
-    "uyu munsi",
-    "uyu mwaka",
-    "muri iki gihe",
-    "vuba aha",
-    "amakuru mashya",
-    "amakuru agezweho",
-    "amakuru y'uyu munsi",
-    "amakuru y'ubu",
-    "ibigezweho",
-
-    // English
-    "latest",
-    "current",
-    "today",
-    "now",
-    "recent",
-    "recently",
-    "latest news",
-    "current news",
-    "as of today",
-    "as of now",
-    "this week",
-    "this month",
-    "this year"
-  ];
-
-  if (
-    currentInformationSignals.some(
-      signal =>
-        text.includes(signal)
-    )
-  ) {
-
-    return true;
-  }
-
-  // ==========================================================
-  // 4. OFFICIAL / VERIFIED INFORMATION
-  // ==========================================================
-  //
-  // "official" alone is not enough in every task.
-  // It becomes a research signal when the user asks for an
-  // official source/site or verification.
-  //
-  // ==========================================================
-
-  const officialResearchSignals = [
-
-    "official source",
-    "official sources",
-    "official website",
-    "official websites",
-    "official site",
-    "official document",
-    "official documents",
-    "source officielle",
-    "sources officielles",
-    "isoko yemewe",
-    "amasoko yemewe",
-    "urubuga rwemewe",
-    "inyandiko yemewe",
-    "verified source",
-    "verified sources",
-    "amakuru yagenzuwe",
-    "amakuru yemejwe"
-  ];
-
-  if (
-    officialResearchSignals.some(
-      signal =>
-        text.includes(signal)
-    )
-  ) {
-
-    return true;
-  }
-
-  // ==========================================================
-  // 5. SPECIFIC CURRENT RWANDA INSTITUTION QUESTIONS
-  // ==========================================================
-  //
-  // Institution names alone should NOT automatically trigger
-  // research.
-  //
-  // Research is required when the user is asking about their
-  // current information, current services, rules, results,
-  // announcements, or official status.
-  //
-  // ==========================================================
-
-  const rwandaInstitutionSignals = [
-
-    "rnp",
-    "rcs",
-    "rdf",
-    "police",
-    "defence force",
-    "defense force",
-    "mineduc",
-    "reb",
-    "irembo",
-    "mifotra",
-    "nesa",
-    "ministry of education",
-    "government of rwanda",
-    "leta y'u rwanda",
-    "leta y'u Rwanda"
-  ];
-
-  const currentInstitutionContextSignals = [
-
-    "results",
-    "result",
-    "amanota",
-    "amanota yanjye",
-    "amanota yawe",
-    "exam results",
-    "exam",
-    "national examination",
-    "national exams",
-    "senior six",
-    "senior 6",
-    "s6",
-    "application status",
-    "application",
-    "recruitment",
-    "admission",
-    "registration",
-    "requirements",
-    "requirements for",
-    "eligibility",
-    "deadline",
-    "deadlines",
-    "announcement",
-    "announcements",
-    "service",
-    "services",
-    "procedure",
-    "procedures",
-    "requirements",
-    "policy",
-    "regulation",
-    "regulations",
-    "amategeko",
-    "amabwiriza"
-  ];
-
-  const mentionsRwandaInstitution =
-    rwandaInstitutionSignals.some(
-      signal =>
-        text.includes(signal)
-    );
-
-  const asksCurrentInstitutionInformation =
-    currentInstitutionContextSignals.some(
-      signal =>
-        text.includes(signal)
-    );
-
-  if (
-    mentionsRwandaInstitution &&
-    asksCurrentInstitutionInformation
-  ) {
-
-    return true;
-  }
-
-  // ==========================================================
-  // 6. EDUCATION / EXAM RESULTS
-  // ==========================================================
-  //
-  // Education terms alone should not always force research.
-  //
-  // Example:
-  //
-  // "Explain what a grade is."
-  //
-  // does NOT need live web research.
-  //
-  // But:
-  //
-  // "What are the 2026 Senior Six results?"
-  //
-  // DOES need live research.
-  //
-  // ==========================================================
-
-  const educationCurrentSignals = [
-
-    "amanota yanjye",
-    "amanota yawe",
-    "results zanjye",
-    "my results",
-    "your results",
-    "exam results",
-    "national examination results",
-    "national exam results",
-    "senior six results",
-    "senior 6 results",
-    "s6 results",
-    "school results",
-    "student results",
-    "marksheet",
-    "transcript results",
-    "exam result",
-    "results released",
-    "results announced"
-  ];
-
-  if (
-    educationCurrentSignals.some(
-      signal =>
-        text.includes(signal)
-    )
-  ) {
-
-    return true;
-  }
-
-  // ==========================================================
-  // 7. MONEY / PRICES / EXCHANGE RATES
-  // ==========================================================
-  //
-  // "amafaranga" alone is too broad.
-  //
-  // We only trigger research when the user asks about a
-  // changing financial value.
-  //
-  // ==========================================================
-
-  const moneyCurrentSignals = [
-
-    "exchange rate",
-    "exchange rates",
-    "igipimo cy'ivunjisha",
-    "ivunjisha",
-    "current price",
-    "current prices",
-    "price today",
-    "price now",
-    "igiciro cy'uyu munsi",
-    "ibiciro by'uyu munsi",
-    "umushahara wa",
-    "salary of",
-    "current salary",
-    "minimum wage",
-    "latest price"
-  ];
-
-  if (
-    moneyCurrentSignals.some(
-      signal =>
-        text.includes(signal)
-    )
-  ) {
-
-    return true;
-  }
-
-  // ==========================================================
-  // 8. CURRENT LAW / POLITICS / ELECTIONS
-  // ==========================================================
-
-  const currentLawPoliticsSignals = [
-
-    "new law",
-    "new laws",
-    "latest law",
-    "current law",
-    "new regulation",
-    "new regulations",
-    "latest regulation",
-    "current regulation",
-    "new policy",
-    "latest policy",
-    "current policy",
-    "election results",
-    "election date",
-    "latest election",
-    "current president",
-    "current minister",
-    "current government",
-    "amatora y'uyu mwaka",
-    "amategeko mashya",
-    "amabwiriza mashya",
-    "politiki nshya"
-  ];
-
-  if (
-    currentLawPoliticsSignals.some(
-      signal =>
-        text.includes(signal)
-    )
-  ) {
-
-    return true;
-  }
-
-  // ==========================================================
-  // 9. DATES / YEARS
-  // ==========================================================
-  //
-  // IMPORTANT:
-  //
-  // A year by itself is NOT sufficient to force research.
-  //
-  // Example:
-  //
-  // "Explain how websites were built in 2026"
-  //
-  // does not automatically require live research.
-  //
-  // A year combined with a current/external information
-  // question does.
-  //
-  // ==========================================================
-
-  const containsRecentYear =
-    /\b(2024|2025|2026|2027)\b/
-      .test(text);
-
-  const yearContextSignals = [
-
-    "results",
-    "amanota",
-    "exam",
-    "election",
-    "amatora",
-    "law",
-    "amategeko",
-    "regulation",
-    "policy",
-    "salary",
-    "umushahara",
-    "price",
-    "igiciro",
-    "announcement",
-    "deadline",
-    "admission",
-    "application",
-    "recruitment",
-    "latest",
-    "current",
-    "official",
-    "verified",
-    "official source",
-    "official website"
-  ];
-
-  if (
-    containsRecentYear &&
-    yearContextSignals.some(
-      signal =>
-        text.includes(signal)
-    )
-  ) {
-
-    return true;
-  }
-
-  // ==========================================================
-  // 10. GENERIC WEB TERMS
-  // ==========================================================
-  //
-  // IMPORTANT:
-  //
-  // "website" alone MUST NOT trigger research.
-  //
-  // A user may say:
-  //
-  // "Build a website."
-  //
-  // That is a coding task, not a research task.
-  //
-  // Research only when the user explicitly asks to find,
-  // inspect, compare, verify, or look up an external website.
-  //
-  // ==========================================================
-
-  const explicitWebResearchSignals = [
-
-    "search this website",
-    "search the website",
-    "search these websites",
-    "look at this website",
-    "look at the website",
-    "inspect this website",
-    "inspect the website",
-    "find this website",
-    "find the website",
-    "find official website",
-    "open the official website",
-    "check the official website",
-    "check this website",
-    "compare websites",
-    "compare these websites",
-    "compare official websites",
-    "reba urubuga",
-    "reba kuri uru rubuga",
-    "reba kuri website",
-    "genzura urubuga",
-    "genzura website",
-    "shakisha urubuga",
-    "shakisha website"
-  ];
-
-  if (
-    explicitWebResearchSignals.some(
-      signal =>
-        text.includes(signal)
-    )
-  ) {
-
-    return true;
-  }
-
-  // ==========================================================
-  // 11. DEFAULT
-  // ==========================================================
-  //
-  // If none of the strong signals above matched, do NOT use
-  // live research.
-  //
-  // This keeps ordinary planning, coding, explanation,
-  // writing, brainstorming, and problem-solving tasks fast
-  // and independent from external providers.
-  //
-  // ==========================================================
-
-  return false;
-    }
-
-
-// ============================================================
-// LIVE WEB RESEARCH
-// ============================================================
-//
-// Canonical Nkwasibwe live-research pipeline.
-//
-// Provider order:
-//
-//   1. OpenAI Web Search
-//   2. Gemini Google Search
-//   3. Groq Browser Search
-//
-// IMPORTANT:
-//
-// Providers are infrastructure.
-// They are NOT agents.
-//
-// The research gate must NEVER use model reasoning
-// as a substitute for actual research.
-//
-// If every live-search provider fails,
-// the function returns performed:false.
-//
-// The caller's safety gate then blocks unsupported
-// factual generation.
-//
-// ============================================================
-
-async function performLiveResearch(
-  task,
-  language = "unknown"
-) {
-  const researchTask =
-    String(task || "")
-      .trim();
-
-  if (!researchTask) {
-    return {
-      performed:
-        false,
-
-      reason:
-        "EMPTY_TASK",
-
-      sources:
-        [],
-
-      context:
-        ""
-    };
-  }
-
-  // ==========================================================
-  // LANGUAGE
-  // ==========================================================
-
-  const languageInstruction =
-    language === "rw"
-      ? "Return the research synthesis in Kinyarwanda."
-      : language === "fr"
-        ? "Return the research synthesis in French."
-        : language === "sw"
-          ? "Return the research synthesis in Swahili."
-          : "Return the research synthesis in English.";
-
-  // ==========================================================
-  // RESEARCH SYSTEM PROMPT
-  // ==========================================================
-
-  const researchSystemPrompt = [
-    "You are the Nkwasibwe IRHCF live research engine.",
-    "",
-    "Use live web search to investigate the user's request.",
-    "",
-    "Research requirements:",
-    "1. Prefer primary and official sources.",
-    "2. For Rwanda government information, prefer official Rwanda government and institutional domains.",
-    "3. For education and national examinations, prefer official NESA, MINEDUC, REB, and other relevant official Rwanda institutional sources.",
-    "4. For laws and regulations, prefer official government/legal sources.",
-    "5. For current public officials, use current official institutional sources.",
-    "6. Do not invent facts, dates, names, URLs, examination rules, grades, results, salaries, ranks, or positions.",
-    "7. If a claim cannot be verified, explicitly mark it as unverified.",
-    "8. If sources disagree, report the disagreement.",
-    "9. Separate confirmed facts from inference.",
-    "10. Include important source titles and URLs when available.",
-    "11. Do not use model reasoning as evidence.",
-    "12. The final research result will be passed to another Nkwasibwe response agent.",
-    "13. Return enough factual context for that agent to answer accurately.",
-    languageInstruction
-  ].join("\n");
-
-  const researchMessages = [
-    {
-      role:
-        "system",
-
-      content:
-        researchSystemPrompt
+  const result = await executionEngine.execute({
+    action: "generate_text",
+    capabilities: ["response_generation"],
+    authorized: false,
+    userId: options.userId || null,
+    taskId: options.taskId || null,
+    taskRunId: options.taskRunId || null,
+    input: {
+      messages: Array.isArray(messages) ? messages : [],
+      options
     },
-
-    {
-      role:
-        "user",
-
-      content:
-        researchTask
+    metadata: {
+      providerOptions: options
     }
-  ];
+  });
 
-  // ==========================================================
-  // SOURCE EXTRACTION HELPER
-  // ==========================================================
+  const response = result?.result;
 
-  function extractSourcesFromText(
-    text,
-    existingSources = []
-  ) {
-    const sources =
-      Array.isArray(
-        existingSources
-      )
-        ? [...existingSources]
-        : [];
-
-    if (
-      typeof text !==
-      "string"
-    ) {
-      return sources;
-    }
-
-    const urlPattern =
-      /https?:\/\/[^\s)\]}>,]+/gi;
-
-    const matches =
-      text.match(
-        urlPattern
-      ) || [];
-
-    for (
-      const rawUrl of matches
-    ) {
-      const url =
-        String(rawUrl)
-          .replace(
-            /[.,;:]+$/,
-            ""
-          );
-
-      if (
-        url &&
-        !sources.some(
-          source =>
-            source.url ===
-            url
-        )
-      ) {
-        sources.push({
-          url,
-          title:
-            url
-        });
-      }
-
-      if (
-        sources.length >= 20
-      ) {
-        break;
-      }
-    }
-
-    return sources;
+  if (!response) {
+    const error = new Error("AI provider returned no response");
+    error.code = "AI_PROVIDER_EMPTY_RESPONSE";
+    throw error;
   }
 
-  // ==========================================================
-  // GEMINI GROUNDING SOURCE EXTRACTION
-  // ==========================================================
-
-  function extractGeminiGroundingSources(
-    response
-  ) {
-    const sources = [];
-
-    const metadata =
-      response
-        ?.__geminiGroundingMetadata;
-
-    if (
-      !metadata
-    ) {
-      return sources;
-    }
-
-    const chunks =
-      Array.isArray(
-        metadata.groundingChunks
-      )
-        ? metadata.groundingChunks
-        : [];
-
-    for (
-      const chunk of chunks
-    ) {
-      const web =
-        chunk?.web ||
-        {};
-
-      const url =
-        typeof web.uri ===
-        "string"
-          ? web.uri.trim()
-          : "";
-
-      const title =
-        typeof web.title ===
-        "string"
-          ? web.title.trim()
-          : "";
-
-      if (
-        !url
-      ) {
-        continue;
-      }
-
-      if (
-        sources.some(
-          source =>
-            source.url ===
-            url
-        )
-      ) {
-        continue;
-      }
-
-      sources.push({
-        url,
-        title:
-          title ||
-          url
-      });
-
-      if (
-        sources.length >= 20
-      ) {
-        break;
-      }
-    }
-
-    return sources;
-  }
-
-  // ==========================================================
-  // PROVIDER 1 — OPENAI WEB SEARCH
-  // ==========================================================
-
-  if (openai) {
-    try {
-      console.log(
-        "[RESEARCH] Trying OpenAI live web search:",
-        {
-          taskLength:
-            researchTask.length
-        }
-      );
-
-      const researchResponse =
-        await openai.responses.create({
-          model:
-            process.env.OPENAI_RESEARCH_MODEL ||
-            OPENAI_MODEL ||
-            "gpt-4o-mini",
-
-          tools: [
-            {
-              type:
-                "web_search"
-            }
-          ],
-
-          input:
-            researchMessages
-        });
-
-      const researchText =
-        typeof researchResponse?.output_text ===
-          "string"
-          ? researchResponse.output_text.trim()
-          : "";
-
-      if (
-        researchText
-      ) {
-        const rawSources =
-          extractSourcesFromText(
-            researchText
-          );
-
-        const sources =
-          rawSources.map(
-            source =>
-              typeof source ===
-              "string"
-                ? {
-                    url:
-                      source,
-                    title:
-                      source
-                  }
-                : source
-          );
-
-        console.log(
-          "[RESEARCH] OpenAI live research completed:",
-          {
-            sources:
-              sources.length
-          }
-        );
-
-        return {
-          performed:
-            true,
-
-          reason:
-            "OPENAI_SUCCESS",
-
-          sources,
-
-          context:
-            researchText.slice(
-              0,
-              12000
-            )
-        };
-      }
-
-      console.warn(
-        "[RESEARCH] OpenAI returned no usable research text."
-      );
-
-    } catch (error) {
-      console.warn(
-        "[RESEARCH] OpenAI live research failed. Trying Gemini:",
-        {
-          code:
-            error?.code ||
-            "OPENAI_RESEARCH_ERROR",
-
-          status:
-            error?.status ||
-            error?.statusCode ||
-            0,
-
-          message:
-            error?.message ||
-            String(error)
-        }
-      );
-    }
-
-  } else {
-    console.warn(
-      "[RESEARCH] OpenAI research provider unavailable. Trying Gemini."
-    );
-  }
-
-  // ==========================================================
-  // PROVIDER 2 — GEMINI GOOGLE SEARCH
-  // ==========================================================
-  //
-  // Gemini 3.8 Flash supports Google Search grounding.
-  //
-  // The adapter returns both:
-  //
-  //   choices[0].message.content
-  //
-  // and:
-  //
-  //   __geminiGroundingMetadata
-  //
-  // so we can preserve verified source URLs.
-  //
-  // ==========================================================
-
-  if (GEMINI_API_KEY) {
-    try {
-      console.log(
-        "[RESEARCH] Trying Gemini Google Search:",
-        {
-          model:
-            GEMINI_MODEL,
-
-          taskLength:
-            researchTask.length
-        }
-      );
-
-      const geminiResearchResponse =
-        await callGeminiWithTimeout(
-          researchMessages,
-          {
-            geminiModel:
-              GEMINI_MODEL,
-
-            maxTokens:
-              4000,
-
-            googleSearch:
-              true
-          }
-        );
-
-      const researchText =
-        extractAIResponse(
-          geminiResearchResponse
-        );
-
-      if (
-        typeof researchText ===
-          "string" &&
-        researchText.trim()
-      ) {
-        const cleanedResearchText =
-          researchText.trim();
-
-        // ------------------------------------------------------
-        // First collect official grounding sources returned
-        // by Gemini itself.
-        // ------------------------------------------------------
-
-        let sources =
-          extractGeminiGroundingSources(
-            geminiResearchResponse
-          );
-
-        // ------------------------------------------------------
-        // Then collect any explicit URLs contained in text.
-        // ------------------------------------------------------
-
-        sources =
-          extractSourcesFromText(
-            cleanedResearchText,
-            sources
-          );
-
-        console.log(
-          "[RESEARCH] Gemini Google Search completed:",
-          {
-            sources:
-              sources.length
-          }
-        );
-
-        return {
-          performed:
-            true,
-
-          reason:
-            "GEMINI_GOOGLE_SEARCH_SUCCESS",
-
-          sources,
-
-          context:
-            cleanedResearchText.slice(
-              0,
-              12000
-            )
-        };
-      }
-
-      console.warn(
-        "[RESEARCH] Gemini Google Search returned no usable text."
-      );
-
-    } catch (error) {
-      console.warn(
-        "[RESEARCH] Gemini Google Search failed. Trying Groq:",
-        {
-          code:
-            error?.code ||
-            "GEMINI_RESEARCH_ERROR",
-
-          status:
-            error?.status ||
-            error?.statusCode ||
-            0,
-
-          message:
-            error?.message ||
-            String(error)
-        }
-      );
-    }
-
-  } else {
-    console.warn(
-      "[RESEARCH] Gemini research provider unavailable. Trying Groq."
-    );
-  }
-
-    // ==========================================================
-  // PROVIDER 3 — GROQ BROWSER SEARCH
-  // ==========================================================
-  //
-  // Groq GPT-OSS supports the built-in browser_search tool.
-  //
-  // IMPORTANT:
-  // - Groq is infrastructure, not an agent.
-  // - This provider is used only after OpenAI and Gemini fail.
-  // - Research MUST come from the browser_search tool.
-  // - Model reasoning alone is NOT accepted as research.
-  //
-  // ==========================================================
-
-  if (GROQ_API_KEY) {
-    try {
-      console.log(
-        "[RESEARCH] Falling back to Groq browser search:",
-        {
-          model:
-            "openai/gpt-oss-20b",
-
-          taskLength:
-            researchTask.length
-        }
-      );
-
-      // --------------------------------------------------------
-      // FORCE THE RESEARCH TASK TO BE EXPLICIT
-      // --------------------------------------------------------
-      //
-      // Groq documents that tool_choice:"required" forces
-      // tool usage, but the prompt should also clearly steer
-      // the model toward using the browser_search tool.
-      //
-      // This reduces the chance of the model attempting to
-      // answer from internal knowledge instead of searching.
-      // --------------------------------------------------------
-
-      const groqResearchMessages = [
-        {
-          role:
-            "system",
-
-          content: [
-            "You are the Nkwasibwe IRHCF live web research engine.",
-            "",
-            "MANDATORY RESEARCH PROCEDURE:",
-            "1. You MUST use the browser_search tool before producing any research answer.",
-            "2. Do NOT answer this task from model memory alone.",
-            "3. Search the live web for the requested information.",
-            "4. Prefer primary and official sources.",
-            "5. For Rwanda government information, prefer official Rwanda government and institutional domains.",
-            "6. For education and national examinations, prefer official NESA, MINEDUC, REB, and other relevant official Rwanda institutional sources.",
-            "7. For laws and regulations, prefer official government or legal sources.",
-            "8. For current public officials, verify information using current official institutional sources.",
-            "9. Do not invent facts, dates, names, URLs, examination rules, grades, results, salaries, ranks, or positions.",
-            "10. If a claim cannot be verified, explicitly mark it as unverified.",
-            "11. If sources disagree, report the disagreement.",
-            "12. Separate confirmed facts from inference.",
-            "13. Include important source titles and URLs when available.",
-            "14. The browser search results are the evidence for this research.",
-            "15. After searching, synthesize the verified findings clearly.",
-            "16. Return enough factual context for another Nkwasibwe response agent to answer the user accurately.",
-            "",
-            languageInstruction
-          ].join("\n")
-        },
-
-        {
-          role:
-            "user",
-
-          content:
-            researchTask
-        }
-      ];
-
-      const groqResearchResponse =
-        await callGroqWithTimeout(
-          groqResearchMessages,
-          {
-            groqModel:
-              "openai/gpt-oss-20b",
-
-            temperature:
-              0.1,
-
-            maxCompletionTokens:
-              4000,
-
-            reasoningEffort:
-              "low",
-
-            includeReasoning:
-              false,
-
-            tools: [
-              {
-                type:
-                  "browser_search"
-              }
-            ],
-
-            toolChoice:
-              "required"
-          }
-        );
-
-      // --------------------------------------------------------
-      // EXTRACT FINAL RESEARCH RESPONSE
-      // --------------------------------------------------------
-
-      const researchText =
-        extractAIResponse(
-          groqResearchResponse
-        );
-
-      if (
-        typeof researchText ===
-          "string" &&
-        researchText.trim()
-      ) {
-        const cleanedResearchText =
-          researchText.trim();
-
-        // ------------------------------------------------------
-        // EXTRACT EXPLICIT URLS FROM FINAL RESEARCH TEXT
-        // ------------------------------------------------------
-
-        let sources =
-          extractSourcesFromText(
-            cleanedResearchText
-          );
-
-        // ------------------------------------------------------
-        // GROQ MAY RETURN TOOL EXECUTION INFORMATION.
-        //
-        // Preserve any URLs that appear inside executed tool
-        // results when available.
-        // ------------------------------------------------------
-
-        try {
-          const assistantMessage =
-            groqResearchResponse
-              ?.choices?.[0]
-              ?.message;
-
-          const executedTools =
-            Array.isArray(
-              assistantMessage?.executed_tools
-            )
-              ? assistantMessage.executed_tools
-              : [];
-
-          if (
-            executedTools.length > 0
-          ) {
-            const executedToolsText =
-              JSON.stringify(
-                executedTools
-              );
-
-            sources =
-              extractSourcesFromText(
-                executedToolsText,
-                sources
-              );
-          }
-        } catch (
-          sourceExtractionError
-        ) {
-          console.warn(
-            "[RESEARCH] Groq executed-tool source extraction warning:",
-            {
-              message:
-                sourceExtractionError?.message ||
-                String(
-                  sourceExtractionError
-                )
-            }
-          );
-        }
-
-        console.log(
-          "[RESEARCH] Groq browser research completed:",
-          {
-            sources:
-              sources.length,
-
-            researchLength:
-              cleanedResearchText.length
-          }
-        );
-
-        return {
-          performed:
-            true,
-
-          reason:
-            "GROQ_BROWSER_SEARCH_SUCCESS",
-
-          sources,
-
-          context:
-            cleanedResearchText.slice(
-              0,
-              12000
-            )
-        };
-      }
-
-      console.warn(
-        "[RESEARCH] Groq browser search returned no usable final research text."
-      );
-
-    } catch (error) {
-      console.warn(
-        "[RESEARCH] Groq browser search failed:",
-        {
-          code:
-            error?.code ||
-            "GROQ_RESEARCH_ERROR",
-
-          status:
-            error?.status ||
-            error?.statusCode ||
-            0,
-
-          message:
-            error?.message ||
-            String(error)
-        }
-      );
-    }
-
-  } else {
-    console.warn(
-      "[RESEARCH] Groq research provider unavailable."
-    );
-                }
-
-  // ==========================================================
-  // ALL LIVE RESEARCH PROVIDERS FAILED
-  // ==========================================================
-
-  console.warn(
-    "[RESEARCH] All live research providers failed."
-  );
-
-  return {
-    performed:
-      false,
-
-    reason:
-      "ALL_RESEARCH_PROVIDERS_FAILED",
-
-    sources:
-      [],
-
-    context:
-      ""
-  };
-  }
+  try {
+    Object.defineProperty(response, "__agentProvider", {
+      value: result.provider,
+      enumerable: false,
+      configurable: true
+    });
+    Object.defineProperty(response, "__agentModel", {
+      value:
+        result.provider === "groq"
+          ? options.groqModel || GROQ_MODEL
+          : result.provider === "gemini"
+            ? options.geminiModel || GEMINI_MODEL
+            : options.openaiModel || options.model || OPENAI_MODEL,
+      enumerable: false,
+      configurable: true
+    });
+  } catch {}
+
+  return response;
+}
 
 // ============================================================
 // CORE AGENT EXECUTION
@@ -17932,6 +14754,69 @@ app.post(
       }
 
       // --------------------------------------------------------
+      // 5. LONG-RUNNING PROJECT HANDOFF
+      // --------------------------------------------------------
+      //
+      // Complex project requests become durable tasks instead of
+      // tying up a single HTTP request. The worker then executes,
+      // checkpoints, verifies, and retries according to policy.
+      //
+      const detectedProjectPlan =
+        buildProjectPlan({
+          idea: task,
+          userId: req.user.id
+        });
+
+      const longRunningRequested =
+        Boolean(
+          taskAnalysis?.classification?.type === "project_autopilot" ||
+          taskAnalysis?.classification?.type === "software_build" ||
+          shouldBecomeLongRunning(detectedProjectPlan)
+        );
+
+      if (longRunningRequested) {
+        const persistentTask =
+          await persistentTaskEngine.createTask({
+            userId: req.user.id,
+            task,
+            sessionId,
+            metadata: {
+              source: "chat",
+              requestId,
+              project: detectedProjectPlan,
+              orchestration:
+                taskAnalysis?.classification || null,
+              capabilities:
+                taskAnalysis?.capabilities || []
+            }
+          });
+
+        return res
+          .status(202)
+          .json({
+            success: true,
+            requestId,
+            taskId: persistentTask.id,
+            taskStatus: persistentTask.status,
+            message:
+              "IRHCF has accepted this project as a persistent task and will continue through planning, execution, testing, repair, verification, and delivery.",
+            orchestration: {
+              status: "accepted",
+              engine:
+                taskAnalysis.engine,
+              classification:
+                taskAnalysis.classification,
+              capabilities:
+                taskAnalysis.capabilities,
+              plan:
+                taskAnalysis.plan,
+              verification:
+                taskAnalysis.verification
+            }
+          });
+      }
+
+      // --------------------------------------------------------
       // 5. EXECUTE AGENT
       // --------------------------------------------------------
 
@@ -18107,7 +14992,15 @@ app.post(
             normalized.code ||
             "AGENT_EXECUTION_FAILED",
 
-          requestId
+          requestId,
+
+          requiredAction:
+            buildRequiredAction({
+              code:
+                normalized.code,
+              apiBaseUrl:
+                `${req.protocol}://${req.get("host")}`
+            })
 
         });
 
@@ -34694,12 +31587,13 @@ app.use(
     );
 
 
+    // Voice chat uses the browser microphone when the user
+    // explicitly starts voice input. Keep geolocation disabled,
+    // but do not block the microphone capability required by the
+    // existing voice client.
     res.setHeader(
-
       "Permissions-Policy",
-
-      "camera=(), microphone=(), geolocation=()"
-
+      "camera=(self), microphone=(self), geolocation=()"
     );
 
 
@@ -34894,29 +31788,51 @@ function checkAuthenticationHealth() {
 
 function checkAIProviderHealth() {
 
-  const configured =
-    Boolean(
-      config?.openaiApiKey
-    );
+  const providerSnapshot =
+    getAvailableProviders();
 
+  const configuredProviders =
+    getConfiguredProviders();
 
-  const clientAvailable =
-    Boolean(
-      openai
-    );
+  const openaiConfigured =
+    Boolean(config?.openaiApiKey);
 
+  const openaiClientAvailable =
+    Boolean(openai);
+
+  const anyProviderConfigured =
+    configuredProviders.length > 0;
+
+  const anyProviderAvailable =
+    providerSnapshot.length > 0;
 
   return {
 
     status:
-      configured &&
-      clientAvailable
+      anyProviderAvailable
         ? "healthy"
-        : "not_configured",
+        : anyProviderConfigured
+          ? "degraded"
+          : "not_configured",
 
-    configured,
+    configured:
+      anyProviderConfigured,
 
-    clientAvailable
+    available:
+      anyProviderAvailable,
+
+    configuredProviders:
+      configuredProviders.map(
+        provider => provider.name
+      ),
+
+    availableProviders:
+      providerSnapshot.map(
+        provider => provider.name
+      ),
+
+    openaiConfigured,
+    openaiClientAvailable
 
   };
 
@@ -35402,6 +32318,184 @@ app.get(
 
   }
 
+);
+
+
+// ============================================================
+// ECONOMIC AUTOPILOT CONTROL
+// ============================================================
+
+app.post(
+  "/api/economy/autopilot/start",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const existing = await pool.query(
+        `SELECT *
+         FROM scheduled_jobs
+         WHERE user_id = $1
+           AND status = 'active'
+           AND metadata->>'kind' = 'economic_discovery'
+         ORDER BY id DESC
+         LIMIT 1`,
+        [req.user.id]
+      );
+
+      if (existing.rows.length) {
+        return res.json({
+          success: true,
+          active: true,
+          schedule: existing.rows[0],
+          message: "Economic discovery autopilot is already active."
+        });
+      }
+
+      const schedule = await createRecurringSchedule(pool, {
+        userId: req.user.id,
+        name: "IRHCF Economic Discovery",
+        frequency: "daily",
+        timezone: req.body?.timezone || "Africa/Kigali",
+        times: [req.body?.time || "08:00"],
+        taskTemplate: buildEconomicDiscoveryTask({
+          locale: req.body?.locale || "Rwanda",
+          targetCustomer:
+            req.body?.targetCustomer ||
+            "local and online customers",
+          constraints:
+            req.body?.constraints ||
+            "low upfront cost; lawful; scalable; mobile-money/bank compatible"
+        }),
+        metadata: {
+          kind: "economic_discovery",
+          userControlled: true,
+          movesMoney: false,
+          publishesExternally: false
+        }
+      });
+
+      return res.status(201).json({
+        success: true,
+        active: true,
+        schedule
+      });
+    } catch (error) {
+      console.error("[ECONOMY] Autopilot start failed:", error);
+      return res.status(400).json({
+        success: false,
+        error: error?.message || "Could not start economic discovery.",
+        code: "ECONOMIC_AUTOPILOT_START_FAILED"
+      });
+    }
+  }
+);
+
+app.post(
+  "/api/economy/autopilot/stop",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const result = await pool.query(
+        `UPDATE scheduled_jobs
+         SET status = 'paused', updated_at = CURRENT_TIMESTAMP
+         WHERE user_id = $1
+           AND status = 'active'
+           AND metadata->>'kind' = 'economic_discovery'
+         RETURNING *`,
+        [req.user.id]
+      );
+
+      return res.json({
+        success: true,
+        active: false,
+        schedulesPaused: result.rowCount
+      });
+    } catch (error) {
+      console.error("[ECONOMY] Autopilot stop failed:", error);
+      return res.status(500).json({
+        success: false,
+        error: "Could not stop economic discovery.",
+        code: "ECONOMIC_AUTOPILOT_STOP_FAILED"
+      });
+    }
+  }
+);
+
+
+// ============================================================
+// ACTION CENTER / REQUIREMENTS
+// ============================================================
+//
+// Returns concise, actionable prerequisites. Whenever IRHCF can
+// provide a direct next-step URL, the response includes it.
+// Secrets and credentials are never returned.
+// ============================================================
+
+app.get(
+  "/api/action-center",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      let hasYoutubeAccount = false;
+      let hasMeetAccount = false;
+
+      const accountsResult = await pool.query(
+        `
+          SELECT platform
+          FROM connected_accounts
+          WHERE user_id = $1
+            AND status = 'active'
+        `,
+        [req.user.id]
+      );
+
+      for (const row of accountsResult.rows || []) {
+        const platform = String(row.platform || "").toLowerCase();
+        if (platform === "youtube" || platform === "google_youtube") {
+          hasYoutubeAccount = true;
+        }
+        if (platform === "google_meet" || platform === "meet") {
+          hasMeetAccount = true;
+        }
+      }
+
+      const actionCenter = buildActionCenter({
+        apiBaseUrl: `${req.protocol}://${req.get("host")}`,
+        authenticated: true,
+        hasYoutubeAccount,
+        hasMeetAccount,
+        credentialsKeyConfigured:
+          Boolean(
+            process.env.IRHCF_CREDENTIALS_KEY ||
+            config?.credentialsKey
+          ),
+        aiProviderConfigured:
+          Boolean(
+            OPENAI_API_KEY ||
+            process.env.GEMINI_API_KEY ||
+            process.env.GROQ_API_KEY
+          ),
+        googleOAuthConfigured:
+          Boolean(
+            process.env.GOOGLE_CLIENT_ID &&
+            process.env.GOOGLE_CLIENT_SECRET &&
+            process.env.GOOGLE_OAUTH_REDIRECT_URI
+          )
+      });
+
+      return res.json({
+        ...actionCenter,
+        requestId: req.requestId
+      });
+    } catch (error) {
+      console.error("Action center error:", error);
+      return res.status(500).json({
+        success: false,
+        error: "Could not load required actions.",
+        code: "ACTION_CENTER_FAILED",
+        requestId: req.requestId
+      });
+    }
+  }
 );
 
 
@@ -36101,6 +33195,46 @@ async function gracefulShutdown(
 
 
       //
+      // Stop persistent long-running task worker.
+      //
+      // The worker is stopped before the database pool closes.
+      //
+
+      if (
+        typeof scheduleWorker !== "undefined" &&
+        scheduleWorker
+      ) {
+        try {
+          scheduleWorker.stop();
+        } catch (scheduleWorkerError) {
+          console.error(
+            "Schedule worker shutdown error:",
+            scheduleWorkerError
+          );
+        }
+      }
+
+      if (
+        typeof persistentTaskEngine !== "undefined" &&
+        persistentTaskEngine
+      ) {
+
+        try {
+
+          persistentTaskEngine.stop();
+
+        } catch (taskEngineError) {
+
+          console.error(
+            "Task engine shutdown error:",
+            taskEngineError
+          );
+
+        }
+
+      }
+
+
       // Close database pool.
       //
 
@@ -36669,6 +33803,55 @@ async function runFinalStartupDiagnostics() {
 // ============================================================
 
 // ============================================================
+// CENTRAL EXECUTION ADAPTER REGISTRATION
+// ============================================================
+// The adapters wrap the existing provider implementations.
+// No second provider client is created.
+// ============================================================
+
+registerTextProviders(adapterRegistry, {
+  openai: {
+    enabled: Boolean(openai),
+    execute: async ({ messages, options }) => {
+      try {
+        const response = await callOpenAIWithTimeout(messages, options);
+        markProviderSuccess("openai");
+        return response;
+      } catch (error) {
+        markProviderFailure("openai", error);
+        throw error;
+      }
+    }
+  },
+  gemini: {
+    enabled: Boolean(GEMINI_API_KEY),
+    execute: async ({ messages, options }) => {
+      try {
+        const response = await callGeminiWithTimeout(messages, options);
+        markProviderSuccess("gemini");
+        return response;
+      } catch (error) {
+        markProviderFailure("gemini", error);
+        throw error;
+      }
+    }
+  },
+  groq: {
+    enabled: Boolean(GROQ_API_KEY),
+    execute: async ({ messages, options }) => {
+      try {
+        const response = await callGroqWithTimeout(messages, options);
+        markProviderSuccess("groq");
+        return response;
+      } catch (error) {
+        markProviderFailure("groq", error);
+        throw error;
+      }
+    }
+  }
+});
+
+// ============================================================
 // FINAL SERVER STARTUP
 // ============================================================
 //
@@ -36680,6 +33863,137 @@ async function runFinalStartupDiagnostics() {
 //
 
 let server = null;
+
+// ============================================================
+// PERSISTENT LONG-RUNNING TASK ENGINE
+// ============================================================
+//
+// The task engine is intentionally initialized after all agent
+// functions have been declared, but before startServer() runs.
+// The database schema is created before the worker starts.
+//
+
+const persistentTaskEngine =
+  new TaskEngine({
+    pool,
+
+    executor:
+      async ({
+        userId,
+        task,
+        sessionId,
+        checkpoint,
+        updateProgress
+      }) => {
+
+        const projectPlan =
+          buildProjectPlan({
+            idea: task,
+            userId
+          });
+
+        const repairContext =
+          checkpoint?.repair?.error
+            ? `Previous attempt failed. Repair it before continuing. Failure: ${String(checkpoint.repair.error).slice(0, 2000)}`
+            : "";
+
+        const executionTask =
+          repairContext
+            ? `${task}\n\nIRHCF REPAIR CONTEXT:\n${repairContext}`
+            : task;
+
+        await updateProgress({
+          progress: 10,
+          message:
+            "IRHCF project autopilot created the durable lifecycle plan.",
+          checkpoint: {
+            phase: "PROJECT_PLAN",
+            projectId: projectPlan.projectId,
+            projectType: projectPlan.type,
+            phases: projectPlan.phases
+          }
+        });
+
+        await updateProgress({
+          progress: 25,
+          message:
+            "IRHCF master agent is analyzing and routing the task.",
+          checkpoint: {
+            phase: "ORCHESTRATE",
+            projectId: projectPlan.projectId
+          }
+        });
+
+        const result =
+          await executeNkwasibweAgent({
+            userId,
+            task: executionTask,
+            sessionId
+          });
+
+        await updateProgress({
+          progress: 60,
+          message:
+            "Master agent execution returned; preparing verification.",
+          checkpoint: {
+            phase: "VERIFY_PREPARATION"
+          }
+        });
+
+        return result;
+      },
+
+    repairer:
+      async ({
+        task,
+        error,
+        attempt
+      }) => ({
+        repaired: true,
+        strategy: "contextual_reexecution",
+        attempt,
+        error: String(error || "").slice(0, 2000),
+        task: String(task || "").slice(0, 500),
+        nextStep:
+          "Re-execute the task with the persisted failure context and run verification again."
+      }),
+
+    verifier:
+      async ({
+        result
+      }) => {
+
+        const usable =
+          result !== null &&
+          result !== undefined;
+
+        return {
+          verified:
+            usable,
+          reason:
+            usable
+              ? "Agent execution returned a result."
+              : "Agent execution returned no result."
+        };
+
+      }
+  });
+
+const scheduleWorker =
+  new ScheduleWorker({
+    pool,
+    taskEngine: persistentTaskEngine
+  });
+
+app.use(
+  "/api/tasks",
+  createTaskRouter({
+    engine:
+      persistentTaskEngine,
+
+    authenticateToken
+  })
+);
 
 async function startServer() {
 
@@ -36698,6 +34012,19 @@ async function startServer() {
 
       console.log(
         "[DATABASE] Database schema initialized successfully."
+      );
+
+      await capabilityRegistry.syncBuiltIns();
+
+      persistentTaskEngine.start();
+      scheduleWorker.start();
+
+      console.log(
+        "[TASK ENGINE] Persistent long-running worker is online."
+      );
+
+      console.log(
+        "[SCHEDULE ENGINE] Recurring automation worker is online."
       );
 
     } else {
