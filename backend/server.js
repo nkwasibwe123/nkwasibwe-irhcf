@@ -77,6 +77,10 @@ const {
 const { ScheduleWorker } = require("./core/schedule-worker");
 const { buildProjectPlan, shouldBecomeLongRunning } = require("./core/project-autopilot");
 const {
+  runSpecialistTeam,
+  formatSpecialistBriefs
+} = require("./core/multi-agent-engine");
+const {
   buildOpportunity,
   buildRevenueProjectPlan
 } = require("./core/economic-autopilot");
@@ -30948,23 +30952,91 @@ const persistentTaskEngine =
           }
         });
 
+        const taskAnalysis =
+          analyzeTask(
+            executionTask,
+            {
+              userId,
+              sessionId,
+              taskId
+            }
+          );
+
+        const specialistTeam =
+          await runSpecialistTeam({
+            task: executionTask,
+            team: taskAnalysis.agentTeam,
+            executionEngine,
+            userId,
+            taskId,
+            taskRunId,
+            sharedContext:
+              repairContext ||
+              "Long-running IRHCF project execution.",
+            maxSpecialists: 5
+          });
+
+        await updateProgress({
+          progress: 45,
+          message:
+            "Specialist agents completed their assigned analysis; Master Agent is synthesizing the team output.",
+          checkpoint: {
+            phase: "SPECIALIST_TEAM",
+            specialists:
+              specialistTeam.selectedSpecialists,
+            completed:
+              specialistTeam.completed,
+            failed:
+              specialistTeam.failed
+          }
+        });
+
+        const specialistBriefs =
+          formatSpecialistBriefs(
+            specialistTeam
+          );
+
+        const masterTask =
+          specialistBriefs
+            ? [
+                executionTask,
+                "",
+                "IRHCF SPECIALIST TEAM BRIEFS:",
+                specialistBriefs,
+                "",
+                "MASTER AGENT INSTRUCTION:",
+                "Use the specialist briefs as internal working evidence. Resolve conflicts, verify important claims, and produce the final task result. Do not claim that specialist recommendations are external actions already performed."
+              ].join("\n")
+            : executionTask;
+
         const result =
           await executeNkwasibweAgent({
             userId,
-            task: executionTask,
+            task: masterTask,
             sessionId
           });
 
         await updateProgress({
           progress: 60,
           message:
-            "Master agent execution returned; preparing verification.",
+            "Master agent synthesized the specialist team; preparing verification.",
           checkpoint: {
-            phase: "VERIFY_PREPARATION"
+            phase: "VERIFY_PREPARATION",
+            specialistTeam: {
+              selected:
+                specialistTeam.selectedSpecialists,
+              completed:
+                specialistTeam.completed,
+              failed:
+                specialistTeam.failed
+            }
           }
         });
 
-        return result;
+        return {
+          ...result,
+          specialistTeam
+        };
       },
 
     repairer:
