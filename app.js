@@ -104,6 +104,26 @@ const attachButton =
     "attachButton"
   );
 
+const dashboardButton =
+  document.getElementById(
+    "dashboardButton"
+  );
+
+const capabilityDashboard =
+  document.getElementById(
+    "capabilityDashboard"
+  );
+
+const dashboardCloseButton =
+  document.getElementById(
+    "dashboardCloseButton"
+  );
+
+const dashboardStatus =
+  document.getElementById(
+    "dashboardStatus"
+  );
+
 const fileInput =
   document.getElementById(
     "fileInput"
@@ -8091,8 +8111,152 @@ document.addEventListener(
 
 
 // ============================================================
+// CAPABILITY DASHBOARD
+// ============================================================
+
+function setDashboardOpen(open) {
+
+  if (!capabilityDashboard) {
+    return;
+  }
+
+  capabilityDashboard.classList.toggle(
+    "open",
+    Boolean(open)
+  );
+
+  capabilityDashboard.setAttribute(
+    "aria-hidden",
+    String(!open)
+  );
+
+}
+
+function setDashboardStatus(message) {
+
+  if (dashboardStatus) {
+    dashboardStatus.textContent =
+      String(message || "Ready.");
+  }
+
+}
+
+function dashboardAction(action) {
+
+  const actions = {
+    file: {
+      label: "Choose files to attach.",
+      accept: "*/*"
+    },
+    photo: {
+      label: "Choose photos to attach.",
+      accept: "image/*"
+    },
+    video: {
+      label: "Choose videos to attach.",
+      accept: "video/*"
+    },
+    audio: {
+      label: "Choose audio to attach.",
+      accept: "audio/*"
+    }
+  };
+
+  if (actions[action] && fileInput) {
+
+    setDashboardStatus(
+      actions[action].label
+    );
+
+    fileInput.setAttribute(
+      "accept",
+      actions[action].accept
+    );
+
+    setDashboardOpen(false);
+    fileInput.click();
+    return;
+
+  }
+
+  const prompts = {
+    "image-create":
+      "Create an image based on my instructions. First understand the requested style, dimensions and content, then use an available image-generation capability and verify the result.",
+    "video-create":
+      "Create a high-quality HD video/film based on my instructions. Plan the script, storyboard, scenes, audio, editing, effects and quality verification.",
+    "music-create":
+      "Create high-quality music/audio based on my instructions, in the language and style I specify, then verify the final audio.",
+    software:
+      "Build the software I describe. Analyze requirements, design the architecture, implement it, test it, repair failures, security-review it and verify the final result.",
+    research:
+      "Perform deep research on my request using current reliable sources, compare evidence and verify the final answer.",
+    tasks:
+      "Create and manage this as a long-running task. Save progress and checkpoints and continue until it is verified or needs my input.",
+    agents:
+      "Analyze my request and assemble the specialist AI-agent team needed to complete it, with each agent owning a clear part of the work.",
+    capabilities:
+      "Check the capabilities required for this request. If a required capability is missing, design a controlled discovery, build, sandbox, test and verification path before execution."
+  };
+
+  const prompt = prompts[action];
+
+  if (prompt && userInput) {
+
+    userInput.value = prompt;
+    autoResizeInput();
+    setDashboardOpen(false);
+    userInput.focus();
+
+    setDashboardStatus(
+      "Task prepared in the composer."
+    );
+
+  }
+
+}
+
+if (dashboardButton) {
+  dashboardButton.addEventListener(
+    "click",
+    () => setDashboardOpen(true)
+  );
+}
+
+if (dashboardCloseButton) {
+  dashboardCloseButton.addEventListener(
+    "click",
+    () => setDashboardOpen(false)
+  );
+}
+
+if (capabilityDashboard) {
+  capabilityDashboard
+    .querySelectorAll("[data-dashboard-close]")
+    .forEach((element) => {
+      element.addEventListener(
+        "click",
+        () => setDashboardOpen(false)
+      );
+    });
+
+  capabilityDashboard
+    .querySelectorAll("[data-dashboard-action]")
+    .forEach((button) => {
+      button.addEventListener(
+        "click",
+        () =>
+          dashboardAction(
+            button.dataset.dashboardAction
+          )
+      );
+    });
+}
+
+// ============================================================
 // SEND BUTTON EVENT
 // ============================================================
+
+
 
 if (sendButton) {
 
