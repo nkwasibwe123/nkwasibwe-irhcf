@@ -22,7 +22,7 @@ const {
   editVideo
 } = require("../media/provider-contract");
 
-test("specialist selection is bounded and prioritizes requirements/security/testing", () => {
+test("specialist selection is bounded and prioritizes requirements, security and testing", () => {
   const team = {
     specialists: [
       { id: "render" },
@@ -37,11 +37,27 @@ test("specialist selection is bounded and prioritizes requirements/security/test
   const selected = selectSpecialists(team, 4).map(item => item.id);
   assert.deepEqual(selected, [
     "requirements",
-    "research",
+    "security",
     "testing",
-    "security"
+    "verification"
   ]);
   assert.equal(selectSpecialists(team, 99).length, 6);
+
+  const mediaTeam = {
+    specialists: [
+      { id: "requirements" },
+      { id: "security" },
+      { id: "testing" },
+      { id: "verification" },
+      { id: "research" },
+      { id: "media" },
+      { id: "backend" }
+    ]
+  };
+  assert.deepEqual(
+    selectSpecialists(mediaTeam, 5, "Create a music video").map(item => item.id),
+    ["requirements", "security", "testing", "media", "research"]
+  );
 });
 
 test("specialist prompt safely bounds task and context", () => {
@@ -54,7 +70,7 @@ test("specialist prompt safely bounds task and context", () => {
   assert.equal(messages.length, 2);
   assert.match(messages[0].content, /SPECIALTY: security/);
   assert.ok(messages[0].content.length < 1500);
-  assert.ok(messages[1].content.length < 17000);
+  assert.ok(messages[1].content.length < 6000);
 });
 
 test("specialist execution aggregates successful and failed agents", async () => {
