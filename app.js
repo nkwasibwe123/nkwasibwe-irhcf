@@ -89,6 +89,9 @@ const API_ENDPOINTS = Object.freeze({
   speechGeneration:
     "/api/media/speech",
 
+  videoGeneration:
+    "/api/media/video",
+
   capabilityExpansionPlan:
     "/api/capabilities/expansion-plan"
 
@@ -7055,6 +7058,111 @@ async function generateImageFromPrompt(prompt) {
   }
 }
 
+async function generateVideoFromPrompt(prompt) {
+  const cleanPrompt = String(prompt || "").trim().slice(0, 4000);
+  if (!cleanPrompt) return;
+
+  if (!authToken) {
+    setDashboardStatus("Banza winjire muri konti kugira ngo ukore video.");
+    showAuthenticationDialog();
+    return;
+  }
+
+  const confirmed = window.confirm(
+    "IRHCF izakora video ya HD (720p) y'amasegonda 8. Ibi bishobora gukoresha API credits. Urashaka gukomeza?"
+  );
+  if (!confirmed) return;
+
+  setStatus("IRHCF yatangiye gukora video ya HD. Ntufunge iki kiganiro niba ushaka kureba progress.", "loading");
+  setDashboardStatus("Video job iri gutangizwa...");
+  try {
+    const created = await apiRequest(API_ENDPOINTS.videoGeneration, {
+      method: "POST",
+      body: JSON.stringify({ prompt: cleanPrompt, seconds: 8, size: "1280x720" })
+    });
+    const videoId = String(created?.job?.id || "");
+    if (!created?.success || !videoId) {
+      throw new Error("Serivisi ntiyagaruye video job ID.");
+    }
+
+    let job = created.job;
+    let finished = false;
+    for (let attempt = 0; attempt < 90; attempt++) {
+      if (job.status === "completed") {
+        finished = true;
+        break;
+      }
+      if (job.status === "failed" || job.status === "cancelled") {
+        throw new Error(String(job.error || "Video generation failed."));
+      }
+      await delay(5000);
+      const status = await apiRequest(
+        API_ENDPOINTS.videoGeneration + "/" + encodeURIComponent(videoId)
+      );
+      job = status?.job || job;
+      const progress = Math.max(0, Math.min(100, Number(job.progress) || 0));
+      setStatus("Video irimo gukorwa: " + progress + "%", "loading");
+      setDashboardStatus("Video: " + String(job.status || "processing") + " — " + progress + "%");
+    }
+
+    if (!finished && job.status !== "completed") {
+      addMessage(
+        "Video iracyatunganywa na provider. Job ID: " + videoId + ". Status: " + String(job.status || "processing") + ". Ongera ugerageze nyuma; nta video mpimbano yakozwe hano.",
+        "ai"
+      );
+      setStatus("Video iracyatunganywa; job ID yabitswe muri iki gisubizo.", "normal");
+      return;
+    }
+
+    const contentPath = API_ENDPOINTS.videoGeneration + "/" +
+      encodeURIComponent(videoId) + "/content";
+    const response = await fetch(API_BASE_URL + contentPath, {
+      method: "GET",
+      headers: { Authorization: "Bearer " + authToken }
+    });
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(String(errorData?.error || "Ntibyashobotse gukuramo video yakozwe."));
+    }
+
+    const blob = await response.blob();
+    if (!blob.size || !String(blob.type || "").startsWith("video/")) {
+      throw new Error("Provider ntiyagaruye video file ikoreshwa.");
+    }
+    const objectUrl = URL.createObjectURL(blob);
+    const row = addMessage("Video ya HD yakozwe neza (720p).", "ai");
+    const wrapper = row?.querySelector(".message-content-wrapper");
+    if (!wrapper) throw new Error("Ntibyashobotse kwerekana video muri chat.");
+
+    const player = document.createElement("video");
+    player.controls = true;
+    player.playsInline = true;
+    player.preload = "metadata";
+    player.src = objectUrl;
+    player.style.display = "block";
+    player.style.maxWidth = "100%";
+    player.style.maxHeight = "640px";
+    player.style.borderRadius = "12px";
+    player.style.marginTop = "10px";
+    wrapper.appendChild(player);
+
+    const download = document.createElement("a");
+    download.href = objectUrl;
+    download.download = "nkwasibwe-irhcf-video.mp4";
+    download.textContent = "Download video";
+    download.style.display = "inline-block";
+    download.style.marginTop = "8px";
+    wrapper.appendChild(download);
+    setStatus("Video ya HD iriteguye.", "online");
+    setDashboardStatus("Video yakozwe neza kandi yiteguye gukinwa cyangwa gukururwa.");
+  } catch (error) {
+    console.error("[IRHCF VIDEO]", error);
+    const message = String(error?.message || "serivisi ntiboneka").slice(0, 220);
+    setStatus("Video ntiyakozwe: " + message, "normal");
+    setDashboardStatus("Video ntiyakozwe: " + message);
+  }
+}
+
 async function generateSpeechFromText(text, voice = "alloy") {
   const cleanText = String(text || "").trim().slice(0, 4000);
   if (!cleanText) return;
@@ -7207,6 +7315,17 @@ function dashboardAction(action) {
     if (imagePrompt && imagePrompt.trim()) {
       setDashboardOpen(false);
       void generateImageFromPrompt(imagePrompt);
+    }
+    return;
+  }
+
+  if (action === "video-create") {
+    const videoPrompt = window.prompt(
+      "Sobanura video ya HD ushaka gukora: amashusho, abantu, ahantu, ibikorwa, camera, style n'ibindi (mu magambo agera kuri 4000)."
+    );
+    if (videoPrompt && videoPrompt.trim()) {
+      setDashboardOpen(false);
+      void generateVideoFromPrompt(videoPrompt);
     }
     return;
   }
