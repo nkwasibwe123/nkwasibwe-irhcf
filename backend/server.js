@@ -31447,12 +31447,13 @@ app.use(
     );
 
 
+    // Voice chat uses the browser microphone when the user
+    // explicitly starts voice input. Keep geolocation disabled,
+    // but do not block the microphone capability required by the
+    // existing voice client.
     res.setHeader(
-
       "Permissions-Policy",
-
-      "camera=(), microphone=(), geolocation=()"
-
+      "camera=(self), microphone=(self), geolocation=()"
     );
 
 
@@ -31647,29 +31648,51 @@ function checkAuthenticationHealth() {
 
 function checkAIProviderHealth() {
 
-  const configured =
-    Boolean(
-      config?.openaiApiKey
-    );
+  const providerSnapshot =
+    getAvailableProviders();
 
+  const configuredProviders =
+    getConfiguredProviders();
 
-  const clientAvailable =
-    Boolean(
-      openai
-    );
+  const openaiConfigured =
+    Boolean(config?.openaiApiKey);
 
+  const openaiClientAvailable =
+    Boolean(openai);
+
+  const anyProviderConfigured =
+    configuredProviders.length > 0;
+
+  const anyProviderAvailable =
+    providerSnapshot.length > 0;
 
   return {
 
     status:
-      configured &&
-      clientAvailable
+      anyProviderAvailable
         ? "healthy"
-        : "not_configured",
+        : anyProviderConfigured
+          ? "degraded"
+          : "not_configured",
 
-    configured,
+    configured:
+      anyProviderConfigured,
 
-    clientAvailable
+    available:
+      anyProviderAvailable,
+
+    configuredProviders:
+      configuredProviders.map(
+        provider => provider.name
+      ),
+
+    availableProviders:
+      providerSnapshot.map(
+        provider => provider.name
+      ),
+
+    openaiConfigured,
+    openaiClientAvailable
 
   };
 
