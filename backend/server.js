@@ -145,6 +145,11 @@ const OPENAI_MODEL =
   process.env.OPENAI_MODEL ||
   "gpt-4o-mini";
 
+const ELEVENLABS_API_KEY =
+  config.elevenLabsApiKey ||
+  process.env.ELEVENLABS_API_KEY ||
+  "";
+
 // ============================================================
 // DATABASE CONFIGURATION
 // ============================================================
@@ -3904,7 +3909,7 @@ app.get("/api/media/video/:videoId/content", authenticateToken, async (req, res)
 // ============================================================
 
 app.post("/api/media/music", authenticateToken, async (req, res) => {
-  const apiKey = String(process.env.ELEVENLABS_API_KEY || "").trim();
+  const apiKey = String(ELEVENLABS_API_KEY || "").trim();
   if (!apiKey) {
     return res.status(503).json({
       success: false,
