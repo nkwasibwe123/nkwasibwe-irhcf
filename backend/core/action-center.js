@@ -33,6 +33,60 @@ function createAction({
   };
 }
 
+function buildRequiredAction({
+  code,
+  apiBaseUrl = ""
+} = {}) {
+  const normalized = String(code || "").toUpperCase();
+
+  const map = {
+    AI_PROVIDER_NOT_CONFIGURED: createAction({
+      id: "ai-provider-required",
+      severity: "critical",
+      title: "AI provider iracyakeneye configuration",
+      message: "Shyiraho AI provider/API key kugira ngo IRHCF ikomeze gukora AI execution.",
+      actionLabel: "Fungura Render",
+      actionUrl: "https://dashboard.render.com",
+      category: "configuration",
+      blocking: true
+    }),
+    GOOGLE_OAUTH_NOT_CONFIGURED: createAction({
+      id: "google-oauth-config-required",
+      severity: "critical",
+      title: "Google OAuth iracyakeneye configuration",
+      message: "Shyiraho Google OAuth Client ID, Client Secret na Redirect URI.",
+      actionLabel: "Fungura Render",
+      actionUrl: "https://dashboard.render.com",
+      category: "integration",
+      blocking: true
+    }),
+    IRHCF_CREDENTIALS_KEY_MISSING: createAction({
+      id: "credentials-key-required",
+      severity: "critical",
+      title: "Secure credentials key irakenewe",
+      message: "Shyiraho IRHCF_CREDENTIALS_KEY kugira ngo OAuth/payment credentials zibikwe neza.",
+      actionLabel: "Fungura Render",
+      actionUrl: "https://dashboard.render.com",
+      category: "security",
+      blocking: true
+    })
+  };
+
+  return (
+    map[normalized] ||
+    createAction({
+      id: "action-required",
+      severity: "warning",
+      title: "IRHCF ikeneye intervention",
+      message: "IRHCF yananiwe kurangiza iki gikorwa. Reba ibisobanuro by'ikibazo hanyuma ukore igikorwa gisabwa.",
+      actionLabel: null,
+      actionUrl: apiBaseUrl || null,
+      category: "system",
+      blocking: false
+    })
+  );
+}
+
 function buildActionCenter({
   apiBaseUrl = "",
   authenticated = false,
@@ -148,5 +202,6 @@ function buildActionCenter({
 
 module.exports = {
   createAction,
+  buildRequiredAction,
   buildActionCenter
 };
