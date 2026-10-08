@@ -1,5 +1,52 @@
 "use strict";
 
+function localCalendar(timeZone) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    weekday: "short",
+    day: "2-digit"
+  }).formatToParts(new Date());
+
+  return Object.fromEntries(
+    parts.map(part => [part.type, part.value])
+  );
+}
+
+function isScheduleDue(job, clock) {
+  const frequency = String(job.frequency || "daily").toLowerCase();
+  const metadata =
+    job.metadata && typeof job.metadata === "object"
+      ? job.metadata
+      : {};
+
+  if (frequency === "daily") return true;
+
+  const calendar = localCalendar(job.timezone || "UTC");
+
+  if (frequency === "weekly") {
+    const allowed = Array.isArray(metadata.weekdays)
+      ? metadata.weekdays.map(value => String(value).toLowerCase())
+      : null;
+
+    if (!allowed || allowed.length === 0) {
+      return false;
+    }
+
+    const weekday = String(calendar.weekday || "").toLowerCase();
+    return allowed.includes(weekday);
+  }
+
+  if (frequency === "monthly") {
+    const dayOfMonth = Number(metadata.dayOfMonth);
+    return Number.isInteger(dayOfMonth) &&
+      dayOfMonth >= 1 &&
+      dayOfMonth <= 31 &&
+      Number(calendar.day) === dayOfMonth;
+  }
+
+  return false;
+}
+
 function localClock(timeZone) {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone,
@@ -66,6 +113,7 @@ class ScheduleWorker {
     const clock = localClock(job.timezone || "UTC");
 
     if (!times.includes(clock.time)) return;
+    if (!isScheduleDue(job, clock)) return;
 
     const runKey = `${clock.date} ${clock.time}`;
 
