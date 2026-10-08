@@ -85,8 +85,7 @@
       if (!text || text.length < 2) return;
 
       const looksAssistant =
-        node.classList.contains("assistant") ||
-        node.classList.contains("ai") ||
+        node.matches?.(".message.ai, .message.assistant, [data-role='assistant'], [data-role='ai']") ||
         node.dataset.role === "assistant" ||
         node.dataset.role === "ai" ||
         /assistant|ai|bot/i.test(node.getAttribute("data-role") || "");
@@ -107,7 +106,7 @@
         for (const node of record.addedNodes || []) {
           if (node.nodeType === Node.ELEMENT_NODE) {
             speakAssistantMessage(node);
-            node.querySelectorAll?.("[data-role='assistant'], [data-role='ai'], .assistant, .ai").forEach(speakAssistantMessage);
+            node.querySelectorAll?.(".message.ai, .message.assistant, [data-role='assistant'], [data-role='ai']").forEach(speakAssistantMessage);
           }
         }
       }
