@@ -1844,6 +1844,21 @@ async function apiRequest(
     error.response =
       data;
 
+    if (
+      data?.requiredAction &&
+      typeof renderActionCenter === "function"
+    ) {
+      renderActionCenter([
+        data.requiredAction
+      ]);
+
+      if (
+        typeof setActionCenterOpen === "function"
+      ) {
+        setActionCenterOpen(true);
+      }
+    }
+
 
     console.error(
       "API ERROR:",
