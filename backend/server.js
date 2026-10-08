@@ -59,6 +59,7 @@ const {
   buildOpportunity,
   buildRevenueProjectPlan
 } = require("./core/economic-autopilot");
+const { buildActionCenter } = require("./core/action-center");
 
 // ============================================================
 // APPLICATION IDENTITY
@@ -35818,6 +35819,78 @@ app.get(
 
   }
 
+);
+
+
+// ============================================================
+// ACTION CENTER / REQUIREMENTS
+// ============================================================
+//
+// Returns concise, actionable prerequisites. Whenever IRHCF can
+// provide a direct next-step URL, the response includes it.
+// Secrets and credentials are never returned.
+// ============================================================
+
+app.get(
+  "/api/action-center",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      let hasYoutubeAccount = false;
+      let hasMeetAccount = false;
+
+      const accountsResult = await pool.query(
+        `
+          SELECT platform
+          FROM connected_accounts
+          WHERE user_id = $1
+            AND status = 'active'
+        `,
+        [req.user.id]
+      );
+
+      for (const row of accountsResult.rows || []) {
+        const platform = String(row.platform || "").toLowerCase();
+        if (platform === "youtube" || platform === "google_youtube") {
+          hasYoutubeAccount = true;
+        }
+        if (platform === "google_meet" || platform === "meet") {
+          hasMeetAccount = true;
+        }
+      }
+
+      const actionCenter = buildActionCenter({
+        apiBaseUrl: `${req.protocol}://${req.get("host")}`,
+        authenticated: true,
+        hasYoutubeAccount,
+        hasMeetAccount,
+        credentialsKeyConfigured:
+          Boolean(
+            process.env.IRHCF_CREDENTIALS_KEY ||
+            config?.credentialsKey
+          ),
+        aiProviderConfigured:
+          Boolean(
+            OPENAI_API_KEY ||
+            process.env.GEMINI_API_KEY ||
+            process.env.GROQ_API_KEY
+          )
+      });
+
+      return res.json({
+        ...actionCenter,
+        requestId: req.requestId
+      });
+    } catch (error) {
+      console.error("Action center error:", error);
+      return res.status(500).json({
+        success: false,
+        error: "Could not load required actions.",
+        code: "ACTION_CENTER_FAILED",
+        requestId: req.requestId
+      });
+    }
+  }
 );
 
 
