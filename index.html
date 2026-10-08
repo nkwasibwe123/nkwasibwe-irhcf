@@ -167,6 +167,18 @@
         <div class="header-actions">
 
 
+          <!-- ACTION CENTER / REQUIREMENTS -->
+          <button
+            id="actionCenterButton"
+            class="icon-button action-center-button"
+            type="button"
+            aria-label="Required actions"
+            title="Ibisabwa / Required actions"
+          >
+            🔔
+            <span id="actionCenterBadge" class="action-center-badge" hidden>0</span>
+          </button>
+
           <!-- CAPABILITY DASHBOARD -->
           <button
             id="dashboardButton"
@@ -244,6 +256,27 @@
             <button class="dashboard-card" type="button" data-dashboard-action="capabilities"><span class="dashboard-card-icon">🧩</span><strong>Capabilities</strong><span>Abilities and controlled capability expansion.</span></button>
           </div>
           <div id="dashboardStatus" class="dashboard-status" aria-live="polite">Ready.</div>
+        </div>
+      </section>
+
+      <!-- ACTION CENTER -->
+      <section
+        id="actionCenter"
+        class="action-center"
+        aria-hidden="true"
+      >
+        <div class="action-center-backdrop" data-action-center-close></div>
+        <div class="action-center-panel" role="dialog" aria-modal="true" aria-labelledby="actionCenterTitle">
+          <div class="action-center-header">
+            <div>
+              <h2 id="actionCenterTitle">Ibisabwa kugira ngo IRHCF ikomeze</h2>
+              <p>Nzajya nkwereka icyo nkeneye kandi nguhe link yo guhita ugikora.</p>
+            </div>
+            <button id="actionCenterCloseButton" class="icon-button" type="button" aria-label="Close">×</button>
+          </div>
+          <div id="actionCenterList" class="action-center-list">
+            <div class="action-center-empty">Ndeba niba hari igikenewe...</div>
+          </div>
         </div>
       </section>
 
