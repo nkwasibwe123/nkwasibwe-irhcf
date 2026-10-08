@@ -1,6 +1,7 @@
 "use strict";
 
 const { evaluateCapabilities } = require("./capability-engine");
+const { routeTask } = require("./agent-router");
 
 /*
  * ============================================================
@@ -587,6 +588,9 @@ function analyzeTask(task, context = {}) {
   const capabilityEvaluation =
     evaluateCapabilities(capabilities);
 
+  const routing =
+    routeTask(classification, capabilities);
+
   const plan =
     buildPlan(
       normalizedTask,
@@ -621,6 +625,8 @@ function analyzeTask(task, context = {}) {
     capabilities,
 
     capabilityEvaluation,
+
+    routing,
 
     plan,
 
