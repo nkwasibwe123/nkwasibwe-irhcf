@@ -95,6 +95,9 @@ const API_ENDPOINTS = Object.freeze({
   musicGeneration:
     "/api/media/music",
 
+  audioTranscription:
+    "/api/media/transcribe",
+
   capabilityExpansionPlan:
     "/api/capabilities/expansion-plan"
 
@@ -5742,9 +5745,67 @@ const MAX_ATTACHMENT_SIZE =
 // FILE SELECTION
 // ============================================================
 
+async function transcribeAudioFile(file) {
+  if (!file) return;
+  if (!authToken) {
+    showAuthenticationDialog();
+    return;
+  }
+  if (file.size > 6 * 1024 * 1024) {
+    showToast("Audio irenze 6 MB. Hitamo dosiye ntoya.", "warning");
+    return;
+  }
+
+  setStatus("IRHCF iri guhindura amajwi mo amagambo...", "loading");
+  try {
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(new Error("Ntibyashobotse gusoma audio file."));
+      reader.readAsDataURL(file);
+    });
+    const audioBase64 = dataUrl.includes(",") ? dataUrl.slice(dataUrl.indexOf(",") + 1) : "";
+    const result = await apiRequest(API_ENDPOINTS.audioTranscription, {
+      method: "POST",
+      body: JSON.stringify({ fileName: file.name, mimeType: file.type, audioBase64 })
+    });
+    const transcript = String(result?.text || "").trim();
+    if (!result?.success || !transcript) {
+      throw new Error("Serivisi ntiyagaruye amagambo avuye mu majwi.");
+    }
+    if (userInput) {
+      userInput.value = transcript;
+      autoResizeInput();
+      userInput.focus();
+      userInput.setSelectionRange(userInput.value.length, userInput.value.length);
+    }
+    setStatus("Audio yahinduwe amagambo. Ongera usome, ukosore niba bikenewe, hanyuma ukande Send.", "online");
+    setDashboardStatus("Transcription iriteguye kandi iri muri composer kugira ngo uyikosore mbere yo kohereza.");
+  } catch (error) {
+    console.error("[IRHCF AUDIO TRANSCRIPTION]", error);
+    const message = String(error?.message || "serivisi ntiboneka").slice(0, 200);
+    setStatus("Audio ntiyashoboye guhindurwa amagambo: " + message, "normal");
+    setDashboardStatus("Transcription yanze: " + message);
+  }
+}
+
 function handleFileSelection(
   event
 ) {
+
+  if (fileInput?.dataset.transcribeAudio === "true") {
+    fileInput.dataset.transcribeAudio = "false";
+    const selectedAudio = Array.from(event.target.files || []).find(file =>
+      String(file.type || "").startsWith("audio/") || /\\.(mp3|wav|m4a|ogg|flac|webm|mp4)$/i.test(file.name)
+    );
+    event.target.value = "";
+    if (!selectedAudio) {
+      showToast("Hitamo dosiye ya audio ishyigikiwe.", "warning");
+      return;
+    }
+    void transcribeAudioFile(selectedAudio);
+    return;
+  }
 
   const files =
     Array.from(
@@ -7415,6 +7476,15 @@ function dashboardAction(action) {
       setDashboardOpen(false);
       void generateVideoFromPrompt(videoPrompt);
     }
+    return;
+  }
+
+  if (action === "audio-transcribe") {
+    if (!fileInput) return;
+    fileInput.dataset.transcribeAudio = "true";
+    fileInput.setAttribute("accept", "audio/*,.mp3,.wav,.m4a,.ogg,.flac,.webm,.mp4");
+    setDashboardOpen(false);
+    fileInput.click();
     return;
   }
 
