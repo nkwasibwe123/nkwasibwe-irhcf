@@ -4,7 +4,8 @@
   "description": "Nkwasibwe IRHCF Autonomous AI Agent Platform",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --check server.js && node --check backend/server.js && node --check backend/core/task-orchestrator.js && node --check backend/core/capability-engine.js && node --check backend/core/agent-router.js"
   },
   "engines": {
     "node": ">=20"
