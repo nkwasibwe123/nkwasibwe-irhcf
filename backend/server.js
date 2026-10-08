@@ -32202,6 +32202,12 @@ app.get(
             OPENAI_API_KEY ||
             process.env.GEMINI_API_KEY ||
             process.env.GROQ_API_KEY
+          ),
+        googleOAuthConfigured:
+          Boolean(
+            process.env.GOOGLE_CLIENT_ID &&
+            process.env.GOOGLE_CLIENT_SECRET &&
+            process.env.GOOGLE_OAUTH_REDIRECT_URI
           )
       });
 
