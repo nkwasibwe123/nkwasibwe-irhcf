@@ -293,7 +293,65 @@ async function createSchema() {
   `);
 
   // ============================================================
-  // 15. SYSTEM SETTINGS
+  // 15. CONNECTED ACCOUNTS
+  // ============================================================
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS connected_accounts (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      platform TEXT NOT NULL,
+      provider_type TEXT DEFAULT 'oauth',
+      external_account_id TEXT,
+      display_name TEXT,
+      scopes JSONB DEFAULT '[]'::jsonb,
+      status TEXT DEFAULT 'active',
+      encrypted_credentials TEXT,
+      metadata JSONB DEFAULT '{}'::jsonb,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(user_id, platform, external_account_id)
+    );
+  `);
+
+  // ============================================================
+  // 16. OAUTH STATES
+  // ============================================================
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS oauth_states (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      platform TEXT NOT NULL,
+      state_hash TEXT UNIQUE NOT NULL,
+      scopes JSONB DEFAULT '[]'::jsonb,
+      redirect_uri TEXT,
+      expires_at TIMESTAMP NOT NULL,
+      consumed_at TIMESTAMP,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  // ============================================================
+  // 17. AUDIT EVENTS
+  // ============================================================
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS audit_events (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER,
+      action TEXT NOT NULL,
+      platform TEXT,
+      resource TEXT,
+      status TEXT NOT NULL,
+      risk TEXT,
+      metadata JSONB DEFAULT '{}'::jsonb,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  // ============================================================
+  // 18. SYSTEM SETTINGS
   // ============================================================
 
   await pool.query(`
