@@ -30,6 +30,11 @@ const {
   summarizePlan
 } = require("./core/task-orchestrator");
 
+const {
+  TaskEngine,
+  createTaskRouter
+} = require("./core/task-engine");
+
 // ============================================================
 // APPLICATION IDENTITY
 // ============================================================
@@ -36101,6 +36106,32 @@ async function gracefulShutdown(
 
 
       //
+      // Stop persistent long-running task worker.
+      //
+      // The worker is stopped before the database pool closes.
+      //
+
+      if (
+        typeof persistentTaskEngine !== "undefined" &&
+        persistentTaskEngine
+      ) {
+
+        try {
+
+          persistentTaskEngine.stop();
+
+        } catch (taskEngineError) {
+
+          console.error(
+            "Task engine shutdown error:",
+            taskEngineError
+          );
+
+        }
+
+      }
+
+
       // Close database pool.
       //
 
@@ -36681,6 +36712,86 @@ async function runFinalStartupDiagnostics() {
 
 let server = null;
 
+// ============================================================
+// PERSISTENT LONG-RUNNING TASK ENGINE
+// ============================================================
+//
+// The task engine is intentionally initialized after all agent
+// functions have been declared, but before startServer() runs.
+// The database schema is created before the worker starts.
+//
+
+const persistentTaskEngine =
+  new TaskEngine({
+    pool,
+
+    executor:
+      async ({
+        userId,
+        task,
+        sessionId,
+        updateProgress
+      }) => {
+
+        await updateProgress({
+          progress: 25,
+          message:
+            "IRHCF master agent is analyzing and routing the task.",
+          checkpoint: {
+            phase: "ORCHESTRATE"
+          }
+        });
+
+        const result =
+          await executeNkwasibweAgent({
+            userId,
+            task,
+            sessionId
+          });
+
+        await updateProgress({
+          progress: 60,
+          message:
+            "Master agent execution returned; preparing verification.",
+          checkpoint: {
+            phase: "VERIFY_PREPARATION"
+          }
+        });
+
+        return result;
+      },
+
+    verifier:
+      async ({
+        result
+      }) => {
+
+        const usable =
+          result !== null &&
+          result !== undefined;
+
+        return {
+          verified:
+            usable,
+          reason:
+            usable
+              ? "Agent execution returned a result."
+              : "Agent execution returned no result."
+        };
+
+      }
+  });
+
+app.use(
+  "/api/tasks",
+  createTaskRouter({
+    engine:
+      persistentTaskEngine,
+
+    authenticateToken
+  })
+);
+
 async function startServer() {
 
   try {
@@ -36698,6 +36809,12 @@ async function startServer() {
 
       console.log(
         "[DATABASE] Database schema initialized successfully."
+      );
+
+      persistentTaskEngine.start();
+
+      console.log(
+        "[TASK ENGINE] Persistent long-running worker is online."
       );
 
     } else {
