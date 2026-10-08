@@ -3897,6 +3897,96 @@ app.get("/api/media/video/:videoId/content", authenticateToken, async (req, res)
 });
 
 // ============================================================
+// AUTHENTICATED MUSIC GENERATION (ELEVENLABS MUSIC)
+// Returns a real MP3 stream. Requires ELEVENLABS_API_KEY and
+// a Music API-enabled ElevenLabs account.
+// ============================================================
+
+app.post("/api/media/music", authenticateToken, async (req, res) => {
+  const apiKey = String(process.env.ELEVENLABS_API_KEY || "").trim();
+  if (!apiKey) {
+    return res.status(503).json({
+      success: false,
+      error: "Music generation requires ELEVENLABS_API_KEY to be configured on the backend.",
+      code: "MUSIC_PROVIDER_UNAVAILABLE"
+    });
+  }
+
+  const prompt = String(req.body?.prompt || "").trim().slice(0, 4000);
+  const requestedLength = Number(req.body?.musicLengthMs);
+  const musicLengthMs = Number.isFinite(requestedLength)
+    ? Math.max(3000, Math.min(300000, Math.floor(requestedLength)))
+    : 180000;
+  const forceInstrumental = req.body?.forceInstrumental === true;
+
+  if (!prompt) {
+    return res.status(400).json({
+      success: false,
+      error: "A music prompt is required.",
+      code: "MUSIC_PROMPT_REQUIRED"
+    });
+  }
+
+  try {
+    req.setTimeout(300000);
+    res.setTimeout(300000);
+
+    const upstream = await fetch(
+      "https://api.elevenlabs.io/v1/music?output_format=mp3_44100_128",
+      {
+        method: "POST",
+        headers: {
+          "xi-api-key": apiKey,
+          "Content-Type": "application/json",
+          Accept: "audio/mpeg"
+        },
+        body: JSON.stringify({
+          prompt,
+          music_length_ms: musicLengthMs,
+          model_id: "music_v2_5",
+          force_instrumental: forceInstrumental
+        }),
+        signal: AbortSignal.timeout(240000)
+      }
+    );
+
+    if (!upstream.ok || !upstream.body) {
+      const payload = await upstream.json().catch(() => ({}));
+      const detail = payload?.detail?.message ||
+        payload?.detail ||
+        payload?.error?.message ||
+        "The music provider could not generate this track.";
+      return res.status(Number(upstream.status) >= 400 ? upstream.status : 502).json({
+        success: false,
+        error: String(detail).slice(0, 400),
+        code: payload?.detail?.status || payload?.error?.code || "MUSIC_GENERATION_FAILED"
+      });
+    }
+
+    res.status(200);
+    res.setHeader("Content-Type", upstream.headers.get("content-type") || "audio/mpeg");
+    res.setHeader("Content-Disposition", 'attachment; filename="nkwasibwe-irhcf-song.mp3"');
+    res.setHeader("Cache-Control", "private, no-store");
+    res.setHeader("X-IRHCF-Music-Model", "music_v2_5");
+    require("stream").Readable.fromWeb(upstream.body).pipe(res);
+  } catch (error) {
+    console.error("[MEDIA_MUSIC] Generation failed:", {
+      code: error?.code || null,
+      status: error?.status || null,
+      message: String(error?.message || "Music generation failed").slice(0, 400)
+    });
+    if (!res.headersSent) {
+      const status = Number(error?.status);
+      return res.status(status >= 400 && status < 600 ? status : 502).json({
+        success: false,
+        error: "Music generation failed. Check provider access, plan and credits.",
+        code: error?.code || "MUSIC_GENERATION_FAILED"
+      });
+    }
+  }
+});
+
+// ============================================================
 // AUTHENTICATED SPEECH / VOICE-OVER GENERATION
 // This produces spoken audio, not music or singing.
 // ============================================================
