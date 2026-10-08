@@ -5745,6 +5745,110 @@ return res.status(400).json({
 // Lightweight endpoint for the UI/agent dashboard.
 //
 
+// ============================================================
+// PREPARE A CONVERSATION BRANCH FOR MESSAGE EDITING
+// Deletes the selected user message and later turns in this
+// conversation so the corrected text can be submitted cleanly.
+// ============================================================
+
+app.post(
+  "/api/conversations/:sessionId/messages/:messageId/prepare-edit",
+  authenticateToken,
+  async (req, res) => {
+    const sessionId = String(req.params.sessionId || "").trim().slice(0, 200);
+    const messageId = Number(req.params.messageId);
+
+    if (!sessionId || !Number.isSafeInteger(messageId) || messageId < 1) {
+      return res.status(400).json({
+        success: false,
+        error: "A valid conversation and message are required.",
+        code: "INVALID_MESSAGE_EDIT"
+      });
+    }
+
+    let client;
+    try {
+      client = await pool.connect();
+      await client.query("BEGIN");
+
+      const conversationResult = await client.query(
+        `SELECT id
+         FROM conversations
+         WHERE session_id = $1 AND user_id = $2
+         FOR UPDATE`,
+        [sessionId, req.user.id]
+      );
+
+      const conversation = conversationResult.rows[0];
+      if (!conversation) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({
+          success: false,
+          error: "Conversation not found.",
+          code: "CONVERSATION_NOT_FOUND"
+        });
+      }
+
+      const messageResult = await client.query(
+        `SELECT id, created_at
+         FROM messages
+         WHERE id = $1
+           AND conversation_id = $2
+           AND role = 'user'
+         FOR UPDATE`,
+        [messageId, conversation.id]
+      );
+
+      const target = messageResult.rows[0];
+      if (!target) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({
+          success: false,
+          error: "Editable user message not found.",
+          code: "MESSAGE_NOT_FOUND"
+        });
+      }
+
+      const deleted = await client.query(
+        `DELETE FROM messages
+         WHERE conversation_id = $1
+           AND (created_at, id) >= ($2, $3)`,
+        [conversation.id, target.created_at, target.id]
+      );
+
+      await client.query(
+        `UPDATE conversations
+         SET updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1`,
+        [conversation.id]
+      );
+
+      await client.query("COMMIT");
+      return res.json({
+        success: true,
+        deletedMessages: deleted.rowCount || 0,
+        message: "Conversation branch cleared. Submit the corrected message to continue."
+      });
+    } catch (error) {
+      if (client) {
+        try {
+          await client.query("ROLLBACK");
+        } catch (_) {}
+      }
+      console.error("[MESSAGE_EDIT] Failed to prepare edit:", error);
+      return res.status(500).json({
+        success: false,
+        error: "Could not prepare this message for editing.",
+        code: "MESSAGE_EDIT_FAILED"
+      });
+    } finally {
+      client?.release();
+    }
+  }
+);
+
+// ============================================================
+
 app.get(
 "/api/conversations/:sessionId/summary",
 authenticateToken,
