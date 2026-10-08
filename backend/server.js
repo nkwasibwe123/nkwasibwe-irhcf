@@ -14563,1107 +14563,462 @@ async function fetchUserLongTermMemories(
 
 
 // ============================================================
-// FIND DUPLICATE MEMORY
+// CANONICAL ADVANCED MEMORY OPERATIONS
+// ============================================================
+//
+// These helpers intentionally use the production schema:
+// user_memory.memory_key/memory_value/metadata
+// long_term_memory.content/source/metadata
+//
+// They are internal compatibility helpers for advanced context
+// features. They do not register a second HTTP memory API.
 // ============================================================
 
-async function findDuplicateMemory(
-  userId,
-  memory,
-  longTerm = false
-) {
-
-  const validation =
-    validateMemoryContent(
-
-      memory,
-
-      longTerm
-
-    );
-
-
-  if (
-    !validation.valid
-  ) {
-
-    return null;
-
-  }
-
-
-  const table =
-    longTerm
-      ? "long_term_memory"
-      : "user_memory";
-
-
-  const limit =
-    longTerm
-      ? MEMORY_CONFIG
-          .MAX_LONG_TERM_MEMORY_ITEMS
-      : MEMORY_CONFIG
-          .MAX_USER_MEMORY_ITEMS;
-
-
-  const result =
-    await pool.query(
-
-      `SELECT
-         id,
-         user_id,
-         memory,
-         importance,
-         created_at,
-         updated_at
-       FROM ${table}
-       WHERE user_id = $1
-       ORDER BY
-         updated_at DESC
-       LIMIT $2`,
-
-      [
-
-        userId,
-
-        limit
-
-      ]
-
-    );
-
-
-  let bestMatch =
-    null;
-
-  let bestScore =
-    0;
-
-
-  for (
-    const candidate
-    of result.rows
-  ) {
-
-    const score =
-      calculateMemorySimilarity(
-
-        validation.value,
-
-        candidate.memory
-
-      );
-
-
-    if (
-      score > bestScore
-    ) {
-
-      bestScore =
-        score;
-
-      bestMatch =
-        candidate;
-
-    }
-
-  }
-
-
-  if (
-    bestMatch &&
-    bestScore >=
-      MEMORY_CONFIG
-        .DUPLICATE_SIMILARITY_THRESHOLD
-  ) {
-
-    return {
-
-      memory:
-        bestMatch,
-
-      similarity:
-        bestScore
-
-    };
-
-  }
-
-
-  return null;
-
+function memoryRecordText(memory) {
+  return normalizeMemoryText(
+    memory?.memory_value ??
+    memory?.content ??
+    ""
+  );
 }
 
+async function findDuplicateMemory(userId, memory, longTerm = false) {
+  const validation = validateMemoryContent(memory, longTerm);
+  if (!validation.valid) return null;
 
-// ============================================================
-// CREATE USER MEMORY
-// ============================================================
+  const limit = longTerm
+    ? MEMORY_CONFIG.MAX_LONG_TERM_MEMORY_ITEMS
+    : MEMORY_CONFIG.MAX_USER_MEMORY_ITEMS;
+
+  const result = await pool.query(
+    longTerm
+      ? `SELECT id, user_id, content, memory_type, importance, source, metadata, created_at, updated_at
+         FROM long_term_memory
+         WHERE user_id = $1
+         ORDER BY updated_at DESC
+         LIMIT $2`
+      : `SELECT id, user_id, memory_key, memory_value, memory_type, importance, metadata, created_at, updated_at
+         FROM user_memory
+         WHERE user_id = $1
+         ORDER BY updated_at DESC
+         LIMIT $2`,
+    [userId, limit]
+  );
+
+  let bestMatch = null;
+  let bestScore = 0;
+
+  for (const candidate of result.rows) {
+    const score = calculateMemorySimilarity(
+      validation.value,
+      memoryRecordText(candidate)
+    );
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestMatch = candidate;
+    }
+  }
+
+  return bestMatch &&
+    bestScore >= MEMORY_CONFIG.DUPLICATE_SIMILARITY_THRESHOLD
+    ? { memory: bestMatch, similarity: bestScore }
+    : null;
+}
 
 async function createUserMemory(
   userId,
   memory,
-  importance =
-    MEMORY_CONFIG.DEFAULT_IMPORTANCE
+  importance = MEMORY_CONFIG.DEFAULT_IMPORTANCE
 ) {
-
-  const validation =
-    validateMemoryContent(
-      memory,
-      false
-    );
-
-
-  if (
-    !validation.valid
-  ) {
-
-    const error =
-      new Error(
-        validation.error
-      );
-
-    error.code =
-      validation.code;
-
+  const validation = validateMemoryContent(memory, false);
+  if (!validation.valid) {
+    const error = new Error(validation.error);
+    error.code = validation.code;
     throw error;
-
   }
 
-
-  const normalizedImportance =
-    normalizeMemoryImportance(
-      importance
-    );
-
-
-  const duplicate =
-    await findDuplicateMemory(
-
-      userId,
-
-      validation.value,
-
-      false
-
-    );
-
+  const normalizedImportance = normalizeMemoryImportance(importance);
+  const duplicate = await findDuplicateMemory(
+    userId,
+    validation.value,
+    false
+  );
 
   if (duplicate) {
-
-    const update =
-      await pool.query(
-
-        `UPDATE user_memory
-         SET
-           importance =
-             GREATEST(
-               importance,
-               $1
-             ),
-           updated_at =
-             CURRENT_TIMESTAMP
-         WHERE id = $2
-         AND user_id = $3
-         RETURNING
-           id,
-           user_id,
-           memory,
-           importance,
-           created_at,
-           updated_at`,
-
-        [
-
-          normalizedImportance,
-
-          duplicate.memory.id,
-
-          userId
-
-        ]
-
-      );
-
+    const update = await pool.query(
+      `UPDATE user_memory
+       SET importance = GREATEST(importance, $1),
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2 AND user_id = $3
+       RETURNING id, user_id, memory_key, memory_value, memory_type, importance, metadata, created_at, updated_at`,
+      [normalizedImportance, duplicate.memory.id, userId]
+    );
 
     MEMORY_RUNTIME.writes++;
-
-    MEMORY_RUNTIME.lastWriteAt =
-      new Date();
-
+    MEMORY_RUNTIME.lastWriteAt = new Date();
 
     return {
-
-      created:
-        false,
-
-      deduplicated:
-        true,
-
-      memory:
-        update.rows[0]
-
+      created: false,
+      deduplicated: true,
+      memory: update.rows[0] || null
     };
-
   }
 
-
-  const countResult =
-    await pool.query(
-
-      `SELECT
-         COUNT(*)::integer AS total
-       FROM user_memory
-       WHERE user_id = $1`,
-
-      [
-        userId
-      ]
-
-    );
-
-
-  const total =
-    Number(
-      countResult.rows[0]?.total ||
-      0
-    );
-
+  const countResult = await pool.query(
+    `SELECT COUNT(*)::integer AS total
+     FROM user_memory
+     WHERE user_id = $1`,
+    [userId]
+  );
 
   if (
-    total >=
-    MEMORY_CONFIG
-      .MAX_USER_MEMORY_ITEMS
+    Number(countResult.rows[0]?.total || 0) >=
+    MEMORY_CONFIG.MAX_USER_MEMORY_ITEMS
   ) {
-
-    const error =
-      new Error(
-        "User memory limit reached"
-      );
-
-    error.code =
-      "MEMORY_LIMIT_REACHED";
-
+    const error = new Error("User memory limit reached");
+    error.code = "MEMORY_LIMIT_REACHED";
     throw error;
-
   }
 
-
-  const result =
-    await pool.query(
-
-      `INSERT INTO user_memory
-       (
-         user_id,
-         memory,
-         importance
-       )
-       VALUES
-       (
-         $1,
-         $2,
-         $3
-       )
-       RETURNING
-         id,
-         user_id,
-         memory,
-         importance,
-         created_at,
-         updated_at`,
-
-      [
-
-        userId,
-
-        validation.value,
-
-        normalizedImportance
-
-      ]
-
-    );
-
+  const result = await pool.query(
+    `INSERT INTO user_memory
+       (user_id, memory_key, memory_value, memory_type, importance, metadata)
+     VALUES
+       ($1, $2, $3, 'general', $4, '{}'::jsonb)
+     RETURNING
+       id, user_id, memory_key, memory_value, memory_type,
+       importance, metadata, created_at, updated_at`,
+    [
+      userId,
+      `memory:${crypto.randomUUID()}`,
+      validation.value,
+      normalizedImportance
+    ]
+  );
 
   MEMORY_RUNTIME.writes++;
-
-  MEMORY_RUNTIME.lastWriteAt =
-    new Date();
-
+  MEMORY_RUNTIME.lastWriteAt = new Date();
 
   return {
-
-    created:
-      true,
-
-    deduplicated:
-      false,
-
-    memory:
-      result.rows[0]
-
+    created: true,
+    deduplicated: false,
+    memory: result.rows[0] || null
   };
-
 }
-
-
-// ============================================================
-// CREATE LONG-TERM MEMORY
-// ============================================================
 
 async function createLongTermMemory(
   userId,
   memory,
-  importance =
-    MEMORY_CONFIG.DEFAULT_IMPORTANCE
+  importance = MEMORY_CONFIG.DEFAULT_IMPORTANCE
 ) {
-
-  const validation =
-    validateMemoryContent(
-      memory,
-      true
-    );
-
-
-  if (
-    !validation.valid
-  ) {
-
-    const error =
-      new Error(
-        validation.error
-      );
-
-    error.code =
-      validation.code;
-
+  const validation = validateMemoryContent(memory, true);
+  if (!validation.valid) {
+    const error = new Error(validation.error);
+    error.code = validation.code;
     throw error;
-
   }
 
-
-  const normalizedImportance =
-    normalizeMemoryImportance(
-      importance
-    );
-
-
-  const duplicate =
-    await findDuplicateMemory(
-
-      userId,
-
-      validation.value,
-
-      true
-
-    );
-
+  const normalizedImportance = normalizeMemoryImportance(importance);
+  const duplicate = await findDuplicateMemory(
+    userId,
+    validation.value,
+    true
+  );
 
   if (duplicate) {
-
-    const update =
-      await pool.query(
-
-        `UPDATE long_term_memory
-         SET
-           importance =
-             GREATEST(
-               importance,
-               $1
-             ),
-           updated_at =
-             CURRENT_TIMESTAMP
-         WHERE id = $2
-         AND user_id = $3
-         RETURNING
-           id,
-           user_id,
-           memory,
-           importance,
-           created_at,
-           updated_at`,
-
-        [
-
-          normalizedImportance,
-
-          duplicate.memory.id,
-
-          userId
-
-        ]
-
-      );
-
+    const update = await pool.query(
+      `UPDATE long_term_memory
+       SET importance = GREATEST(importance, $1),
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2 AND user_id = $3
+       RETURNING id, user_id, content, memory_type, importance, source, metadata, created_at, updated_at`,
+      [normalizedImportance, duplicate.memory.id, userId]
+    );
 
     MEMORY_RUNTIME.writes++;
-
-    MEMORY_RUNTIME.lastWriteAt =
-      new Date();
-
+    MEMORY_RUNTIME.lastWriteAt = new Date();
 
     return {
-
-      created:
-        false,
-
-      deduplicated:
-        true,
-
-      memory:
-        update.rows[0]
-
+      created: false,
+      deduplicated: true,
+      memory: update.rows[0] || null
     };
-
   }
 
-
-  const countResult =
-    await pool.query(
-
-      `SELECT
-         COUNT(*)::integer AS total
-       FROM long_term_memory
-       WHERE user_id = $1`,
-
-      [
-        userId
-      ]
-
-    );
-
-
-  const total =
-    Number(
-      countResult.rows[0]?.total ||
-      0
-    );
-
+  const countResult = await pool.query(
+    `SELECT COUNT(*)::integer AS total
+     FROM long_term_memory
+     WHERE user_id = $1`,
+    [userId]
+  );
 
   if (
-    total >=
-    MEMORY_CONFIG
-      .MAX_LONG_TERM_MEMORY_ITEMS
+    Number(countResult.rows[0]?.total || 0) >=
+    MEMORY_CONFIG.MAX_LONG_TERM_MEMORY_ITEMS
   ) {
-
-    const error =
-      new Error(
-        "Long-term memory limit reached"
-      );
-
-    error.code =
-      "LONG_TERM_MEMORY_LIMIT_REACHED";
-
+    const error = new Error("Long-term memory limit reached");
+    error.code = "LONG_TERM_MEMORY_LIMIT_REACHED";
     throw error;
-
   }
 
-
-  const result =
-    await pool.query(
-
-      `INSERT INTO long_term_memory
-       (
-         user_id,
-         memory,
-         importance
-       )
-       VALUES
-       (
-         $1,
-         $2,
-         $3
-       )
-       RETURNING
-         id,
-         user_id,
-         memory,
-         importance,
-         created_at,
-         updated_at`,
-
-      [
-
-        userId,
-
-        validation.value,
-
-        normalizedImportance
-
-      ]
-
-    );
-
+  const result = await pool.query(
+    `INSERT INTO long_term_memory
+       (user_id, content, memory_type, importance, source, metadata)
+     VALUES
+       ($1, $2, 'general', $3, 'user', '{}'::jsonb)
+     RETURNING
+       id, user_id, content, memory_type, importance, source,
+       metadata, created_at, updated_at`,
+    [userId, validation.value, normalizedImportance]
+  );
 
   MEMORY_RUNTIME.writes++;
-
-  MEMORY_RUNTIME.lastWriteAt =
-    new Date();
-
+  MEMORY_RUNTIME.lastWriteAt = new Date();
 
   return {
-
-    created:
-      true,
-
-    deduplicated:
-      false,
-
-    memory:
-      result.rows[0]
-
+    created: true,
+    deduplicated: false,
+    memory: result.rows[0] || null
   };
-
 }
 
+async function fetchUserMemories(
+  userId,
+  limit = MEMORY_CONFIG.DEFAULT_MEMORY_LIMIT
+) {
+  if (!userId) return [];
 
-// ============================================================
-// SEARCH USER MEMORY
-// ============================================================
+  const safeLimit = Math.min(
+    Math.max(Number(limit) || MEMORY_CONFIG.DEFAULT_MEMORY_LIMIT, 1),
+    MEMORY_CONFIG.MAX_MEMORY_CONTEXT_ITEMS
+  );
+
+  const result = await pool.query(
+    `SELECT
+       id, user_id, memory_key, memory_value, memory_type,
+       importance, metadata, created_at, updated_at
+     FROM user_memory
+     WHERE user_id = $1
+     ORDER BY importance DESC, updated_at DESC, id DESC
+     LIMIT $2`,
+    [userId, safeLimit]
+  );
+
+  MEMORY_RUNTIME.reads++;
+  MEMORY_RUNTIME.lastReadAt = new Date();
+
+  return result.rows.map(row => ({
+    ...row,
+    content: row.memory_value || ""
+  }));
+}
+
+async function fetchUserLongTermMemories(
+  userId,
+  limit = MEMORY_CONFIG.DEFAULT_MEMORY_LIMIT
+) {
+  if (!userId) return [];
+
+  const safeLimit = Math.min(
+    Math.max(Number(limit) || MEMORY_CONFIG.DEFAULT_MEMORY_LIMIT, 1),
+    MEMORY_CONFIG.MAX_MEMORY_CONTEXT_ITEMS
+  );
+
+  const result = await pool.query(
+    `SELECT
+       id, user_id, content, memory_type, importance,
+       source, metadata, created_at, updated_at
+     FROM long_term_memory
+     WHERE user_id = $1
+     ORDER BY importance DESC, updated_at DESC, id DESC
+     LIMIT $2`,
+    [userId, safeLimit]
+  );
+
+  MEMORY_RUNTIME.reads++;
+  MEMORY_RUNTIME.lastReadAt = new Date();
+
+  return result.rows.map(row => ({
+    ...row,
+    memory_value: row.content || ""
+  }));
+}
 
 async function searchUserMemory(
   userId,
   query,
-  limit =
-    MEMORY_CONFIG.DEFAULT_MEMORY_LIMIT
+  limit = MEMORY_CONFIG.DEFAULT_MEMORY_LIMIT
 ) {
+  const normalizedQuery = normalizeMemoryText(query);
+  if (!normalizedQuery) return [];
 
-  const normalizedQuery =
-    normalizeMemoryText(
-      query
-    );
+  const memories = await fetchUserMemories(
+    userId,
+    MEMORY_CONFIG.MAX_MEMORY_CONTEXT_ITEMS
+  );
 
-
-  if (!normalizedQuery) {
-
-    return [];
-
-  }
-
-
-  if (
-    normalizedQuery.length >
-    MEMORY_CONFIG.MAX_SEARCH_LENGTH
-  ) {
-
-    return [];
-
-  }
-
-
-  const memories =
-    await fetchUserMemories(
-
-      userId,
-
-      MEMORY_CONFIG
-        .MAX_MEMORY_CONTEXT_ITEMS
-
-    );
-
-
-  const scored =
-    memories
-      .map(
-        memory => ({
-
-          ...memory,
-
-          relevance:
-            calculateMemoryRelevance(
-
-              normalizedQuery,
-
-              memory
-
-            )
-
-        })
+  const scored = memories
+    .map(memory => ({
+      ...memory,
+      relevance: calculateMemoryRelevance(
+        normalizedQuery,
+        memory
       )
-      .filter(
-        memory =>
-          memory.relevance > 0
-      )
-      .sort(
-        (
-          a,
-          b
-        ) =>
-          b.relevance -
-          a.relevance
-      )
-      .slice(
-
-        0,
-
-        Math.max(
-          1,
-          Math.min(
-            Number(limit) || 10,
-            MEMORY_CONFIG
-              .MAX_MEMORY_CONTEXT_ITEMS
-          )
+    }))
+    .filter(memory => memory.relevance > 0)
+    .sort((a, b) => b.relevance - a.relevance)
+    .slice(
+      0,
+      Math.max(
+        1,
+        Math.min(
+          Number(limit) || 10,
+          MEMORY_CONFIG.MAX_MEMORY_CONTEXT_ITEMS
         )
-
-      );
-
+      )
+    );
 
   MEMORY_RUNTIME.searches++;
-
-
   return scored;
-
 }
-
-
-
-// ============================================================
-// SEARCH LONG-TERM MEMORY
-// ============================================================
 
 async function searchLongTermMemory(
   userId,
   query,
-  limit =
-    MEMORY_CONFIG.DEFAULT_MEMORY_LIMIT
+  limit = MEMORY_CONFIG.DEFAULT_MEMORY_LIMIT
 ) {
+  const normalizedQuery = normalizeMemoryText(query);
+  if (!normalizedQuery) return [];
 
-  const normalizedQuery =
-    normalizeMemoryText(
-      query
-    );
+  const memories = await fetchUserLongTermMemories(
+    userId,
+    MEMORY_CONFIG.MAX_MEMORY_CONTEXT_ITEMS
+  );
 
-
-  if (!normalizedQuery) {
-
-    return [];
-
-  }
-
-
-  if (
-    normalizedQuery.length >
-    MEMORY_CONFIG.MAX_SEARCH_LENGTH
-  ) {
-
-    return [];
-
-  }
-
-
-  const memories =
-    await fetchUserLongTermMemories(
-
-      userId,
-
-      MEMORY_CONFIG
-        .MAX_MEMORY_CONTEXT_ITEMS
-
-    );
-
-
-  const scored =
-    memories
-      .map(
-        memory => ({
-
-          ...memory,
-
-          relevance:
-            calculateMemoryRelevance(
-
-              normalizedQuery,
-
-              memory
-
-            )
-
-        })
+  const scored = memories
+    .map(memory => ({
+      ...memory,
+      relevance: calculateMemoryRelevance(
+        normalizedQuery,
+        memory
       )
-      .filter(
-        memory =>
-          memory.relevance > 0
-      )
-      .sort(
-        (
-          a,
-          b
-        ) =>
-          b.relevance -
-          a.relevance
-      )
-      .slice(
-
-        0,
-
-        Math.max(
-          1,
-          Math.min(
-            Number(limit) || 10,
-            MEMORY_CONFIG
-              .MAX_MEMORY_CONTEXT_ITEMS
-          )
+    }))
+    .filter(memory => memory.relevance > 0)
+    .sort((a, b) => b.relevance - a.relevance)
+    .slice(
+      0,
+      Math.max(
+        1,
+        Math.min(
+          Number(limit) || 10,
+          MEMORY_CONFIG.MAX_MEMORY_CONTEXT_ITEMS
         )
-
-      );
-
+      )
+    );
 
   MEMORY_RUNTIME.searches++;
-
-
   return scored;
-
 }
 
+async function buildIntelligentMemoryContext(userId, query) {
+  if (!userId) return "";
 
-// ============================================================
-// BUILD INTELLIGENT MEMORY CONTEXT
-// ============================================================
+  const normalizedQuery = normalizeMemoryText(query);
+  if (!normalizedQuery) return "";
 
-async function buildIntelligentMemoryContext(
-  userId,
-  query
-) {
-
-  if (!userId) {
-
-    return "";
-
-  }
-
-
-  const normalizedQuery =
-    normalizeMemoryText(
-      query
-    );
-
-
-  if (!normalizedQuery) {
-
-    return "";
-
-  }
-
-
-  const [
-
-    userMemories,
-
-    longTermMemories
-
-  ] = await Promise.all([
-
+  const [userMemories, longTermMemories] = await Promise.all([
     searchUserMemory(
-
       userId,
-
       normalizedQuery,
-
-      MEMORY_CONFIG
-        .MAX_MEMORY_CONTEXT_ITEMS
-
+      MEMORY_CONFIG.MAX_MEMORY_CONTEXT_ITEMS
     ),
-
     searchLongTermMemory(
-
       userId,
-
       normalizedQuery,
-
-      MEMORY_CONFIG
-        .MAX_MEMORY_CONTEXT_ITEMS
-
+      MEMORY_CONFIG.MAX_MEMORY_CONTEXT_ITEMS
     )
-
   ]);
 
-
   const combined = [
-
-    ...userMemories.map(
-      memory => ({
-
-        ...memory,
-
-        source:
-          "user_memory"
-
-      })
-    ),
-
-    ...longTermMemories.map(
-      memory => ({
-
-        ...memory,
-
-        source:
-          "long_term_memory"
-
-      })
-    )
-
+    ...userMemories.map(memory => ({
+      ...memory,
+      source: "user_memory"
+    })),
+    ...longTermMemories.map(memory => ({
+      ...memory,
+      source: "long_term_memory"
+    }))
   ];
 
+  const unique = [];
+  for (const memory of combined) {
+    const text = memoryRecordText(memory);
+    const duplicate = unique.some(existing =>
+      calculateMemorySimilarity(
+        memoryRecordText(existing),
+        text
+      ) >= MEMORY_CONFIG.DUPLICATE_SIMILARITY_THRESHOLD
+    );
 
-  const unique =
-    [];
-
-
-  for (
-    const memory
-    of combined
-  ) {
-
-    const duplicate =
-      unique.some(
-        existing =>
-          calculateMemorySimilarity(
-
-            existing.memory,
-
-            memory.memory
-
-          ) >=
-          MEMORY_CONFIG
-            .DUPLICATE_SIMILARITY_THRESHOLD
-      );
-
-
-    if (!duplicate) {
-
-      unique.push(
-        memory
-      );
-
-    }
-
+    if (!duplicate) unique.push(memory);
   }
-
 
   unique.sort(
-    (
-      a,
-      b
-    ) =>
-      (
-        b.relevance || 0
-      ) -
-      (
-        a.relevance || 0
-      )
+    (a, b) => (b.relevance || 0) - (a.relevance || 0)
   );
 
-
-  const selected =
-    unique.slice(
-      0,
-      MEMORY_CONFIG
-        .MAX_MEMORY_CONTEXT_ITEMS
-    );
-
-
-  if (
-    selected.length ===
-    0
-  ) {
-
-    return "";
-
-  }
-
-
-  const lines = [];
-
-
-  lines.push(
-    "Relevant persistent memory:"
+  const selected = unique.slice(
+    0,
+    MEMORY_CONFIG.MAX_MEMORY_CONTEXT_ITEMS
   );
 
+  if (!selected.length) return "";
 
-  for (
-    let index = 0;
-    index < selected.length;
-    index++
-  ) {
-
-    const item =
-      selected[index];
-
-
-    const memoryText =
-      normalizeMemoryText(
-        item.memory
-      );
-
-
-    if (!memoryText) {
-
-      continue;
-
-    }
-
-
-    lines.push(
-
-      `${index + 1}. ${memoryText}`
-
-    );
-
+  const lines = ["Relevant persistent memory:"];
+  for (let index = 0; index < selected.length; index++) {
+    const text = memoryRecordText(selected[index]);
+    if (text) lines.push(`${index + 1}. ${text}`);
   }
 
-
-  let context =
-    lines.join(
-      "\n"
-    );
-
-
-  if (
-    context.length >
-    MEMORY_CONFIG
-      .CONTEXT_CHARACTER_LIMIT
-  ) {
-
-    context =
-      context.slice(
-
-        0,
-
-        MEMORY_CONFIG
-          .CONTEXT_CHARACTER_LIMIT
-
-      );
-
-  }
-
-
-  return context;
-
+  return lines.join("\n").slice(
+    0,
+    MEMORY_CONFIG.CONTEXT_CHARACTER_LIMIT
+  );
 }
 
+async function deleteUserMemory(userId, memoryId) {
+  const memory = await resolveUserMemory(userId, memoryId);
+  if (!memory) return false;
 
-// ============================================================
-// MEMORY DELETE
-// ============================================================
+  const result = await pool.query(
+    `DELETE FROM user_memory
+     WHERE id = $1 AND user_id = $2
+     RETURNING id`,
+    [memory.id, userId]
+  );
 
-async function deleteUserMemory(
-  userId,
-  memoryId
-) {
-
-  const memory =
-    await resolveUserMemory(
-
-      userId,
-
-      memoryId
-
-    );
-
-
-  if (!memory) {
-
-    return false;
-
-  }
-
-
-  const result =
-    await pool.query(
-
-      `DELETE FROM user_memory
-       WHERE id = $1
-       AND user_id = $2
-       RETURNING id`,
-
-      [
-
-        memory.id,
-
-        userId
-
-      ]
-
-    );
-
-
-  if (
-    result.rows.length ===
-    0
-  ) {
-
-    return false;
-
-  }
-
+  if (!result.rows.length) return false;
 
   MEMORY_RUNTIME.deletes++;
-
-
   return true;
-
 }
 
+async function deleteLongTermMemory(userId, memoryId) {
+  const memory = await resolveUserLongTermMemory(userId, memoryId);
+  if (!memory) return false;
 
-// ============================================================
-// LONG-TERM MEMORY DELETE
-// ============================================================
+  const result = await pool.query(
+    `DELETE FROM long_term_memory
+     WHERE id = $1 AND user_id = $2
+     RETURNING id`,
+    [memory.id, userId]
+  );
 
-async function deleteLongTermMemory(
-  userId,
-  memoryId
-) {
-
-  const memory =
-    await resolveUserLongTermMemory(
-
-      userId,
-
-      memoryId
-
-    );
-
-
-  if (!memory) {
-
-    return false;
-
-  }
-
-
-  const result =
-    await pool.query(
-
-      `DELETE FROM long_term_memory
-       WHERE id = $1
-       AND user_id = $2
-       RETURNING id`,
-
-      [
-
-        memory.id,
-
-        userId
-
-      ]
-
-    );
-
-
-  if (
-    result.rows.length ===
-    0
-  ) {
-
-    return false;
-
-  }
-
+  if (!result.rows.length) return false;
 
   MEMORY_RUNTIME.deletes++;
-
-
   return true;
-
 }
 
 // ============================================================
