@@ -55,6 +55,10 @@ const {
 } = require("./core/schedule-service");
 const { ScheduleWorker } = require("./core/schedule-worker");
 const { buildProjectPlan } = require("./core/project-autopilot");
+const {
+  buildOpportunity,
+  buildRevenueProjectPlan
+} = require("./core/economic-autopilot");
 
 // ============================================================
 // APPLICATION IDENTITY
@@ -3640,6 +3644,35 @@ app.post("/api/schedules/:id/resume", authenticateToken, async (req, res) => {
       success: false,
       error: "Could not resume schedule.",
       code: "SCHEDULE_RESUME_FAILED"
+    });
+  }
+});
+
+// ============================================================
+// ECONOMIC AUTOPILOT
+// ============================================================
+//
+// IRHCF can research and prepare lawful revenue opportunities.
+// It must not guarantee profit or move funds without authorization.
+
+app.post("/api/economy/opportunities", authenticateToken, async (req, res) => {
+  try {
+    const opportunity = buildOpportunity(req.body || {});
+    const projectPlan = buildRevenueProjectPlan(
+      opportunity,
+      req.user.id
+    );
+
+    return res.status(201).json({
+      success: true,
+      opportunity,
+      projectPlan
+    });
+  } catch (error) {
+    return res.status(400).json({
+      success: false,
+      error: error?.message || "Could not create opportunity.",
+      code: "ECONOMIC_OPPORTUNITY_INVALID"
     });
   }
 });
