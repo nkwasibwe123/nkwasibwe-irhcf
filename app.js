@@ -3632,111 +3632,7 @@ function extractConversationMessages(
 }
 
 
-// ============================================================
-// NORMALIZE MESSAGE
-// ============================================================
-
-function normalizeHistoryMessage(
-  message
-) {
-
-  if (!message) {
-
-    return null;
-
-  }
-
-
-  if (
-
-    typeof message ===
-    "string"
-
-  ) {
-
-    return {
-
-      role:
-        "ai",
-
-      content:
-        message
-
-    };
-
-  }
-
-
-  if (
-
-    typeof message !==
-    "object"
-
-  ) {
-
-    return null;
-
-  }
-
-
-  const role =
-
-    message.role ||
-
-    message.type ||
-
-    message.sender ||
-
-    "ai";
-
-
-  const content =
-
-    message.content ??
-
-    message.message ??
-
-    message.text ??
-
-    message.response ??
-
-    "";
-
-
-  if (
-
-    content === null ||
-
-    content === undefined ||
-
-    content === ""
-
-  ) {
-
-    return null;
-
-  }
-
-
-  return {
-
-    role:
-      String(role).toLowerCase(),
-
-    content:
-      typeof content ===
-      "string"
-
-        ? content
-
-        : safeJsonStringify(
-            content,
-            String(content)
-          )
-
-  };
-
-}
+// History normalization is centralized in the canonical implementation below.
 
 
 // ============================================================
@@ -5448,6 +5344,13 @@ async function loadConversation(
 function normalizeHistoryMessage(
   message
 ) {
+
+  if (typeof message === "string") {
+    const cleanString = message.trim();
+    return cleanString
+      ? { role: "ai", content: cleanString }
+      : null;
+  }
 
   if (
     !message ||
