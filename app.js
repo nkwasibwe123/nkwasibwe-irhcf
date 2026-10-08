@@ -6165,12 +6165,6 @@ async function toggleVoiceRecording() {
             }
           );
 
-        composerState
-          .attachments
-          .push(
-            voiceFile
-          );
-
         stream
           .getTracks()
           .forEach(
@@ -6184,9 +6178,9 @@ async function toggleVoiceRecording() {
         composerState.mediaRecorder =
           null;
 
-        renderAttachmentPreview();
-
         updateVoiceButton();
+        showToast("Voice recording yarangiye; iri guhindurwa amagambo...", "normal");
+        void transcribeAudioFile(voiceFile);
 
       };
 
