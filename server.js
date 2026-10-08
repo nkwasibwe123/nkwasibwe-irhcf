@@ -1,34 +1,14 @@
-const express = require("express");
-const cors = require("cors");
+"use strict";
 
-const app = express();
-const PORT = process.env.PORT || 3000;
+// ============================================================
+// NKWASIBWE IRHCF
+// ROOT SERVER BOOTSTRAP
+// ============================================================
+//
+// The production backend lives in ./backend/server.js.
+// Keeping this bootstrap means Render/Node deployments that
+// execute the repository root still start the real IRHCF
+// backend instead of the legacy demo API.
+// ============================================================
 
-app.use(cors());
-app.use(express.json());
-
-app.get("/", (req, res) => {
-  res.json({
-    name: "Nkwasibwe IRHCF",
-    status: "online",
-    message: "Nkwasibwe IRHCF backend is running."
-  });
-});
-
-app.get("/health", (req, res) => {
-  res.json({
-    status: "healthy"
-  });
-});
-
-app.post("/api/chat", (req, res) => {
-  const message = req.body?.message || "";
-
-  res.json({
-    reply: `Nkwasibwe IRHCF yakiriye ubutumwa bwawe: ${message}`
-  });
-});
-
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Nkwasibwe IRHCF backend running on port ${PORT}`);
-});
+require("./backend/server.js");
