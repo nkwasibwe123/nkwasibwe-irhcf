@@ -36435,6 +36435,20 @@ async function gracefulShutdown(
       //
 
       if (
+        typeof scheduleWorker !== "undefined" &&
+        scheduleWorker
+      ) {
+        try {
+          scheduleWorker.stop();
+        } catch (scheduleWorkerError) {
+          console.error(
+            "Schedule worker shutdown error:",
+            scheduleWorkerError
+          );
+        }
+      }
+
+      if (
         typeof persistentTaskEngine !== "undefined" &&
         persistentTaskEngine
       ) {
