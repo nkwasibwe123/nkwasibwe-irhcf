@@ -7357,13 +7357,19 @@ if (
 // VOICE BUTTON
 // ============================================================
 
-if (voiceButton) {
+const browserSpeechRecognitionAvailable = Boolean(
+  window.SpeechRecognition ||
+  window.webkitSpeechRecognition
+);
 
+// Prefer direct speech-to-text when supported. MediaRecorder remains
+// the fallback on browsers without SpeechRecognition, avoiding two
+// microphone handlers running for one click.
+if (voiceButton && !browserSpeechRecognitionAvailable) {
   voiceButton.addEventListener(
     "click",
     toggleVoiceRecording
   );
-
 }
   // ----------------------------------------------------------
   // ENTER TO SEND
