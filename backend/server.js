@@ -3572,6 +3572,80 @@ app.delete("/api/integrations/accounts/:id", authenticateToken, async (req, res)
 // ============================================================
 
 // ============================================================
+// AUTHENTICATED IMAGE GENERATION
+// Uses the already-configured OpenAI client; no second client is created.
+// ============================================================
+
+app.post("/api/media/image", authenticateToken, async (req, res) => {
+  try {
+    if (!openai) {
+      return res.status(503).json({
+        success: false,
+        error: "Image generation is unavailable because the OpenAI provider is not configured.",
+        code: "MEDIA_PROVIDER_UNAVAILABLE"
+      });
+    }
+
+    const prompt = String(req.body?.prompt || "").trim().slice(0, 4000);
+    const allowedSizes = new Set(["1024x1024", "1536x1024", "1024x1536"]);
+    const size = allowedSizes.has(req.body?.size)
+      ? req.body.size
+      : "1024x1024";
+
+    if (!prompt) {
+      return res.status(400).json({
+        success: false,
+        error: "An image prompt is required.",
+        code: "IMAGE_PROMPT_REQUIRED"
+      });
+    }
+
+    const generated = await openai.images.generate({
+      model: "gpt-image-1",
+      prompt,
+      size,
+      n: 1
+    });
+
+    const image = generated?.data?.[0];
+    const base64 = image?.b64_json;
+    const imageUrl = image?.url;
+
+    if (!base64 && !imageUrl) {
+      return res.status(502).json({
+        success: false,
+        error: "The image provider returned no usable image.",
+        code: "IMAGE_RESULT_EMPTY"
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      mediaType: "image",
+      mimeType: "image/png",
+      image: base64 ? `data:image/png;base64,${base64}` : imageUrl,
+      format: base64 ? "data_url" : "url",
+      size,
+      provider: "openai",
+      generatedAt: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error("[MEDIA_IMAGE] Generation failed:", {
+      code: error?.code || null,
+      status: error?.status || null,
+      message: String(error?.message || "Image generation failed").slice(0, 500)
+    });
+
+    const status = Number(error?.status);
+    return res.status(status >= 400 && status < 600 ? status : 502).json({
+      success: false,
+      error: "Image generation failed. Check provider availability and account access.",
+      code: error?.code || "IMAGE_GENERATION_FAILED"
+    });
+  }
+});
+
+// ============================================================
 // AUTHENTICATED CAPABILITY EXPANSION PLANNING
 // This endpoint creates a gated plan only; it never downloads,
 // executes, or promotes code automatically.
