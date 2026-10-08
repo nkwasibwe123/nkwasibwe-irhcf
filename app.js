@@ -81,7 +81,10 @@ const API_ENDPOINTS = Object.freeze({
     "/api/conversations",
 
   actionCenter:
-    "/api/action-center"
+    "/api/action-center",
+
+  imageGeneration:
+    "/api/media/image"
 
 });
 
@@ -8380,6 +8383,65 @@ function setDashboardStatus(message) {
 
 }
 
+// Generate a real image through the authenticated backend endpoint.
+// The UI never claims success unless the API returns a usable image.
+async function generateImageFromPrompt(prompt) {
+  const cleanPrompt = String(prompt || "").trim().slice(0, 4000);
+  if (!cleanPrompt) return;
+
+  if (!authToken) {
+    setDashboardStatus("Banza winjire muri konti kugira ngo ukore ishusho.");
+    showAuthenticationDialog();
+    return;
+  }
+
+  setDashboardStatus("IRHCF iri gukora ishusho. Tegereza...");
+
+  try {
+    const result = await apiRequest(API_ENDPOINTS.imageGeneration, {
+      method: "POST",
+      body: JSON.stringify({ prompt: cleanPrompt, size: "1024x1024" })
+    });
+
+    const source = String(result?.image || "");
+    const safeSource =
+      source.startsWith("data:image/png;base64,") ||
+      (source.startsWith("https://") && source.length < 4096)
+        ? source
+        : "";
+
+    if (!result?.success || !safeSource) {
+      throw new Error("Serivisi ntiyagaruye ishusho ikoreshwa.");
+    }
+
+    const row = addMessage("Ishusho yakozwe neza.", "ai");
+    const wrapper = row?.querySelector(".message-content-wrapper");
+    if (!wrapper) throw new Error("Ntibyashobotse kwerekana ishusho muri chat.");
+
+    const image = document.createElement("img");
+    image.src = safeSource;
+    image.alt = cleanPrompt;
+    image.loading = "lazy";
+    image.decoding = "async";
+    image.style.display = "block";
+    image.style.maxWidth = "100%";
+    image.style.maxHeight = "640px";
+    image.style.height = "auto";
+    image.style.objectFit = "contain";
+    image.style.borderRadius = "12px";
+    image.style.marginTop = "10px";
+    image.referrerPolicy = "no-referrer";
+    wrapper.appendChild(image);
+
+    setDashboardStatus("Ishusho yakozwe. Niba utayibona, genzura internet n'ibyo serivisi yemerewe.");
+  } catch (error) {
+    console.error("[IRHCF IMAGE]", error);
+    setDashboardStatus(
+      "Ishusho ntiyakozwe: " + String(error?.message || "serivisi ntiboneka").slice(0, 180)
+    );
+  }
+}
+
 function dashboardAction(action) {
 
   const actions = {
@@ -8438,6 +8500,17 @@ function dashboardAction(action) {
     economy:
       "Start a safe economic discovery cycle: research lawful revenue opportunities, compare evidence, score risk and feasibility, and prepare an MVP plan. Do not move money or launch external actions without my authorization."
   };
+
+  if (action === "image-create") {
+    const imagePrompt = window.prompt(
+      "Sobanura ishusho ushaka gukora (andika mu rurimi wifuza):"
+    );
+    if (imagePrompt && imagePrompt.trim()) {
+      setDashboardOpen(false);
+      void generateImageFromPrompt(imagePrompt);
+    }
+    return;
+  }
 
   const prompt = prompts[action];
 
