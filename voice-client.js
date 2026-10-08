@@ -23,7 +23,7 @@
     recognition = new SpeechRecognition();
     recognition.continuous = false;
     recognition.interimResults = true;
-    recognition.lang = "auto";
+    recognition.lang = navigator.language || "en-US";
 
     recognition.onstart = () => {
       listening = true;
@@ -64,7 +64,8 @@
         recognition.stop();
         return;
       }
-      recognition.lang = document.documentElement.lang || "en-US";
+      const uiLanguage = String(document.documentElement.lang || "").trim();
+      recognition.lang = uiLanguage.includes("-") ? uiLanguage : (navigator.language || "en-US");
       recognition.start();
     });
   } else {
@@ -85,7 +86,9 @@
 
       const looksAssistant =
         node.classList.contains("assistant") ||
+        node.classList.contains("ai") ||
         node.dataset.role === "assistant" ||
+        node.dataset.role === "ai" ||
         /assistant|ai|bot/i.test(node.getAttribute("data-role") || "");
 
       if (!looksAssistant) return;
@@ -93,6 +96,7 @@
       spoken.add(node);
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text.slice(0, 12000));
+      utterance.lang = navigator.language || "en-US";
       utterance.rate = 1;
       utterance.pitch = 1;
       window.speechSynthesis.speak(utterance);
@@ -103,7 +107,7 @@
         for (const node of record.addedNodes || []) {
           if (node.nodeType === Node.ELEMENT_NODE) {
             speakAssistantMessage(node);
-            node.querySelectorAll?.("[data-role='assistant'], .assistant").forEach(speakAssistantMessage);
+            node.querySelectorAll?.("[data-role='assistant'], [data-role='ai'], .assistant, .ai").forEach(speakAssistantMessage);
           }
         }
       }
