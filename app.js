@@ -7126,7 +7126,7 @@ async function generateVideoFromPrompt(prompt) {
     }
 
     const blob = await response.blob();
-    if (!blob.size || !String(blob.type || "").startsWith("video/")) {
+    if (!blob.size || !(String(blob.type || "").startsWith("video/") || blob.type === "application/octet-stream")) {
       throw new Error("Provider ntiyagaruye video file ikoreshwa.");
     }
     const objectUrl = URL.createObjectURL(blob);
