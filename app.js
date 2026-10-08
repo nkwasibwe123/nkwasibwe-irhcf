@@ -78,7 +78,10 @@ const API_ENDPOINTS = Object.freeze({
     "/api/me",
 
   conversations:
-    "/api/conversations"
+    "/api/conversations",
+
+  actionCenter:
+    "/api/action-center"
 
 });
 
@@ -122,6 +125,31 @@ const dashboardCloseButton =
 const dashboardStatus =
   document.getElementById(
     "dashboardStatus"
+  );
+
+const actionCenterButton =
+  document.getElementById(
+    "actionCenterButton"
+  );
+
+const actionCenterBadge =
+  document.getElementById(
+    "actionCenterBadge"
+  );
+
+const actionCenter =
+  document.getElementById(
+    "actionCenter"
+  );
+
+const actionCenterCloseButton =
+  document.getElementById(
+    "actionCenterCloseButton"
+  );
+
+const actionCenterList =
+  document.getElementById(
+    "actionCenterList"
   );
 
 const fileInput =
@@ -8111,6 +8139,140 @@ document.addEventListener(
 
 
 // ============================================================
+// ACTION CENTER / REQUIRED ACTIONS
+// ============================================================
+
+function setActionCenterOpen(open) {
+  if (!actionCenter) return;
+
+  actionCenter.classList.toggle("open", Boolean(open));
+  actionCenter.setAttribute(
+    "aria-hidden",
+    String(!open)
+  );
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function renderActionCenter(actions = []) {
+  if (!actionCenterList) return;
+
+  if (!actions.length) {
+    actionCenterList.innerHTML =
+      '<div class="action-center-empty">Nta kintu gikeneye intervention yawe ubu. IRHCF iriteguye. ✅</div>';
+  } else {
+    actionCenterList.innerHTML =
+      actions.map(action => {
+        const link = action.actionUrl
+          ? '<a class="action-center-link" href="' +
+            escapeHtml(action.actionUrl) +
+            '">' +
+            escapeHtml(action.actionLabel || "Kora ubu") +
+            " →</a>"
+          : "";
+
+        return (
+          '<article class="action-center-item">' +
+          "<strong>" +
+          escapeHtml(action.title) +
+          "</strong>" +
+          "<p>" +
+          escapeHtml(action.message) +
+          "</p>" +
+          link +
+          "</article>"
+        );
+      }).join("");
+  }
+
+  if (actionCenterBadge) {
+    const count = actions.length;
+    actionCenterBadge.textContent = String(count);
+    actionCenterBadge.hidden = count === 0;
+  }
+}
+
+async function loadActionCenter({ open = false } = {}) {
+  if (!authToken) {
+    renderActionCenter([
+      {
+        title: "Injira muri konti yawe",
+        message: "Injira kugira ngo ubone ibisabwa bya integrations, automation na long-running tasks.",
+        actionLabel: "Fungura / Injira",
+        actionUrl: "/"
+      }
+    ]);
+
+    if (open) setActionCenterOpen(true);
+    return;
+  }
+
+  try {
+    const data = await apiRequest(
+      API_ENDPOINTS.actionCenter,
+      { method: "GET" }
+    );
+
+    renderActionCenter(
+      Array.isArray(data?.actions)
+        ? data.actions
+        : []
+    );
+
+    if (open) setActionCenterOpen(true);
+  } catch (error) {
+    console.warn(
+      "Could not load action center:",
+      error
+    );
+
+    renderActionCenter([
+      {
+        title: "Ntabwo nabashije kugenzura ibisabwa",
+        message: "Server ntiyatanze action center. Gerageza kongera gufungura nyuma.",
+        actionLabel: null,
+        actionUrl: null
+      }
+    ]);
+
+    if (open) setActionCenterOpen(true);
+  }
+}
+
+if (actionCenterButton) {
+  actionCenterButton.addEventListener(
+    "click",
+    () => loadActionCenter({ open: true })
+  );
+}
+
+if (actionCenterCloseButton) {
+  actionCenterCloseButton.addEventListener(
+    "click",
+    () => setActionCenterOpen(false)
+  );
+}
+
+document.addEventListener(
+  "click",
+  event => {
+    if (
+      event.target?.matches &&
+      event.target.matches("[data-action-center-close]")
+    ) {
+      setActionCenterOpen(false);
+    }
+  }
+);
+
+// ============================================================
 // CAPABILITY DASHBOARD
 // ============================================================
 
@@ -9638,6 +9800,18 @@ async function initializeApp() {
 
       }
 
+    }
+
+
+    // ----------------------------------------------------------
+    // REFRESH ACTION CENTER
+    // ----------------------------------------------------------
+    if (typeof loadActionCenter === "function") {
+      try {
+        await loadActionCenter();
+      } catch (error) {
+        console.warn("Action center refresh skipped:", error);
+      }
     }
 
 
