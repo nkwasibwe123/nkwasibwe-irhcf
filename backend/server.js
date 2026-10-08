@@ -37,6 +37,8 @@ const {
 
 const { AdapterRegistry } = require("./core/adapter-registry");
 const adapterRegistry = new AdapterRegistry();
+const { CapabilityRegistry } = require("./capabilities/registry");
+const capabilityRegistry = new CapabilityRegistry(pool);
 
 // ============================================================
 // APPLICATION IDENTITY
@@ -36813,6 +36815,8 @@ async function startServer() {
       console.log(
         "[DATABASE] Database schema initialized successfully."
       );
+
+      await capabilityRegistry.syncBuiltIns();
 
       persistentTaskEngine.start();
 
