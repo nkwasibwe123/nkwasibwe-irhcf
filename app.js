@@ -8170,13 +8170,25 @@ function renderActionCenter(actions = []) {
   } else {
     actionCenterList.innerHTML =
       actions.map(action => {
-        const link = action.actionUrl
-          ? '<a class="action-center-link" href="' +
-            escapeHtml(action.actionUrl) +
-            '">' +
-            escapeHtml(action.actionLabel || "Kora ubu") +
-            " →</a>"
-          : "";
+        let link = "";
+        if (action.actionUrl) {
+          const service = action?.metadata?.service;
+          if (service === "youtube" || service === "google_meet") {
+            link =
+              '<button class="action-center-link action-center-action" type="button" data-oauth-service="' +
+              escapeHtml(service) +
+              '">' +
+              escapeHtml(action.actionLabel || "Kora ubu") +
+              " →</button>";
+          } else {
+            link =
+              '<a class="action-center-link" href="' +
+              escapeHtml(action.actionUrl) +
+              '">' +
+              escapeHtml(action.actionLabel || "Kora ubu") +
+              " →</a>";
+          }
+        }
 
         return (
           '<article class="action-center-item">' +
@@ -8196,6 +8208,41 @@ function renderActionCenter(actions = []) {
     const count = actions.length;
     actionCenterBadge.textContent = String(count);
     actionCenterBadge.hidden = count === 0;
+  }
+}
+
+async function startGoogleOAuth(service) {
+  const platform =
+    service === "google_meet"
+      ? "meet"
+      : "youtube";
+
+  try {
+    const data = await apiRequest(
+      `/api/integrations/google/authorize?platform=${encodeURIComponent(platform)}`,
+      { method: "GET" }
+    );
+
+    if (data?.authorizationUrl) {
+      window.location.href =
+        data.authorizationUrl;
+      return;
+    }
+
+    throw new Error(
+      data?.error ||
+      "Authorization URL ntiyabonetse."
+    );
+  } catch (error) {
+    console.error(
+      "Google OAuth start failed:",
+      error
+    );
+    if (dashboardStatus) {
+      dashboardStatus.textContent =
+        error?.message ||
+        "Ntibyashobotse gutangiza authorization.";
+    }
   }
 }
 
@@ -8257,6 +8304,21 @@ if (actionCenterCloseButton) {
   actionCenterCloseButton.addEventListener(
     "click",
     () => setActionCenterOpen(false)
+  );
+}
+
+if (actionCenterList) {
+  actionCenterList.addEventListener(
+    "click",
+    event => {
+      const button =
+        event.target?.closest?.("[data-oauth-service]");
+      if (!button) return;
+
+      startGoogleOAuth(
+        button.getAttribute("data-oauth-service")
+      );
+    }
   );
 }
 
