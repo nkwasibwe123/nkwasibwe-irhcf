@@ -33719,6 +33719,7 @@ const persistentTaskEngine =
         userId,
         task,
         sessionId,
+        checkpoint,
         updateProgress
       }) => {
 
@@ -33727,6 +33728,16 @@ const persistentTaskEngine =
             idea: task,
             userId
           });
+
+        const repairContext =
+          checkpoint?.repair?.error
+            ? `Previous attempt failed. Repair it before continuing. Failure: ${String(checkpoint.repair.error).slice(0, 2000)}`
+            : "";
+
+        const executionTask =
+          repairContext
+            ? `${task}\n\nIRHCF REPAIR CONTEXT:\n${repairContext}`
+            : task;
 
         await updateProgress({
           progress: 10,
@@ -33753,7 +33764,7 @@ const persistentTaskEngine =
         const result =
           await executeNkwasibweAgent({
             userId,
-            task,
+            task: executionTask,
             sessionId
           });
 
@@ -33768,6 +33779,21 @@ const persistentTaskEngine =
 
         return result;
       },
+
+    repairer:
+      async ({
+        task,
+        error,
+        attempt
+      }) => ({
+        repaired: true,
+        strategy: "contextual_reexecution",
+        attempt,
+        error: String(error || "").slice(0, 2000),
+        task: String(task || "").slice(0, 500),
+        nextStep:
+          "Re-execute the task with the persisted failure context and run verification again."
+      }),
 
     verifier:
       async ({
