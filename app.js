@@ -7089,7 +7089,7 @@ async function generateMusicFromPrompt(prompt) {
       body: JSON.stringify({
         prompt: cleanPrompt,
         musicLengthMs: 180000,
-        forceInstrumental: /\\b(instrumental only|no vocals)\\b/i.test(cleanPrompt)
+        forceInstrumental: cleanPrompt.toLowerCase().includes("instrumental only") || cleanPrompt.toLowerCase().includes("no vocals")
       })
     });
 
