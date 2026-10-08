@@ -7426,6 +7426,7 @@ function dashboardAction(action) {
     );
 
     setDashboardOpen(false);
+    fileInput.dataset.transcribeAudio = "false";
     fileInput.click();
     return;
 
@@ -7623,6 +7624,7 @@ if (
     "click",
     () => {
 
+      fileInput.dataset.transcribeAudio = "false";
       fileInput.click();
 
     }
