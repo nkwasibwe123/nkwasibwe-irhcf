@@ -77,6 +77,9 @@ const {
 const { ScheduleWorker } = require("./core/schedule-worker");
 const { buildProjectPlan, shouldBecomeLongRunning } = require("./core/project-autopilot");
 const {
+  buildCapabilityExpansionPlan
+} = require("./capabilities/discovery");
+const {
   runSpecialistTeam,
   formatSpecialistBriefs
 } = require("./core/multi-agent-engine");
@@ -3567,6 +3570,55 @@ app.delete("/api/integrations/accounts/:id", authenticateToken, async (req, res)
 // ============================================================
 // PERSISTENT AUTOMATION SCHEDULES
 // ============================================================
+
+// ============================================================
+// AUTHENTICATED CAPABILITY EXPANSION PLANNING
+// This endpoint creates a gated plan only; it never downloads,
+// executes, or promotes code automatically.
+// ============================================================
+
+app.post("/api/capabilities/expansion-plan", authenticateToken, async (req, res) => {
+  try {
+    const requestedCapability = String(
+      req.body?.requestedCapability || ""
+    ).trim().slice(0, 200);
+    const reason = String(req.body?.reason || "").trim().slice(0, 2000);
+
+    if (!requestedCapability) {
+      return res.status(400).json({
+        success: false,
+        error: "requestedCapability is required.",
+        code: "CAPABILITY_NAME_REQUIRED"
+      });
+    }
+
+    const description = (requestedCapability + " " + reason).toLowerCase();
+    const plan = buildCapabilityExpansionPlan({
+      requestedCapability,
+      reason,
+      externalAction: /publish|send|delete|purchase|transfer|upload|post|account|payment/.test(description),
+      handlesCredentials: /password|secret|token|credential|api key|private key/.test(description),
+      handlesUserData: /personal data|user data|private data|personal information/.test(description),
+      executesCode: /execute code|run code|shell|terminal|arbitrary code|install package/.test(description)
+    });
+
+    return res.status(200).json({
+      success: true,
+      status: "plan_created",
+      plan,
+      nextStep: "DISCOVER",
+      productionEnabled: false,
+      message: "Capability expansion plan created. No code has been downloaded, executed, or promoted."
+    });
+  } catch (error) {
+    console.error("[CAPABILITY_EXPANSION] Plan creation failed:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Could not create a capability expansion plan.",
+      code: "CAPABILITY_EXPANSION_PLAN_FAILED"
+    });
+  }
+});
 
 app.get("/api/schedules", authenticateToken, async (req, res) => {
   try {
