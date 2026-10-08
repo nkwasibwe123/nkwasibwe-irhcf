@@ -351,6 +351,28 @@ async function createSchema() {
   `);
 
   // ============================================================
+  // 18. SCHEDULED JOBS
+  // ============================================================
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS scheduled_jobs (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      frequency TEXT NOT NULL,
+      timezone TEXT NOT NULL,
+      times JSONB DEFAULT '[]'::jsonb,
+      task_template TEXT NOT NULL,
+      status TEXT DEFAULT 'active',
+      metadata JSONB DEFAULT '{}'::jsonb,
+      last_run_at TIMESTAMP,
+      next_run_at TIMESTAMP,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  // ============================================================
   // 18. SYSTEM SETTINGS
   // ============================================================
 
