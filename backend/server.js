@@ -3859,6 +3859,10 @@ app.get("/api/media/video/:videoId/content", authenticateToken, async (req, res)
       });
     }
 
+    // Video files can be much larger than ordinary API responses.
+    req.setTimeout(120000);
+    res.setTimeout(120000);
+
     const upstream = await fetch(
       "https://api.openai.com/v1/videos/" + encodeURIComponent(videoId) + "/content",
       {
