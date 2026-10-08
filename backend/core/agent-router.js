@@ -24,6 +24,9 @@ const ROUTES = Object.freeze({
   content_creation: ["writing", "verification"],
   media: ["media", "verification"],
   automation: ["automation", "verification"],
+  account_automation: ["automation", "security", "verification"],
+  meeting: ["voice", "automation", "verification"],
+  project_autopilot: ["planner", "research", "coding", "media", "automation", "security", "verification"],
   business: ["research", "data", "writing", "verification"],
   planning: ["planner", "verification"],
   general: ["core", "verification"]
@@ -77,11 +80,15 @@ const AGENT_ROLES = Object.freeze({
   },
   voice: {
     name: "Voice Agent",
-    domains: ["voice_processing"]
+    domains: ["voice_processing", "meeting_control"]
   },
   automation: {
     name: "Automation Agent",
     domains: [
+      "account_control",
+      "browser_automation",
+      "youtube_publishing",
+      "meeting_control",
       "task_execution",
       "scheduling",
       "monitoring",
