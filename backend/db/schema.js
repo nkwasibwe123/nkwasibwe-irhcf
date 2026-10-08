@@ -605,6 +605,44 @@ await pool.query(`
   `);
 
   // ------------------------------------------------------------
+  // TASK STATUS NORMALIZATION
+  // ------------------------------------------------------------
+
+  await pool.query(`
+    UPDATE tasks
+    SET status = CASE LOWER(COALESCE(status, 'planned'))
+      WHEN 'pending' THEN 'PLANNED'
+      WHEN 'planning' THEN 'PLANNED'
+      WHEN 'running' THEN 'RUNNING'
+      WHEN 'testing' THEN 'VERIFYING'
+      WHEN 'repairing' THEN 'REPAIRING'
+      WHEN 'verifying' THEN 'VERIFYING'
+      WHEN 'completed' THEN 'COMPLETED'
+      WHEN 'failed' THEN 'FAILED'
+      WHEN 'cancelled' THEN 'FAILED'
+      WHEN 'paused' THEN 'PAUSED'
+      WHEN 'waiting_for_tool' THEN 'WAITING_FOR_TOOL'
+      WHEN 'waiting_for_user' THEN 'WAITING_FOR_USER'
+      ELSE 'PLANNED'
+    END;
+
+    ALTER TABLE tasks
+      ALTER COLUMN status SET DEFAULT 'PLANNED';
+
+    UPDATE tasks
+      SET max_attempts = 3
+      WHERE max_attempts IS NULL OR max_attempts < 1;
+
+    UPDATE tasks
+      SET progress = 0
+      WHERE progress IS NULL;
+
+    UPDATE tasks
+      SET checkpoint = '{}'::jsonb
+      WHERE checkpoint IS NULL;
+  `);
+
+  // ------------------------------------------------------------
   // TASK RUNS MIGRATION
   // ------------------------------------------------------------
 
