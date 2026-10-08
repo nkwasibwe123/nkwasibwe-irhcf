@@ -43,10 +43,11 @@ async function requestToPay({
   amount,
   currency = "RWF",
   externalId,
+  payerMsisdn,
   payerMessage = "IRHCF payment request",
   payeeNote = "IRHCF"
 } = {}) {
-  if (!referenceId || !externalId) {
+  if (!referenceId || !externalId || !payerMsisdn) {
     throw new Error("Reference ID and external ID are required.");
   }
 
@@ -59,7 +60,7 @@ async function requestToPay({
       amount: String(amount),
       currency: String(currency).toUpperCase(),
       externalId: String(externalId),
-      payer: { partyIdType: "MSISDN", partyId: String(externalId) },
+      payer: { partyIdType: "MSISDN", partyId: String(payerMsisdn) },
       payerMessage,
       payeeNote
     }
