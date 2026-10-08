@@ -3646,6 +3646,78 @@ app.post("/api/media/image", authenticateToken, async (req, res) => {
 });
 
 // ============================================================
+// AUTHENTICATED SPEECH / VOICE-OVER GENERATION
+// This produces spoken audio, not music or singing.
+// ============================================================
+
+app.post("/api/media/speech", authenticateToken, async (req, res) => {
+  try {
+    if (!openai) {
+      return res.status(503).json({
+        success: false,
+        error: "Speech generation is unavailable because the OpenAI provider is not configured.",
+        code: "MEDIA_PROVIDER_UNAVAILABLE"
+      });
+    }
+
+    const input = String(req.body?.text || "").trim().slice(0, 4000);
+    const allowedVoices = new Set([
+      "alloy", "echo", "fable", "onyx", "nova", "shimmer"
+    ]);
+    const voice = allowedVoices.has(req.body?.voice)
+      ? req.body.voice
+      : "alloy";
+
+    if (!input) {
+      return res.status(400).json({
+        success: false,
+        error: "Text for speech generation is required.",
+        code: "SPEECH_TEXT_REQUIRED"
+      });
+    }
+
+    const audioResponse = await openai.audio.speech.create({
+      model: "gpt-4o-mini-tts",
+      voice,
+      input,
+      response_format: "mp3"
+    });
+    const audioBuffer = Buffer.from(await audioResponse.arrayBuffer());
+
+    if (!audioBuffer.length) {
+      return res.status(502).json({
+        success: false,
+        error: "The speech provider returned an empty audio file.",
+        code: "SPEECH_RESULT_EMPTY"
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      mediaType: "speech",
+      mimeType: "audio/mpeg",
+      audio: "data:audio/mpeg;base64," + audioBuffer.toString("base64"),
+      format: "mp3",
+      voice,
+      provider: "openai",
+      generatedAt: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error("[MEDIA_SPEECH] Generation failed:", {
+      code: error?.code || null,
+      status: error?.status || null,
+      message: String(error?.message || "Speech generation failed").slice(0, 500)
+    });
+    const status = Number(error?.status);
+    return res.status(status >= 400 && status < 600 ? status : 502).json({
+      success: false,
+      error: "Speech generation failed. Check provider availability and account access.",
+      code: error?.code || "SPEECH_GENERATION_FAILED"
+    });
+  }
+});
+
+// ============================================================
 // AUTHENTICATED CAPABILITY EXPANSION PLANNING
 // This endpoint creates a gated plan only; it never downloads,
 // executes, or promotes code automatically.
