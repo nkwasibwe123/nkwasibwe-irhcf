@@ -7549,6 +7549,7 @@ function dashboardAction(action) {
   if (action === "audio-transcribe") {
     if (!fileInput) return;
     fileInput.dataset.transcribeAudio = "true";
+    fileInput.dataset.videoReference = "false";
     fileInput.setAttribute("accept", "audio/*,.mp3,.wav,.m4a,.ogg,.flac,.webm,.mp4");
     setDashboardOpen(false);
     fileInput.click();
