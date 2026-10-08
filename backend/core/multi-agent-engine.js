@@ -66,10 +66,10 @@ function buildSpecialistMessages(task, specialist, sharedContext = "") {
       role: "user",
       content: [
         "MAIN TASK:",
-        clean(task, 4000),
+        clean(task, 3000),
         "",
         "SHARED CONTEXT:",
-        clean(sharedContext, 1200),
+        clean(sharedContext, 800),
         "",
         "Produce your specialist brief. Do not claim an action was performed unless the brief is only describing a plan."
       ].join("\n")
@@ -111,7 +111,7 @@ async function runSpecialistTeam({
           ),
           options: {
             temperature: 0.2,
-            maxTokens: 450
+            maxTokens: 350
           }
         },
         metadata: {
@@ -130,7 +130,7 @@ async function runSpecialistTeam({
           execution?.result?.output_text ??
           execution?.result?.content ??
           execution?.result,
-          3500
+          2500
         ),
         status: "completed"
       });
@@ -177,7 +177,7 @@ function formatSpecialistBriefs(teamExecution) {
       ].join("\n")
     )
     .join("\n\n")
-    .slice(0, 12000);
+    .slice(0, 9000);
 }
 
 module.exports = {
