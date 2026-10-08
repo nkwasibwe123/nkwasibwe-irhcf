@@ -789,10 +789,7 @@ class TaskEngine {
     const maxAttempts =
       Number(task.max_attempts) || this.defaultMaxAttempts;
 
-    if (
-      attempts < maxAttempts &&
-      this.repairer
-    ) {
+    if (attempts < maxAttempts) {
       await this.pool.query(
         `UPDATE tasks
          SET
@@ -806,17 +803,23 @@ class TaskEngine {
         [
           task.id,
           TASK_STATES.REPAIRING,
-          "Repair cycle started.",
+          "Repair/retry cycle started.",
           message
         ]
       );
 
       try {
-        const repairResult = await this.repairer({
-          task,
-          error: message,
-          attempt: attempts
-        });
+        const repairResult = this.repairer
+          ? await this.repairer({
+              task,
+              error: message,
+              attempt: attempts
+            })
+          : {
+              repaired: false,
+              strategy: "controlled_retry",
+              reason: "No specialized repairer is registered; retrying through the same verified executor."
+            };
 
         await this.pool.query(
           `UPDATE tasks
@@ -840,7 +843,7 @@ class TaskEngine {
             }),
             repairResult?.waitForUser
               ? "Waiting for user input."
-              : "Repair completed; task queued for retest."
+              : "Repair/retry completed; task queued for retest."
           ]
         );
 
