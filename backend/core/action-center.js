@@ -39,7 +39,8 @@ function buildActionCenter({
   hasYoutubeAccount = false,
   hasMeetAccount = false,
   credentialsKeyConfigured = true,
-  aiProviderConfigured = true
+  aiProviderConfigured = true,
+  googleOAuthConfigured = true
 } = {}) {
   const actions = [];
 
@@ -84,6 +85,22 @@ function buildActionCenter({
         actionUrl: "https://dashboard.render.com",
         category: "security",
         blocking: true
+      })
+    );
+  }
+
+  if (authenticated && !googleOAuthConfigured) {
+    actions.push(
+      createAction({
+        id: "google-oauth-config-required",
+        severity: "critical",
+        title: "Google OAuth iracyakeneye configuration",
+        message: "YouTube/Google Meet connection ntizakora kugeza Google OAuth Client ID, Client Secret na Redirect URI bishyizwe muri server.",
+        actionLabel: "Fungura Render",
+        actionUrl: "https://dashboard.render.com",
+        category: "integration",
+        blocking: true,
+        metadata: { service: "google_oauth" }
       })
     );
   }
