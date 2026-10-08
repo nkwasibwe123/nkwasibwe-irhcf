@@ -1302,3 +1302,129 @@ body {
 .hidden {
   display: none !important;
   }
+
+
+/* =========================================================
+   CAPABILITY DASHBOARD
+   ========================================================= */
+
+.capability-dashboard {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+
+.capability-dashboard.open {
+  display: flex;
+}
+
+.dashboard-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.68);
+  backdrop-filter: blur(5px);
+}
+
+.dashboard-panel {
+  position: relative;
+  width: min(920px, calc(100vw - 28px));
+  max-height: min(760px, calc(100vh - 28px));
+  overflow-y: auto;
+  padding: 22px;
+  border: 1px solid var(--border-light);
+  border-radius: 20px;
+  background: var(--panel);
+  box-shadow: 0 25px 80px rgba(0, 0, 0, 0.45);
+}
+
+.dashboard-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 15px;
+  margin-bottom: 18px;
+}
+
+.dashboard-header h2 {
+  font-size: 22px;
+}
+
+.dashboard-header p {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-top: 5px;
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 11px;
+}
+
+.dashboard-card {
+  min-height: 130px;
+  padding: 15px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  background: var(--panel-light);
+  color: var(--text);
+  cursor: pointer;
+  transition: transform 0.15s, border-color 0.2s, background 0.2s;
+}
+
+.dashboard-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--primary);
+  background: var(--panel-hover);
+}
+
+.dashboard-card-icon {
+  font-size: 24px;
+}
+
+.dashboard-card strong {
+  font-size: 14px;
+}
+
+.dashboard-card > span:last-child {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.dashboard-status {
+  margin-top: 15px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(79, 124, 255, 0.08);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+@media (max-width: 760px) {
+  .dashboard-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 480px) {
+  .dashboard-panel {
+    padding: 16px;
+  }
+
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-card {
+    min-height: 105px;
+  }
+}
