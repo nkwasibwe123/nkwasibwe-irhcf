@@ -92,6 +92,9 @@ const API_ENDPOINTS = Object.freeze({
   videoGeneration:
     "/api/media/video",
 
+  musicGeneration:
+    "/api/media/music",
+
   capabilityExpansionPlan:
     "/api/capabilities/expansion-plan"
 
@@ -7058,6 +7061,80 @@ async function generateImageFromPrompt(prompt) {
   }
 }
 
+async function generateMusicFromPrompt(prompt) {
+  const cleanPrompt = String(prompt || "").trim().slice(0, 4000);
+  if (!cleanPrompt) return;
+
+  if (!authToken) {
+    setDashboardStatus("Banza winjire muri konti kugira ngo ukore indirimbo.");
+    showAuthenticationDialog();
+    return;
+  }
+
+  const confirmed = window.confirm(
+    "IRHCF izagerageza gukora indirimbo y'iminota 3. Ibi bishobora gukoresha ElevenLabs API credits kandi bisaba ko ELEVENLABS_API_KEY yashyizwe kuri backend. Urashaka gukomeza?"
+  );
+  if (!confirmed) return;
+
+  setStatus("IRHCF iri gukora indirimbo. Bishobora gufata igihe gito...", "loading");
+  setDashboardStatus("Music generation iri gutangira...");
+  try {
+    const response = await fetch(API_BASE_URL + API_ENDPOINTS.musicGeneration, {
+      method: "POST",
+      headers: {
+        Accept: "audio/mpeg, application/json",
+        "Content-Type": "application/json",
+        Authorization: "Bearer " + authToken
+      },
+      body: JSON.stringify({
+        prompt: cleanPrompt,
+        musicLengthMs: 180000,
+        forceInstrumental: /\\b(instrumental only|no vocals)\\b/i.test(cleanPrompt)
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(String(errorData?.error || "Music provider ntiyashoboye gukora indirimbo."));
+    }
+
+    const blob = await response.blob();
+    if (!blob.size || !(String(blob.type || "").startsWith("audio/") || blob.type === "application/octet-stream")) {
+      throw new Error("Provider ntiyagaruye audio file ikoreshwa.");
+    }
+
+    const objectUrl = URL.createObjectURL(blob);
+    const row = addMessage("Indirimbo yakozwe neza (MP3).", "ai");
+    const wrapper = row?.querySelector(".message-content-wrapper");
+    if (!wrapper) throw new Error("Ntibyashobotse kwerekana indirimbo muri chat.");
+
+    const player = document.createElement("audio");
+    player.controls = true;
+    player.preload = "metadata";
+    player.src = objectUrl;
+    player.style.display = "block";
+    player.style.width = "min(100%, 420px)";
+    player.style.marginTop = "10px";
+    wrapper.appendChild(player);
+
+    const download = document.createElement("a");
+    download.href = objectUrl;
+    download.download = "nkwasibwe-irhcf-song.mp3";
+    download.textContent = "Download song (MP3)";
+    download.style.display = "inline-block";
+    download.style.marginTop = "8px";
+    wrapper.appendChild(download);
+
+    setStatus("Indirimbo ya MP3 iriteguye.", "online");
+    setDashboardStatus("Indirimbo yakozwe neza kandi yiteguye gukinwa cyangwa gukururwa.");
+  } catch (error) {
+    console.error("[IRHCF MUSIC]", error);
+    const message = String(error?.message || "serivisi ntiboneka").slice(0, 220);
+    setStatus("Indirimbo ntiyakozwe: " + message, "normal");
+    setDashboardStatus("Indirimbo ntiyakozwe: " + message);
+  }
+}
+
 async function generateVideoFromPrompt(prompt) {
   const cleanPrompt = String(prompt || "").trim().slice(0, 4000);
   if (!cleanPrompt) return;
@@ -7315,6 +7392,17 @@ function dashboardAction(action) {
     if (imagePrompt && imagePrompt.trim()) {
       setDashboardOpen(false);
       void generateImageFromPrompt(imagePrompt);
+    }
+    return;
+  }
+
+  if (action === "music-create") {
+    const musicPrompt = window.prompt(
+      "Sobanura indirimbo: ururimi, genre, mood, instruments, tempo, vocal style n'amagambo/lyrics. Vuga 'instrumental only' niba udashaka amajwi y'umuririmbyi."
+    );
+    if (musicPrompt && musicPrompt.trim()) {
+      setDashboardOpen(false);
+      void generateMusicFromPrompt(musicPrompt);
     }
     return;
   }
