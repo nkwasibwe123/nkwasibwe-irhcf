@@ -24,8 +24,8 @@ function selectSpecialists(team, maxSpecialists = 4, task = "") {
     : [];
   const taskText = clean(task, 4000).toLowerCase();
 
-  const qualityFirst = ["requirements", "security", "testing", "verification"];
-  let taskSpecific = ["architecture", "research", "backend", "frontend", "media"];
+  const qualityFirst = ["requirements", "security", "testing"];
+  let taskSpecific = ["verification", "architecture", "research", "backend", "frontend", "media"];
 
   if (/video|music|song|audio|image|film|voice|sound|media/.test(taskText)) {
     taskSpecific = ["media", "research", "architecture", "backend", "frontend"];
@@ -37,7 +37,7 @@ function selectSpecialists(team, maxSpecialists = 4, task = "") {
     taskSpecific = ["research", "architecture", "backend", "frontend", "media"];
   }
 
-  const preferred = [...new Set([...qualityFirst, ...taskSpecific])];
+  const preferred = [...new Set([...qualityFirst, ...taskSpecific, "verification"])];
   const ranked = [...specialists].sort((a, b) => {
     const ai = preferred.indexOf(a.id);
     const bi = preferred.indexOf(b.id);
