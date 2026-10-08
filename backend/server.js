@@ -54,6 +54,7 @@ const {
   resumeSchedule
 } = require("./core/schedule-service");
 const { ScheduleWorker } = require("./core/schedule-worker");
+const { buildProjectPlan } = require("./core/project-autopilot");
 
 // ============================================================
 // APPLICATION IDENTITY
@@ -37124,12 +37125,31 @@ const persistentTaskEngine =
         updateProgress
       }) => {
 
+        const projectPlan =
+          buildProjectPlan({
+            idea: task,
+            userId
+          });
+
+        await updateProgress({
+          progress: 10,
+          message:
+            "IRHCF project autopilot created the durable lifecycle plan.",
+          checkpoint: {
+            phase: "PROJECT_PLAN",
+            projectId: projectPlan.projectId,
+            projectType: projectPlan.type,
+            phases: projectPlan.phases
+          }
+        });
+
         await updateProgress({
           progress: 25,
           message:
             "IRHCF master agent is analyzing and routing the task.",
           checkpoint: {
-            phase: "ORCHESTRATE"
+            phase: "ORCHESTRATE",
+            projectId: projectPlan.projectId
           }
         });
 
