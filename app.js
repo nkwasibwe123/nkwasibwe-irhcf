@@ -6172,6 +6172,11 @@ async function toggleVoiceRecording() {
               track.stop()
           );
 
+        if (composerState.recordingTimeout) {
+          clearTimeout(composerState.recordingTimeout);
+          composerState.recordingTimeout = null;
+        }
+
         composerState.recording =
           false;
 
@@ -6185,6 +6190,13 @@ async function toggleVoiceRecording() {
       };
 
     recorder.start();
+
+    composerState.recordingTimeout = setTimeout(() => {
+      if (composerState.recording) {
+        showToast("Voice recording igarukira ku munota umwe; iri guhagarikwa.", "normal");
+        stopVoiceRecording();
+      }
+    }, 60000);
 
     updateVoiceButton();
 
