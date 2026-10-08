@@ -239,6 +239,12 @@ if (!OPENAI_API_KEY) {
 
 }
 
+if (!ELEVENLABS_API_KEY) {
+  console.warn(
+    "[CONFIG WARNING] ELEVENLABS_API_KEY is missing; song generation is disabled."
+  );
+}
+
 // ============================================================
 // CORS
 // ============================================================
