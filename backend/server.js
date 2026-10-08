@@ -32159,6 +32159,106 @@ app.get(
 
 
 // ============================================================
+// ECONOMIC AUTOPILOT CONTROL
+// ============================================================
+
+app.post(
+  "/api/economy/autopilot/start",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const existing = await pool.query(
+        `SELECT *
+         FROM scheduled_jobs
+         WHERE user_id = $1
+           AND status = 'active'
+           AND metadata->>'kind' = 'economic_discovery'
+         ORDER BY id DESC
+         LIMIT 1`,
+        [req.user.id]
+      );
+
+      if (existing.rows.length) {
+        return res.json({
+          success: true,
+          active: true,
+          schedule: existing.rows[0],
+          message: "Economic discovery autopilot is already active."
+        });
+      }
+
+      const schedule = await createRecurringSchedule(pool, {
+        userId: req.user.id,
+        name: "IRHCF Economic Discovery",
+        frequency: "daily",
+        timezone: req.body?.timezone || "Africa/Kigali",
+        times: [req.body?.time || "08:00"],
+        taskTemplate: buildEconomicDiscoveryTask({
+          locale: req.body?.locale || "Rwanda",
+          targetCustomer:
+            req.body?.targetCustomer ||
+            "local and online customers",
+          constraints:
+            req.body?.constraints ||
+            "low upfront cost; lawful; scalable; mobile-money/bank compatible"
+        }),
+        metadata: {
+          kind: "economic_discovery",
+          userControlled: true,
+          movesMoney: false,
+          publishesExternally: false
+        }
+      });
+
+      return res.status(201).json({
+        success: true,
+        active: true,
+        schedule
+      });
+    } catch (error) {
+      console.error("[ECONOMY] Autopilot start failed:", error);
+      return res.status(400).json({
+        success: false,
+        error: error?.message || "Could not start economic discovery.",
+        code: "ECONOMIC_AUTOPILOT_START_FAILED"
+      });
+    }
+  }
+);
+
+app.post(
+  "/api/economy/autopilot/stop",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const result = await pool.query(
+        `UPDATE scheduled_jobs
+         SET status = 'paused', updated_at = CURRENT_TIMESTAMP
+         WHERE user_id = $1
+           AND status = 'active'
+           AND metadata->>'kind' = 'economic_discovery'
+         RETURNING *`,
+        [req.user.id]
+      );
+
+      return res.json({
+        success: true,
+        active: false,
+        schedulesPaused: result.rowCount
+      });
+    } catch (error) {
+      console.error("[ECONOMY] Autopilot stop failed:", error);
+      return res.status(500).json({
+        success: false,
+        error: "Could not stop economic discovery.",
+        code: "ECONOMIC_AUTOPILOT_STOP_FAILED"
+      });
+    }
+  }
+);
+
+
+// ============================================================
 // ACTION CENTER / REQUIREMENTS
 // ============================================================
 //
