@@ -36,4 +36,120 @@ async function request({ accessToken, subscriptionKey, path, method = "POST", bo
   return payload;
 }
 
-module.exports = { BASE_URL, request };
+async function requestToPay({
+  accessToken,
+  subscriptionKey,
+  referenceId,
+  amount,
+  currency = "RWF",
+  externalId,
+  payerMessage = "IRHCF payment request",
+  payeeNote = "IRHCF"
+} = {}) {
+  if (!referenceId || !externalId) {
+    throw new Error("Reference ID and external ID are required.");
+  }
+
+  await request({
+    accessToken,
+    subscriptionKey,
+    path: "/collection/v1_0/requesttopay",
+    method: "POST",
+    body: {
+      amount: String(amount),
+      currency: String(currency).toUpperCase(),
+      externalId: String(externalId),
+      payer: { partyIdType: "MSISDN", partyId: String(externalId) },
+      payerMessage,
+      payeeNote
+    }
+  });
+
+  return {
+    accepted: true,
+    referenceId: String(referenceId),
+    status: "PENDING"
+  };
+}
+
+async function getRequestToPayStatus({
+  accessToken,
+  subscriptionKey,
+  referenceId
+} = {}) {
+  if (!referenceId) throw new Error("Reference ID is required.");
+
+  return request({
+    accessToken,
+    subscriptionKey,
+    path:
+      "/collection/v1_0/requesttopay/" +
+      encodeURIComponent(referenceId),
+    method: "GET"
+  });
+}
+
+async function transfer({
+  accessToken,
+  subscriptionKey,
+  referenceId,
+  amount,
+  currency = "RWF",
+  payeeId,
+  payerMessage = "IRHCF payout",
+  payeeNote = "IRHCF"
+} = {}) {
+  if (!referenceId || !payeeId) {
+    throw new Error("Reference ID and payee ID are required.");
+  }
+
+  await request({
+    accessToken,
+    subscriptionKey,
+    path: "/disbursement/v1_0/transfer",
+    method: "POST",
+    body: {
+      amount: String(amount),
+      currency: String(currency).toUpperCase(),
+      externalId: String(referenceId),
+      payee: {
+        partyIdType: "MSISDN",
+        partyId: String(payeeId)
+      },
+      payerMessage,
+      payeeNote
+    }
+  });
+
+  return {
+    accepted: true,
+    referenceId: String(referenceId),
+    status: "PENDING"
+  };
+}
+
+async function getTransferStatus({
+  accessToken,
+  subscriptionKey,
+  referenceId
+} = {}) {
+  if (!referenceId) throw new Error("Reference ID is required.");
+
+  return request({
+    accessToken,
+    subscriptionKey,
+    path:
+      "/disbursement/v1_0/transfer/" +
+      encodeURIComponent(referenceId),
+    method: "GET"
+  });
+}
+
+module.exports = {
+  BASE_URL,
+  request,
+  requestToPay,
+  getRequestToPayStatus,
+  transfer,
+  getTransferStatus
+};
