@@ -46,3 +46,32 @@ jobs:
           done
           echo "Render backend did not become healthy within the retry window."
           exit 1
+
+      - name: Smoke-test protected API route registration
+        shell: bash
+        run: |
+          base_url="https://nkwasibwe-irhcf.onrender.com"
+          for route in \
+            "/api/media/image" \
+            "/api/media/video" \
+            "/api/media/music" \
+            "/api/media/speech" \
+            "/api/media/transcribe" \
+            "/api/capabilities/expansion-plan" \
+            "/api/conversations/test-session/messages/1/prepare-edit" \
+            "/api/media/video/video_test" \
+            "/api/media/video/video_test/content"; do
+            if [[ "$route" == "/api/media/video/video_test"* || "$route" == "/api/conversations/"* ]]; then
+              method="GET"
+              [[ "$route" == *"/prepare-edit" ]] && method="POST"
+              code=$(curl --silent --show-error --max-time 15 -o /tmp/irhcf-smoke.json -w "%{http_code}" -X "$method" -H "Content-Type: application/json" -d '{}' "$base_url$route")
+            else
+              code=$(curl --silent --show-error --max-time 15 -o /tmp/irhcf-smoke.json -w "%{http_code}" -X POST -H "Content-Type: application/json" -d '{}' "$base_url$route")
+            fi
+            echo "$method $route -> HTTP $code"
+            if [[ "$code" != "401" && "$code" != "403" ]]; then
+              cat /tmp/irhcf-smoke.json
+              echo "Expected an authentication rejection for a protected route."
+              exit 1
+            fi
+          done
