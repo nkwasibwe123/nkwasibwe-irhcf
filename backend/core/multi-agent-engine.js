@@ -18,30 +18,33 @@ function clean(value, max = 8000) {
     .slice(0, max);
 }
 
-function selectSpecialists(team, maxSpecialists = 5) {
+function selectSpecialists(team, maxSpecialists = 4, task = "") {
   const specialists = Array.isArray(team?.specialists)
     ? team.specialists
     : [];
+  const taskText = clean(task, 4000).toLowerCase();
 
-  const preferred = [
-    "requirements",
-    "architecture",
-    "research",
-    "backend",
-    "frontend",
-    "media",
-    "testing",
-    "security",
-    "verification"
-  ];
+  const qualityFirst = ["requirements", "security", "testing", "verification"];
+  let taskSpecific = ["architecture", "research", "backend", "frontend", "media"];
 
+  if (/video|music|song|audio|image|film|voice|sound|media/.test(taskText)) {
+    taskSpecific = ["media", "research", "architecture", "backend", "frontend"];
+  } else if (/website|web app|frontend|interface|ui|design/.test(taskText)) {
+    taskSpecific = ["frontend", "architecture", "backend", "research", "media"];
+  } else if (/api|backend|database|server|authentication|security|code|software|application/.test(taskText)) {
+    taskSpecific = ["architecture", "backend", "frontend", "research", "media"];
+  } else if (/research|compare|evidence|sources|investigate/.test(taskText)) {
+    taskSpecific = ["research", "architecture", "backend", "frontend", "media"];
+  }
+
+  const preferred = [...new Set([...qualityFirst, ...taskSpecific])];
   const ranked = [...specialists].sort((a, b) => {
     const ai = preferred.indexOf(a.id);
     const bi = preferred.indexOf(b.id);
     return (ai < 0 ? 999 : ai) - (bi < 0 ? 999 : bi);
   });
 
-  return ranked.slice(0, Math.max(1, Math.min(8, Number(maxSpecialists) || 5)));
+  return ranked.slice(0, Math.max(1, Math.min(6, Number(maxSpecialists) || 4)));
 }
 
 function buildSpecialistMessages(task, specialist, sharedContext = "") {
@@ -63,10 +66,10 @@ function buildSpecialistMessages(task, specialist, sharedContext = "") {
       role: "user",
       content: [
         "MAIN TASK:",
-        clean(task, 12000),
+        clean(task, 4000),
         "",
         "SHARED CONTEXT:",
-        clean(sharedContext, 4000),
+        clean(sharedContext, 1200),
         "",
         "Produce your specialist brief. Do not claim an action was performed unless the brief is only describing a plan."
       ].join("\n")
@@ -82,13 +85,13 @@ async function runSpecialistTeam({
   taskId = null,
   taskRunId = null,
   sharedContext = "",
-  maxSpecialists = 5
+  maxSpecialists = 4
 } = {}) {
   if (!executionEngine || typeof executionEngine.execute !== "function") {
     throw new Error("Multi-agent execution requires the central execution engine.");
   }
 
-  const selected = selectSpecialists(team, maxSpecialists);
+  const selected = selectSpecialists(team, maxSpecialists, task);
   const results = [];
 
   for (const specialist of selected) {
@@ -108,7 +111,7 @@ async function runSpecialistTeam({
           ),
           options: {
             temperature: 0.2,
-            maxTokens: 900
+            maxTokens: 450
           }
         },
         metadata: {
@@ -127,7 +130,7 @@ async function runSpecialistTeam({
           execution?.result?.output_text ??
           execution?.result?.content ??
           execution?.result,
-          8000
+          3500
         ),
         status: "completed"
       });
@@ -174,7 +177,7 @@ function formatSpecialistBriefs(teamExecution) {
       ].join("\n")
     )
     .join("\n\n")
-    .slice(0, 30000);
+    .slice(0, 12000);
 }
 
 module.exports = {
