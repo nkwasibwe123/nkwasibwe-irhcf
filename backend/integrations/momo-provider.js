@@ -8,7 +8,7 @@
 const BASE_URL =
   process.env.MOMO_BASE_URL || "https://momodeveloper.mtn.co.rw";
 
-async function request({ accessToken, subscriptionKey, path, method = "POST", body } = {}) {
+async function request({ accessToken, subscriptionKey, path, method = "POST", body, referenceId = null } = {}) {
   if (!accessToken || !subscriptionKey) {
     throw new Error("MTN MoMo production credentials are not configured.");
   }
@@ -18,6 +18,7 @@ async function request({ accessToken, subscriptionKey, path, method = "POST", bo
     headers: {
       Authorization: "Bearer " + accessToken,
       "Ocp-Apim-Subscription-Key": subscriptionKey,
+      ...(referenceId ? { "X-Reference-Id": String(referenceId) } : {}),
       "Content-Type": "application/json"
     },
     body: body === undefined ? undefined : JSON.stringify(body)
@@ -56,6 +57,7 @@ async function requestToPay({
     subscriptionKey,
     path: "/collection/v1_0/requesttopay",
     method: "POST",
+    referenceId,
     body: {
       amount: String(amount),
       currency: String(currency).toUpperCase(),
@@ -109,6 +111,7 @@ async function transfer({
     subscriptionKey,
     path: "/disbursement/v1_0/transfer",
     method: "POST",
+    referenceId,
     body: {
       amount: String(amount),
       currency: String(currency).toUpperCase(),
