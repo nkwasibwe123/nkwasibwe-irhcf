@@ -70,4 +70,43 @@
   } else {
     button.title = "Voice input requires browser speech recognition support.";
   }
+
+  // Voice-output mode: speak newly delivered assistant messages when
+  // the browser exposes SpeechSynthesis. This makes voice-only use
+  // possible without changing the existing chat rendering engine.
+  const messages = document.getElementById("messages");
+  if ("speechSynthesis" in window && messages) {
+    const spoken = new WeakSet();
+
+    const speakAssistantMessage = (node) => {
+      if (!node || spoken.has(node)) return;
+      const text = String(node.innerText || "").trim();
+      if (!text || text.length < 2) return;
+
+      const looksAssistant =
+        node.classList.contains("assistant") ||
+        node.dataset.role === "assistant" ||
+        /assistant|ai|bot/i.test(node.getAttribute("data-role") || "");
+
+      if (!looksAssistant) return;
+
+      spoken.add(node);
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text.slice(0, 12000));
+      utterance.rate = 1;
+      utterance.pitch = 1;
+      window.speechSynthesis.speak(utterance);
+    };
+
+    new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of record.addedNodes || []) {
+          if (node.nodeType === Node.ELEMENT_NODE) {
+            speakAssistantMessage(node);
+            node.querySelectorAll?.("[data-role='assistant'], .assistant").forEach(speakAssistantMessage);
+          }
+        }
+      }
+    }).observe(messages, { childList: true, subtree: true });
+  }
 })();
