@@ -2,6 +2,7 @@
 
 const { evaluateCapabilities } = require("./capability-engine");
 const { routeTask } = require("./agent-router");
+const { buildAgentTeam } = require("../agents/agent-teams");
 
 /*
  * ============================================================
@@ -591,6 +592,12 @@ function analyzeTask(task, context = {}) {
   const routing =
     routeTask(classification, capabilities);
 
+  const agentTeam =
+    buildAgentTeam({
+      taskType: classification.type,
+      capabilities
+    });
+
   const plan =
     buildPlan(
       normalizedTask,
@@ -627,6 +634,8 @@ function analyzeTask(task, context = {}) {
     capabilityEvaluation,
 
     routing,
+
+    agentTeam,
 
     plan,
 
