@@ -5,7 +5,8 @@ const assert = require("node:assert/strict");
 const {
   taskNeedsLiveResearch,
   performLiveResearch,
-  buildResponseQualityInstruction
+  buildResponseQualityInstruction,
+  applyResponseQuality
 } = require("./agent-response-policy");
 
 test("ordinary greetings and general questions do not require live research", () => {
@@ -41,4 +42,21 @@ test("response quality instruction includes language and truthfulness rules", ()
 test("helpers safely handle empty or non-string inputs", () => {
   assert.equal(taskNeedsLiveResearch(null), false);
   assert.equal(buildResponseQualityInstruction("en", null).includes("CURRENT TASK: "), true);
+});
+
+
+test("response quality gate preserves valid text and detects the task language", () => {
+  const result = applyResponseQuality("  Hello! How can I help you today?  ", "Hi");
+  assert.equal(result.answer, "Hello! How can I help you today?");
+  assert.equal(result.language, "en");
+  assert.equal(result.passed, true);
+  assert.deepEqual(result.issues, []);
+});
+
+test("response quality gate supplies a safe fallback for empty output", () => {
+  const result = applyResponseQuality(null, "Muraho");
+  assert.equal(typeof result.answer, "string");
+  assert.ok(result.answer.length > 0);
+  assert.equal(result.passed, false);
+  assert.deepEqual(result.issues, ["EMPTY_AI_RESPONSE"]);
 });
