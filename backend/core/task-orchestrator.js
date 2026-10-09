@@ -84,17 +84,29 @@ function classifyTask(task) {
     };
   }
 
+  // Only explicit build/create requests should enter the long-running
+  // software-build path. Merely asking what a website is must stay a
+  // normal conversation rather than creating a background project.
   if (
     containsAny(text, [
       "build a website",
       "build website",
       "create a website",
+      "create website",
       "make a website",
-      "website",
-      "web app",
-      "web application",
-      "urubuga",
-      "website"
+      "make website",
+      "develop a website",
+      "develop website",
+      "build a web app",
+      "create a web app",
+      "make a web app",
+      "develop a web app",
+      "build a web application",
+      "create a web application",
+      "develop a web application",
+      "ubaka urubuga",
+      "kora urubuga",
+      "tunganya urubuga"
     ])
   ) {
     return {
