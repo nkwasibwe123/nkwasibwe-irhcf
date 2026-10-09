@@ -31702,6 +31702,8 @@ const persistentTaskEngine =
         userId,
         task,
         sessionId,
+        taskId,
+        taskRunId,
         checkpoint,
         updateProgress
       }) => {
