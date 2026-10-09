@@ -70,6 +70,13 @@ test("response verifier accepts a non-empty AI answer", () => {
   assert.equal(result.language, "en");
 });
 
+test("response verifier accepts a non-empty answer", () => {
+  const result = verifyAgentResponse("Hi", "Hello! How can I help you today?", "en");
+  assert.equal(result.valid, true);
+  assert.deepEqual(result.issues, []);
+  assert.equal(result.language, "en");
+});
+
 test("response verifier reports an empty answer", () => {
   const result = verifyAgentResponse("Hi", "   ", "en");
   assert.equal(result.valid, false);
