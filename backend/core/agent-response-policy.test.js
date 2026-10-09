@@ -63,13 +63,6 @@ test("response quality gate supplies a safe fallback for empty output", () => {
 });
 
 
-test("response verifier accepts a non-empty AI answer", () => {
-  const result = verifyAgentResponse("Hi", "Hello! How can I help you today?", "en");
-  assert.equal(result.valid, true);
-  assert.deepEqual(result.issues, []);
-  assert.equal(result.language, "en");
-});
-
 test("response verifier accepts a non-empty answer", () => {
   const result = verifyAgentResponse("Hi", "Hello! How can I help you today?", "en");
   assert.equal(result.valid, true);
