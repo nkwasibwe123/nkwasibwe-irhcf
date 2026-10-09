@@ -7,6 +7,7 @@ This document describes the real media endpoints currently wired into the backen
 - `DATABASE_URL` — PostgreSQL connection string. Required for authentication, conversations, and ownership-safe video job tracking.
 - `JWT_SECRET` — a long, random secret used to verify user sessions.
 - `OPENAI_API_KEY` — used for image generation, text-to-speech, audio transcription, and Sora video generation. The OpenAI project must have access to the relevant endpoints/models and sufficient billing/credits.
+- `OPENAI_RESEARCH_MODEL` — optional model override for live web research; defaults to `gpt-4o-mini`. Live research uses the OpenAI Responses API web-search tool and requires a compatible model, API access, and sufficient credits.
 - `ELEVENLABS_API_KEY` — used for Music v2.5 song generation. The ElevenLabs account must have access to the Music API and sufficient credits.
 
 Configure these in the backend host's environment/secrets settings, then restart or redeploy the backend. Do not commit actual secret values.

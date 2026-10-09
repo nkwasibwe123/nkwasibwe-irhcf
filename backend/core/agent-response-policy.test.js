@@ -24,13 +24,71 @@ test("current-information requests require live research", () => {
   assert.equal(taskNeedsLiveResearch("Quel est le taux de change actuel ?"), true);
 });
 
-test("research failure is explicit and never claims a search was performed", async () => {
+test("research failure is explicit when no web-search client is configured", async () => {
   const result = await performLiveResearch("latest news", "rw");
   assert.equal(result.required, true);
   assert.equal(result.performed, false);
   assert.equal(result.reason, "LIVE_RESEARCH_PROVIDER_UNAVAILABLE");
   assert.deepEqual(result.sources, []);
   assert.match(result.answer, /Ntabwo nshoboye/);
+});
+
+test("live research calls OpenAI web search and returns verified source URLs", async () => {
+  let request;
+  const fakeClient = {
+    responses: {
+      create: async (options) => {
+        request = options;
+        return {
+          output_text: "Rwanda's official website reports a current update.",
+          output: [{
+            type: "message",
+            content: [{
+              type: "output_text",
+              text: "Rwanda's official website reports a current update.",
+              annotations: [{
+                type: "url_citation",
+                title: "Official Rwanda website",
+                url: "https://www.gov.rw/"
+              }]
+            }]
+          }]
+        };
+      }
+    }
+  };
+
+  const result = await performLiveResearch("latest news in Rwanda", "en", {
+    openai: fakeClient,
+    model: "gpt-4o-mini"
+  });
+
+  assert.equal(request.model, "gpt-4o-mini");
+  assert.deepEqual(request.tools, [{ type: "web_search_preview", search_context_size: "medium" }]);
+  assert.equal(request.tool_choice, "required");
+  assert.equal(result.performed, true);
+  assert.equal(result.reason, "OPENAI_WEB_SEARCH_COMPLETED");
+  assert.equal(result.sources.length, 1);
+  assert.equal(result.sources[0].url, "https://www.gov.rw/");
+  assert.match(result.context, /Retrieved sources/);
+});
+
+test("live research refuses to claim success without source citations", async () => {
+  const result = await performLiveResearch("latest news", "en", {
+    openai: { responses: { create: async () => ({ output_text: "An uncited answer." }) } }
+  });
+  assert.equal(result.performed, false);
+  assert.equal(result.reason, "LIVE_RESEARCH_NO_VERIFIABLE_SOURCES");
+  assert.deepEqual(result.sources, []);
+});
+
+test("live research handles provider errors without inventing results", async () => {
+  const result = await performLiveResearch("latest news", "fr", {
+    openai: { responses: { create: async () => { throw new Error("provider failed"); } } }
+  });
+  assert.equal(result.performed, false);
+  assert.equal(result.reason, "LIVE_RESEARCH_REQUEST_FAILED");
+  assert.match(result.answer, /Je ne peux pas vérifier/);
 });
 
 test("response quality instruction includes language and truthfulness rules", () => {
