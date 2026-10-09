@@ -56,8 +56,35 @@ function buildResponseQualityInstruction(language = "en", task = "") {
   ].join("\n");
 }
 
+/**
+ * Apply a minimal, deterministic response-quality gate before verification.
+ * The AI response must be non-empty plain text; never leak provider objects.
+ */
+function applyResponseQuality(rawAnswer, task) {
+  const language = require("./language-detection").detectAgentLanguage(task);
+  const answer = typeof rawAnswer === "string" ? rawAnswer.trim() : "";
+
+  if (answer) {
+    return { answer, language, passed: true, issues: [] };
+  }
+
+  const fallbackMessages = {
+    rw: "Mbabarira, sinashoboye gutanga igisubizo kuri ubu. Ongera ugerageze.",
+    fr: "Désolé, je n’ai pas pu générer une réponse pour le moment. Veuillez réessayer.",
+    en: "Sorry, I couldn't generate a response just now. Please try again."
+  };
+
+  return {
+    answer: fallbackMessages[language] || fallbackMessages.en,
+    language,
+    passed: false,
+    issues: ["EMPTY_AI_RESPONSE"]
+  };
+}
+
 module.exports = {
   taskNeedsLiveResearch,
   performLiveResearch,
-  buildResponseQualityInstruction
+  buildResponseQualityInstruction,
+  applyResponseQuality
 };
