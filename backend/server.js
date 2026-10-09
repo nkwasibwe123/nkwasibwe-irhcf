@@ -71,6 +71,11 @@ const {
 const { encryptJson } = require("./core/secure-credentials");
 const { detectAgentLanguage } = require("./core/language-detection");
 const {
+  taskNeedsLiveResearch,
+  performLiveResearch,
+  buildResponseQualityInstruction
+} = require("./core/agent-response-policy");
+const {
   createRecurringSchedule,
   listSchedules,
   pauseSchedule,
