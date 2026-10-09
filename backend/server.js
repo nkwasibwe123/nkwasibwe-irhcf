@@ -29965,6 +29965,12 @@ app.get(
           )
         },
 
+        // Render exposes the deployed Git commit; monitoring can use this to
+        // distinguish a newly deployed build from an older healthy instance.
+        deployment: {
+          commit: process.env.RENDER_GIT_COMMIT || null
+        },
+
         system: {
 
           name:
