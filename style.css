@@ -1510,3 +1510,202 @@ body {
   background: #d93025;
   color: #fff;
 }
+
+
+/* ============================================================
+   LONG-RUNNING TASK MANAGER
+   ============================================================ */
+.task-manager {
+  margin-top: 8px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--panel-light);
+}
+.task-manager[hidden] {
+  display: none !important;
+}
+.task-manager-header,
+.task-create-footer {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.task-manager-header {
+  margin-bottom: 16px;
+}
+.task-manager-header h3 {
+  margin: 0 0 5px;
+  font-size: 18px;
+}
+.task-manager-header p,
+.task-create-footer span {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.task-manager-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.task-secondary-button,
+.task-primary-button,
+.task-action-button {
+  min-height: 36px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.task-primary-button {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: #fff;
+  font-weight: 700;
+}
+.task-secondary-button:disabled,
+.task-primary-button:disabled,
+.task-action-button:disabled {
+  cursor: wait;
+  opacity: .6;
+}
+.task-create-form {
+  display: grid;
+  gap: 9px;
+  padding: 14px;
+  margin-bottom: 16px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  background: var(--panel);
+}
+.task-create-form label {
+  font-size: 13px;
+  font-weight: 700;
+}
+.task-create-form textarea {
+  width: 100%;
+  min-height: 82px;
+  resize: vertical;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-light);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+.task-create-footer {
+  align-items: center;
+}
+.task-create-footer span {
+  max-width: 480px;
+}
+.task-list {
+  display: grid;
+  gap: 12px;
+}
+.task-list-empty {
+  margin: 0;
+  padding: 20px 12px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.task-item {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  background: var(--panel);
+}
+.task-item-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.task-item h4 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.task-status {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(79, 124, 255, .12);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .03em;
+}
+.task-progress-track {
+  height: 8px;
+  overflow: hidden;
+  margin: 8px 0;
+  border-radius: 999px;
+  background: var(--border);
+}
+.task-progress-fill {
+  height: 100%;
+  width: 0;
+  border-radius: inherit;
+  background: var(--primary);
+  transition: width .25s ease;
+}
+.task-item-message,
+.task-item-meta,
+.task-item-eta {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.task-item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 12px;
+}
+.task-action-button {
+  min-height: 31px;
+  padding: 6px 9px;
+}
+.task-result-details {
+  margin-top: 10px;
+  font-size: 12px;
+}
+.task-result-details pre {
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 10px;
+  border-radius: 9px;
+  background: var(--panel-light);
+}
+@media (max-width: 560px) {
+  .task-manager {
+    padding: 10px;
+  }
+  .task-manager-header,
+  .task-create-footer {
+    flex-direction: column;
+  }
+  .task-manager-tools {
+    width: 100%;
+  }
+  .task-manager-tools button {
+    flex: 1;
+  }
+  .task-item-header {
+    flex-direction: column;
+  }
+}

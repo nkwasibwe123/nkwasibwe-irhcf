@@ -99,7 +99,10 @@ const API_ENDPOINTS = Object.freeze({
     "/api/media/transcribe",
 
   capabilityExpansionPlan:
-    "/api/capabilities/expansion-plan"
+    "/api/capabilities/expansion-plan",
+
+  tasks:
+    "/api/tasks"
 
 });
 
@@ -144,6 +147,33 @@ const dashboardStatus =
   document.getElementById(
     "dashboardStatus"
   );
+
+const dashboardGrid =
+  capabilityDashboard?.querySelector(".dashboard-grid") || null;
+
+const taskManager =
+  document.getElementById("taskManager");
+
+const taskManagerBackButton =
+  document.getElementById("taskManagerBackButton");
+
+const taskRefreshButton =
+  document.getElementById("taskRefreshButton");
+
+const taskCreateForm =
+  document.getElementById("taskCreateForm");
+
+const taskInput =
+  document.getElementById("taskInput");
+
+const taskCreateButton =
+  document.getElementById("taskCreateButton");
+
+const taskList =
+  document.getElementById("taskList");
+
+let taskRefreshTimer = null;
+let taskListBusy = false;
 
 const actionCenterButton =
   document.getElementById(
@@ -7448,6 +7478,280 @@ async function requestCapabilityExpansionPlan(requestedCapability, reason) {
   }
 }
 
+function formatTaskDuration(milliseconds) {
+  const totalMinutes = Math.max(1, Math.round(milliseconds / 60000));
+  if (totalMinutes < 60) return `${totalMinutes} min`;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours < 24) return minutes ? `${hours} h ${minutes} min` : `${hours} h`;
+  const days = Math.floor(hours / 24);
+  const remainingHours = hours % 24;
+  return remainingHours ? `${days} d ${remainingHours} h` : `${days} d`;
+}
+
+function estimateTaskRemaining(task) {
+  const status = String(task?.status || "").toUpperCase();
+  if (status === "COMPLETED") return "Completed";
+  if (status === "FAILED") return task?.metadata?.cancelled ? "Cancelled" : "Stopped / failed";
+  if (status === "PAUSED") return "Paused";
+  if (status === "WAITING_FOR_USER") return "Waiting for your input";
+  if (status === "WAITING_FOR_TOOL") return "Waiting for a required tool";
+  if (status === "PLANNED") return "Waiting to start";
+
+  const progress = Number(task?.progress);
+  const createdAt = Date.parse(task?.created_at || "");
+  if (!Number.isFinite(progress) || progress < 10 || !Number.isFinite(createdAt)) {
+    return "Not enough progress data yet";
+  }
+
+  const elapsed = Date.now() - createdAt;
+  if (elapsed <= 0) return "Calculating";
+  const remaining = Math.min(24 * 60 * 60 * 1000, elapsed * (100 - Math.min(progress, 99)) / Math.max(progress, 1));
+  return `About ${formatTaskDuration(remaining)} remaining (estimate)`;
+}
+
+function makeTaskActionButton(label, action, taskId, confirmText = "") {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "task-action-button";
+  button.textContent = label;
+  button.addEventListener("click", () => {
+    void runTaskAction(action, taskId, confirmText);
+  });
+  return button;
+}
+
+function renderTaskList(tasks) {
+  if (!taskList) return;
+  taskList.replaceChildren();
+
+  if (!tasks.length) {
+    const empty = document.createElement("p");
+    empty.className = "task-list-empty";
+    empty.textContent = "Nta task uratangiza. Andika icyo ushaka ko IRHCF ikora hejuru, hanyuma ukande Start task.";
+    taskList.appendChild(empty);
+    return;
+  }
+
+  for (const task of tasks) {
+    const article = document.createElement("article");
+    article.className = "task-item";
+
+    const header = document.createElement("div");
+    header.className = "task-item-header";
+
+    const title = document.createElement("h4");
+    title.textContent = String(task?.task || "Untitled task").slice(0, 240);
+    header.appendChild(title);
+
+    const status = document.createElement("span");
+    status.className = "task-status";
+    status.textContent = String(task?.status || "UNKNOWN").replace(/_/g, " ");
+    header.appendChild(status);
+    article.appendChild(header);
+
+    const progress = Math.max(0, Math.min(100, Number(task?.progress) || 0));
+    const progressLabel = document.createElement("p");
+    progressLabel.className = "task-item-meta";
+    progressLabel.textContent = `Progress: ${progress}%`;
+    article.appendChild(progressLabel);
+
+    const track = document.createElement("div");
+    track.className = "task-progress-track";
+    track.setAttribute("role", "progressbar");
+    track.setAttribute("aria-label", "Task progress");
+    track.setAttribute("aria-valuemin", "0");
+    track.setAttribute("aria-valuemax", "100");
+    track.setAttribute("aria-valuenow", String(progress));
+
+    const fill = document.createElement("div");
+    fill.className = "task-progress-fill";
+    fill.style.width = `${progress}%`;
+    track.appendChild(fill);
+    article.appendChild(track);
+
+    const message = document.createElement("p");
+    message.className = "task-item-message";
+    message.textContent = String(task?.progress_message || task?.error || "Task queued.");
+    article.appendChild(message);
+
+    const eta = document.createElement("p");
+    eta.className = "task-item-eta";
+    eta.textContent = estimateTaskRemaining(task);
+    article.appendChild(eta);
+
+    const createdAt = Date.parse(task?.created_at || "");
+    if (Number.isFinite(createdAt)) {
+      const meta = document.createElement("p");
+      meta.className = "task-item-meta";
+      meta.textContent = `Started: ${new Date(createdAt).toLocaleString()}`;
+      article.appendChild(meta);
+    }
+
+    const actions = document.createElement("div");
+    actions.className = "task-item-actions";
+    const taskId = Number(task?.id);
+    const currentStatus = String(task?.status || "").toUpperCase();
+
+    if (!["COMPLETED", "FAILED"].includes(currentStatus) && Number.isSafeInteger(taskId) && taskId > 0) {
+      if (currentStatus === "PAUSED" || currentStatus === "WAITING_FOR_USER") {
+        actions.appendChild(makeTaskActionButton("Resume", "resume", taskId));
+      } else {
+        actions.appendChild(makeTaskActionButton("Pause", "pause", taskId));
+      }
+      actions.appendChild(makeTaskActionButton("Cancel", "cancel", taskId, "Urifuza guhagarika iyi task? Iyi ntambwe ntishobora gusubizwa inyuma."));
+    }
+    if (actions.childElementCount) article.appendChild(actions);
+
+    if (task?.result) {
+      const details = document.createElement("details");
+      details.className = "task-result-details";
+      const summary = document.createElement("summary");
+      summary.textContent = "View result";
+      const result = document.createElement("pre");
+      result.textContent = String(task.result).slice(0, 8000);
+      details.append(summary, result);
+      article.appendChild(details);
+    } else if (task?.error) {
+      const details = document.createElement("details");
+      details.className = "task-result-details";
+      const summary = document.createElement("summary");
+      summary.textContent = "View error details";
+      const error = document.createElement("pre");
+      error.textContent = String(task.error).slice(0, 3000);
+      details.append(summary, error);
+      article.appendChild(details);
+    }
+
+    taskList.appendChild(article);
+  }
+}
+
+async function refreshTaskList() {
+  if (!taskList || taskListBusy) return;
+  if (!authToken) {
+    const empty = document.createElement("p");
+    empty.className = "task-list-empty";
+    empty.textContent = "Banza winjire muri konti kugira ngo urebe tasks zawe.";
+    taskList.replaceChildren(empty);
+    return;
+  }
+
+  taskListBusy = true;
+  if (taskRefreshButton) taskRefreshButton.disabled = true;
+  try {
+    const data = await apiRequest(API_ENDPOINTS.tasks + "?limit=50", {
+      method: "GET",
+      timeoutMs: 20000
+    });
+    if (!data?.success || !Array.isArray(data.tasks)) {
+      throw new Error(data?.error || "Ntibyashobotse kubona tasks.");
+    }
+    renderTaskList(data.tasks);
+    setDashboardStatus(`Loaded ${data.tasks.length} task(s). Progress refreshes automatically.`);
+  } catch (error) {
+    console.error("[IRHCF TASKS] Refresh failed:", error);
+    if (taskList && !taskList.childElementCount) {
+      const empty = document.createElement("p");
+      empty.className = "task-list-empty";
+      empty.textContent = String(error?.message || "Ntibyashobotse kubona tasks.");
+      taskList.appendChild(empty);
+    }
+    setDashboardStatus(String(error?.message || "Task refresh failed."));
+  } finally {
+    taskListBusy = false;
+    if (taskRefreshButton) taskRefreshButton.disabled = false;
+  }
+}
+
+function openTaskManager() {
+  if (!authToken) {
+    setDashboardStatus("Banza winjire muri konti kugira ngo ukoreshe Long Tasks.");
+    showAuthenticationDialog();
+    return;
+  }
+  if (dashboardGrid) dashboardGrid.hidden = true;
+  if (taskManager) taskManager.hidden = false;
+  setDashboardOpen(true);
+  if (taskInput) taskInput.focus();
+  void refreshTaskList();
+  if (taskRefreshTimer) clearInterval(taskRefreshTimer);
+  taskRefreshTimer = setInterval(() => {
+    if (!capabilityDashboard?.classList.contains("open") || taskManager?.hidden) {
+      clearInterval(taskRefreshTimer);
+      taskRefreshTimer = null;
+      return;
+    }
+    void refreshTaskList();
+  }, 7000);
+}
+
+function closeTaskManager() {
+  if (taskManager) taskManager.hidden = true;
+  if (dashboardGrid) dashboardGrid.hidden = false;
+  setDashboardStatus("Ready.");
+}
+
+async function runTaskAction(action, taskId, confirmText = "") {
+  if (!authToken) {
+    showAuthenticationDialog();
+    return;
+  }
+  if (!Number.isSafeInteger(Number(taskId)) || Number(taskId) <= 0) return;
+  if (confirmText && !window.confirm(confirmText)) return;
+
+  try {
+    const result = await apiRequest(
+      API_ENDPOINTS.tasks + "/" + encodeURIComponent(String(taskId)) + "/" + encodeURIComponent(action),
+      { method: "POST", body: JSON.stringify({}), timeoutMs: 20000 }
+    );
+    if (!result?.success) {
+      throw new Error(result?.error || `Task ${action} failed.`);
+    }
+    await refreshTaskList();
+  } catch (error) {
+    setDashboardStatus(String(error?.message || "Task action failed."));
+  }
+}
+
+async function createLongRunningTask(event) {
+  event?.preventDefault();
+  const taskText = String(taskInput?.value || "").trim();
+  if (!taskText) {
+    setDashboardStatus("Banza wandike icyo ushaka ko IRHCF ikora.");
+    taskInput?.focus();
+    return;
+  }
+  if (!authToken) {
+    showAuthenticationDialog();
+    return;
+  }
+
+  if (taskCreateButton) taskCreateButton.disabled = true;
+  try {
+    const result = await apiRequest(API_ENDPOINTS.tasks, {
+      method: "POST",
+      body: JSON.stringify({
+        task: taskText,
+        sessionId: sessionId || null,
+        metadata: { source: "irhcf_dashboard" }
+      }),
+      timeoutMs: 20000
+    });
+    if (!result?.success || !result.task) {
+      throw new Error(result?.error || "Ntibyashobotse gutangiza task.");
+    }
+    if (taskInput) taskInput.value = "";
+    setDashboardStatus("Task saved and queued. IRHCF will update its progress here.");
+    await refreshTaskList();
+  } catch (error) {
+    console.error("[IRHCF TASKS] Create failed:", error);
+    setDashboardStatus(String(error?.message || "Ntibyashobotse gutangiza task."));
+  } finally {
+    if (taskCreateButton) taskCreateButton.disabled = false;
+  }
+}
+
 function dashboardAction(action) {
 
   const actions = {
@@ -7508,6 +7812,11 @@ function dashboardAction(action) {
     economy:
       "Start a safe economic discovery cycle: research lawful revenue opportunities, compare evidence, score risk and feasibility, and prepare an MVP plan. Do not move money or launch external actions without my authorization."
   };
+
+  if (action === "tasks") {
+    openTaskManager();
+    return;
+  }
 
   if (action === "image-create") {
     const imagePrompt = window.prompt(
@@ -7616,6 +7925,16 @@ if (dashboardCloseButton) {
     "click",
     () => setDashboardOpen(false)
   );
+}
+
+if (taskManagerBackButton) {
+  taskManagerBackButton.addEventListener("click", closeTaskManager);
+}
+if (taskRefreshButton) {
+  taskRefreshButton.addEventListener("click", () => void refreshTaskList());
+}
+if (taskCreateForm) {
+  taskCreateForm.addEventListener("submit", createLongRunningTask);
 }
 
 if (capabilityDashboard) {

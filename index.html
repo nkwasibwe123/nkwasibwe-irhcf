@@ -259,6 +259,29 @@
             <button class="dashboard-card" type="button" data-dashboard-action="capabilities"><span class="dashboard-card-icon">🧩</span><strong>Capabilities</strong><span>Abilities and controlled capability expansion.</span></button>
             <button class="dashboard-card" type="button" data-dashboard-action="economy"><span class="dashboard-card-icon">💰</span><strong>Economic Autopilot</strong><span>Research lawful revenue opportunities and build safe proposals.</span></button>
           </div>
+          <section id="taskManager" class="task-manager" hidden aria-labelledby="taskManagerTitle">
+            <div class="task-manager-header">
+              <div>
+                <h3 id="taskManagerTitle">Long-running tasks</h3>
+                <p>Start work that should continue in the background and follow its saved progress.</p>
+              </div>
+              <div class="task-manager-tools">
+                <button id="taskRefreshButton" class="task-secondary-button" type="button">Refresh</button>
+                <button id="taskManagerBackButton" class="task-secondary-button" type="button">Back to tools</button>
+              </div>
+            </div>
+            <form id="taskCreateForm" class="task-create-form">
+              <label for="taskInput">Describe the task you want IRHCF to work on</label>
+              <textarea id="taskInput" name="task" rows="3" maxlength="100000" required placeholder="Example: Research, plan, build, test and verify a complete website..."></textarea>
+              <div class="task-create-footer">
+                <span>Long tasks are saved to your account. External or irreversible actions may still require your approval.</span>
+                <button id="taskCreateButton" class="task-primary-button" type="submit">Start task</button>
+              </div>
+            </form>
+            <div id="taskList" class="task-list" aria-live="polite">
+              <p class="task-list-empty">Loading your tasks...</p>
+            </div>
+          </section>
           <div id="dashboardStatus" class="dashboard-status" aria-live="polite">Ready.</div>
         </div>
       </section>
