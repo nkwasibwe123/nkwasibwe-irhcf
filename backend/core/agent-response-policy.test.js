@@ -6,7 +6,8 @@ const {
   taskNeedsLiveResearch,
   performLiveResearch,
   buildResponseQualityInstruction,
-  applyResponseQuality
+  applyResponseQuality,
+  verifyAgentResponse
 } = require("./agent-response-policy");
 
 test("ordinary greetings and general questions do not require live research", () => {
@@ -59,4 +60,18 @@ test("response quality gate supplies a safe fallback for empty output", () => {
   assert.ok(result.answer.length > 0);
   assert.equal(result.passed, false);
   assert.deepEqual(result.issues, ["EMPTY_AI_RESPONSE"]);
+});
+
+
+test("response verifier accepts a non-empty AI answer", () => {
+  const result = verifyAgentResponse("Hi", "Hello! How can I help you today?", "en");
+  assert.equal(result.valid, true);
+  assert.deepEqual(result.issues, []);
+  assert.equal(result.language, "en");
+});
+
+test("response verifier reports an empty answer", () => {
+  const result = verifyAgentResponse("Hi", "   ", "en");
+  assert.equal(result.valid, false);
+  assert.deepEqual(result.issues, ["EMPTY_RESPONSE"]);
 });
