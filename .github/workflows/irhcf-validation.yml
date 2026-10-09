@@ -59,6 +59,7 @@ jobs:
             "/api/media/transcribe" \
             "/api/capabilities/expansion-plan" \
             "/api/agent/task" \
+            "/api/tasks" \
             "/api/conversations/test-session/messages/1/prepare-edit" \
             "/api/media/video/video_test" \
             "/api/media/video/video_test/content"; do
