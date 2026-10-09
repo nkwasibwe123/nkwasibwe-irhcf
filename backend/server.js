@@ -13506,9 +13506,11 @@ console.log(
     // --------------------------------------------------------
 
     const userMessage =
-      await persistAgentUserMessage(
+      await persistAgentMessage(
 
         conversation,
+
+        "user",
 
         validatedTask
 
@@ -13520,9 +13522,11 @@ console.log(
     // --------------------------------------------------------
 
     const assistantMessage =
-      await persistAgentAssistantMessage(
+      await persistAgentMessage(
 
         conversation,
+
+        "assistant",
 
         answer
 
