@@ -71,6 +71,9 @@ test("sandbox enforces file count and per-file size limits", () => {
 });
 
 test("syntax failure removes the temporary sandbox before rejecting", async () => {
+  const before = new Set(
+    (await fs.readdir(os.tmpdir())).filter((name) => name.startsWith("irhcf-sandbox-"))
+  );
   let caught;
   try {
     await buildSandbox({
@@ -84,11 +87,12 @@ test("syntax failure removes the temporary sandbox before rejecting", async () =
   assert.equal(caught.code, "SANDBOX_VALIDATION_FAILED");
   assert.match(caught.message, /SyntaxError|Unexpected token|Function statements require a function name/i);
 
-  const tempEntries = await fs.readdir(os.tmpdir());
-  assert.equal(
-    tempEntries.some((name) => name.startsWith("irhcf-sandbox-") && name.length > "irhcf-sandbox-".length),
-    false,
-    "failed validation should not leave a sandbox directory behind"
+  const after = (await fs.readdir(os.tmpdir()))
+    .filter((name) => name.startsWith("irhcf-sandbox-"));
+  assert.deepEqual(
+    after.filter((name) => !before.has(name)),
+    [],
+    "failed validation should not leave a new sandbox directory behind"
   );
 });
 
