@@ -13150,7 +13150,11 @@ if (researchRequired) {
   liveResearch =
     await performLiveResearch(
       validatedTask,
-      userLanguage
+      userLanguage,
+      {
+        openai,
+        model: process.env.OPENAI_RESEARCH_MODEL || OPENAI_MODEL
+      }
     );
 
   liveResearch.required =
