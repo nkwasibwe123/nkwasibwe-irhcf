@@ -20,7 +20,7 @@ function detectAgentLanguage(input) {
 
   const scores = {
     rw: [
-      " muraho ", " amakuru ", " uraho ", " ndashaka ", " ndakwinginze ",
+      " muraho ", " amakuru ", " uraho ", " ndashaka ", " ndakwinginze ", " umfasha ", " ndifuza ",
       " mbwira ", " mfasha ", " urakoze ", " yego ", " oya ", " gute ",
       " iki ", " iki? ", " iki ", " ikihe ", " gute ", " kubera iki ",
       " ese ", " nkeneye ", " nshaka ", " ndifuza ", " kinyarwanda ",
