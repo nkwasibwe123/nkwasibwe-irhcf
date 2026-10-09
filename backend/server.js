@@ -29951,6 +29951,18 @@ app.get(
           musicGeneration: Boolean(ELEVENLABS_API_KEY)
         },
 
+        // Report configuration presence only; never expose secret values.
+        integrationProviders: {
+          googleOAuth: Boolean(
+            process.env.GOOGLE_CLIENT_ID &&
+            process.env.GOOGLE_CLIENT_SECRET &&
+            process.env.GOOGLE_OAUTH_REDIRECT_URI
+          ),
+          credentialEncryption: Boolean(
+            process.env.IRHCF_CREDENTIALS_KEY
+          )
+        },
+
         system: {
 
           name:
