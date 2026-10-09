@@ -69,6 +69,7 @@ const {
 } = require("./integrations/google-oauth");
 
 const { encryptJson } = require("./core/secure-credentials");
+const { detectAgentLanguage } = require("./core/language-detection");
 const {
   createRecurringSchedule,
   listSchedules,
