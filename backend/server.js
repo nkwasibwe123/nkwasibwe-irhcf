@@ -13153,7 +13153,7 @@ if (researchRequired) {
       userLanguage,
       {
         openai,
-        model: process.env.OPENAI_RESEARCH_MODEL || OPENAI_MODEL
+        model: process.env.OPENAI_RESEARCH_MODEL || "gpt-4o-mini"
       }
     );
 
