@@ -75,6 +75,7 @@ const {
   performLiveResearch,
   buildResponseQualityInstruction
 } = require("./core/agent-response-policy");
+const { extractAIResponse } = require("./core/ai-response-normalizer");
 const {
   createRecurringSchedule,
   listSchedules,
