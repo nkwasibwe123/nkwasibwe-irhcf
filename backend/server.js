@@ -73,7 +73,8 @@ const { detectAgentLanguage } = require("./core/language-detection");
 const {
   taskNeedsLiveResearch,
   performLiveResearch,
-  buildResponseQualityInstruction
+  buildResponseQualityInstruction,
+  applyResponseQuality
 } = require("./core/agent-response-policy");
 const { extractAIResponse } = require("./core/ai-response-normalizer");
 const {
@@ -29908,6 +29909,16 @@ async function collectSystemHealth() {
 // server process is alive.
 //
 // ============================================================
+
+// Public backend landing endpoint. This API service does not serve the frontend bundle.
+app.get("/", (req, res) => {
+  res.status(200).json({
+    success: true,
+    service: "Nkwasibwe IRHCF Backend",
+    status: "online",
+    healthEndpoint: "/api/health"
+  });
+});
 
 app.get(
 
