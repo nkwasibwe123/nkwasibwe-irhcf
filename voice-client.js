@@ -14,6 +14,7 @@
 
   let recognition = null;
   let listening = false;
+  let starting = false;
 
   const SpeechRecognition =
     window.SpeechRecognition ||
@@ -26,6 +27,7 @@
     recognition.lang = navigator.language || "en-US";
 
     recognition.onstart = () => {
+      starting = false;
       listening = true;
       button.classList.add("recording");
       button.setAttribute("aria-pressed", "true");
@@ -41,14 +43,19 @@
       input.dispatchEvent(new Event("input", { bubbles: true }));
     };
 
-    recognition.onerror = () => {
+    recognition.onerror = (event) => {
+      starting = false;
       listening = false;
       button.classList.remove("recording");
       button.setAttribute("aria-pressed", "false");
       button.title = "Voice";
+      if (event && event.error && event.error !== "no-speech" && event.error !== "aborted") {
+        console.warn("[IRHCF VOICE] Speech recognition error:", event.error);
+      }
     };
 
     recognition.onend = () => {
+      starting = false;
       listening = false;
       button.classList.remove("recording");
       button.setAttribute("aria-pressed", "false");
@@ -60,13 +67,38 @@
     };
 
     button.addEventListener("click", () => {
+      if (starting) return;
+
       if (listening) {
-        recognition.stop();
+        try {
+          recognition.stop();
+        } catch (error) {
+          console.warn("[IRHCF VOICE] Could not stop recognition:", error);
+        }
         return;
       }
+
       const uiLanguage = String(document.documentElement.lang || "").trim();
       recognition.lang = uiLanguage.includes("-") ? uiLanguage : (navigator.language || "en-US");
-      recognition.start();
+
+      // SpeechRecognition.start() throws InvalidStateError when called
+      // more than once before the browser finishes starting the session.
+      starting = true;
+      try {
+        recognition.start();
+      } catch (error) {
+        starting = false;
+        if (error && error.name === "InvalidStateError") {
+          // A session is already active; wait for its onend event instead
+          // of repeatedly calling start() and flooding the console.
+          listening = true;
+          return;
+        }
+        console.error("[IRHCF VOICE] Could not start recognition:", error);
+        button.classList.remove("recording");
+        button.setAttribute("aria-pressed", "false");
+        button.title = "Voice";
+      }
     });
   } else {
     button.title = "Voice input requires browser speech recognition support.";
