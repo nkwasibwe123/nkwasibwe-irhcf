@@ -58,7 +58,7 @@ jobs:
             "/api/media/speech" \
             "/api/media/transcribe" \
             "/api/capabilities/expansion-plan" \
-            "/api/tasks" \
+            "/api/agent/task" \
             "/api/conversations/test-session/messages/1/prepare-edit" \
             "/api/media/video/video_test" \
             "/api/media/video/video_test/content"; do
