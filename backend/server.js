@@ -13048,9 +13048,11 @@ async function executeNkwasibweAgent(
   } else {
 
     conversation =
-      await createAgentConversation(
+      await ensureAgentConversation(
 
         userId,
+
+        sessionId,
 
         validatedTask
 
