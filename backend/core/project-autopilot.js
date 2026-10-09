@@ -93,12 +93,22 @@ function buildProjectPlan({
 }
 
 function shouldBecomeLongRunning(projectPlan) {
-  if (!projectPlan) return false;
+  if (!projectPlan || typeof projectPlan !== "object") return false;
 
-  return (
-    projectPlan.phases.length >= 7 ||
-    ["software", "website", "mobile_app", "video", "business", "automation"].includes(projectPlan.type)
-  );
+  // PROJECT_PHASES describes the complete lifecycle template, not task
+  // complexity. Its fixed length must never turn greetings or simple
+  // questions into persistent background projects.
+  const type = normalize(projectPlan.type, 80).toLowerCase();
+  const idea = normalize(projectPlan.idea, 20000).toLowerCase();
+
+  const explicitLongRunningIntent =
+    /\b(build|create|develop|implement|launch|deploy|automate|schedule|monitor)\b.{0,80}\b(project|platform|system|website|web app|mobile app|application|workflow|pipeline|service)\b/.test(idea) ||
+    /\b(tangira gukora|kora umushinga|ubaka urubuga|ikora buri munsi|buri munsi|24\/7)\b/.test(idea);
+
+  if (explicitLongRunningIntent) return true;
+
+  return ["software", "website", "mobile_app", "video", "business", "automation"].includes(type) &&
+    idea.length >= 80;
 }
 
 module.exports = {
