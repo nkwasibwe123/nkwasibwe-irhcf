@@ -60,6 +60,22 @@ function buildResponseQualityInstruction(language = "en", task = "") {
  * Apply a minimal, deterministic response-quality gate before verification.
  * The AI response must be non-empty plain text; never leak provider objects.
  */
+function verifyAgentResponse(task, answer, language = "en") {
+  const normalizedAnswer = typeof answer === "string" ? answer.trim() : "";
+  const issues = [];
+
+  if (!normalizedAnswer) {
+    issues.push("EMPTY_RESPONSE");
+  }
+
+  return {
+    valid: issues.length === 0,
+    task: String(task ?? "").trim(),
+    language: ["rw", "fr", "en"].includes(language) ? language : "en",
+    issues
+  };
+}
+
 function applyResponseQuality(rawAnswer, task) {
   const language = require("./language-detection").detectAgentLanguage(task);
   const answer = typeof rawAnswer === "string" ? rawAnswer.trim() : "";
@@ -86,5 +102,6 @@ module.exports = {
   taskNeedsLiveResearch,
   performLiveResearch,
   buildResponseQualityInstruction,
-  applyResponseQuality
+  applyResponseQuality,
+  verifyAgentResponse
 };

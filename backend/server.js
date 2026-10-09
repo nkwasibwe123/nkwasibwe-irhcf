@@ -74,7 +74,8 @@ const {
   taskNeedsLiveResearch,
   performLiveResearch,
   buildResponseQualityInstruction,
-  applyResponseQuality
+  applyResponseQuality,
+  verifyAgentResponse
 } = require("./core/agent-response-policy");
 const { extractAIResponse } = require("./core/ai-response-normalizer");
 const {
