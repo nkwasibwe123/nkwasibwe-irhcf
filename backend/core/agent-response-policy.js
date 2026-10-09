@@ -102,5 +102,6 @@ module.exports = {
   taskNeedsLiveResearch,
   performLiveResearch,
   buildResponseQualityInstruction,
-  applyResponseQuality
+  applyResponseQuality,
+  verifyAgentResponse
 };
