@@ -6,7 +6,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 test("frontend source has no standalone async tokens before section comments", () => {
-  const appPath = path.join(__dirname, "..", "..", "..", "app.js");
+  const appPath = path.join(__dirname, "..", "..", "app.js");
   const source = fs.readFileSync(appPath, "utf8");
   const lines = source.split(/\r?\n/);
   const malformed = [];
