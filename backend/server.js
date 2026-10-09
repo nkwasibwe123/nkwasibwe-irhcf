@@ -30607,243 +30607,6 @@ app.get(
 
 
 // ============================================================
-// 404 HANDLER
-// ============================================================
-//
-// This must remain AFTER all valid API routes.
-//
-// ============================================================
-
-app.use(
-
-  (
-    req,
-    res
-  ) => {
-
-    return res.status(
-      404
-    ).json({
-
-      success:
-        false,
-
-      error:
-        "Endpoint not found",
-
-      code:
-        "ROUTE_NOT_FOUND",
-
-      path:
-        req.originalUrl,
-
-      requestId:
-        req.requestId ||
-        null
-
-    });
-
-  }
-
-);
-
-
-// ============================================================
-// CENTRALIZED ERROR HANDLER
-// ============================================================
-//
-// IMPORTANT:
-//
-// This MUST be the final app.use() middleware.
-//
-// ============================================================
-
-app.use(
-
-  async (
-    error,
-    req,
-    res,
-    next
-  ) => {
-
-    FINAL_SYSTEM_RUNTIME
-      .errors++;
-
-    FINAL_SYSTEM_RUNTIME
-      .lastErrorAt =
-      new Date();
-
-
-    console.error(
-
-      "Nkwasibwe IRHCF unhandled error:",
-
-      {
-
-        requestId:
-          req?.requestId,
-
-        method:
-          req?.method,
-
-        path:
-          req?.originalUrl,
-
-        error
-
-      }
-
-    );
-
-
-    const status =
-      Number(error?.status);
-
-
-    const safeStatus =
-
-      Number.isInteger(status) &&
-      status >= 400 &&
-      status <= 599
-
-        ? status
-
-        : 500;
-
-
-    const code =
-      error?.code ||
-      (
-        safeStatus === 500
-          ? "INTERNAL_SERVER_ERROR"
-          : "REQUEST_FAILED"
-      );
-
-
-    let message =
-
-      safeStatus >= 500
-
-        ? "Internal server error"
-
-        : sanitizeAgentErrorMessage(
-            error
-          );
-
-
-    if (
-      message.length >
-      FINAL_SYSTEM_CONFIG
-        .MAX_ERROR_RESPONSE_LENGTH
-    ) {
-
-      message =
-        message.slice(
-
-          0,
-
-          FINAL_SYSTEM_CONFIG
-            .MAX_ERROR_RESPONSE_LENGTH
-
-        );
-
-    }
-
-
-    if (
-      typeof systemLog ===
-      "function"
-    ) {
-
-      try {
-
-        await systemLog(
-
-          safeStatus >= 500
-            ? "error"
-            : "warn",
-
-          "system",
-
-          "Unhandled request error",
-
-          {
-
-            requestId:
-              req?.requestId,
-
-            userId:
-              req?.user?.id ||
-              null,
-
-            method:
-              req?.method,
-
-            path:
-              req?.originalUrl,
-
-            status:
-              safeStatus,
-
-            code
-
-          }
-
-        );
-
-      } catch (
-        loggingError
-      ) {
-
-        console.error(
-
-          "Final error logging failed:",
-
-          loggingError
-
-        );
-
-      }
-
-    }
-
-
-    if (
-      res.headersSent
-    ) {
-
-      return next(
-        error
-      );
-
-    }
-
-
-    return res.status(
-      safeStatus
-    ).json({
-
-      success:
-        false,
-
-      error:
-        message,
-
-      code,
-
-      requestId:
-        req?.requestId ||
-        null
-
-    });
-
-  }
-
-);
-
-
-// ============================================================
 // GRACEFUL SHUTDOWN
 // ============================================================
 
@@ -31884,6 +31647,245 @@ app.use(
     authenticateToken
   })
 );
+
+// 404 HANDLER
+// ============================================================
+//
+// This must remain AFTER all valid API routes.
+//
+// ============================================================
+
+app.use(
+
+  (
+    req,
+    res
+  ) => {
+
+    return res.status(
+      404
+    ).json({
+
+      success:
+        false,
+
+      error:
+        "Endpoint not found",
+
+      code:
+        "ROUTE_NOT_FOUND",
+
+      path:
+        req.originalUrl,
+
+      requestId:
+        req.requestId ||
+        null
+
+    });
+
+  }
+
+);
+
+
+// ============================================================
+// CENTRALIZED ERROR HANDLER
+// ============================================================
+//
+// IMPORTANT:
+//
+// This MUST be the final app.use() middleware.
+//
+// ============================================================
+
+app.use(
+
+  async (
+    error,
+    req,
+    res,
+    next
+  ) => {
+
+    FINAL_SYSTEM_RUNTIME
+      .errors++;
+
+    FINAL_SYSTEM_RUNTIME
+      .lastErrorAt =
+      new Date();
+
+
+    console.error(
+
+      "Nkwasibwe IRHCF unhandled error:",
+
+      {
+
+        requestId:
+          req?.requestId,
+
+        method:
+          req?.method,
+
+        path:
+          req?.originalUrl,
+
+        error
+
+      }
+
+    );
+
+
+    const status =
+      Number(error?.status);
+
+
+    const safeStatus =
+
+      Number.isInteger(status) &&
+      status >= 400 &&
+      status <= 599
+
+        ? status
+
+        : 500;
+
+
+    const code =
+      error?.code ||
+      (
+        safeStatus === 500
+          ? "INTERNAL_SERVER_ERROR"
+          : "REQUEST_FAILED"
+      );
+
+
+    let message =
+
+      safeStatus >= 500
+
+        ? "Internal server error"
+
+        : sanitizeAgentErrorMessage(
+            error
+          );
+
+
+    if (
+      message.length >
+      FINAL_SYSTEM_CONFIG
+        .MAX_ERROR_RESPONSE_LENGTH
+    ) {
+
+      message =
+        message.slice(
+
+          0,
+
+          FINAL_SYSTEM_CONFIG
+            .MAX_ERROR_RESPONSE_LENGTH
+
+        );
+
+    }
+
+
+    if (
+      typeof systemLog ===
+      "function"
+    ) {
+
+      try {
+
+        await systemLog(
+
+          safeStatus >= 500
+            ? "error"
+            : "warn",
+
+          "system",
+
+          "Unhandled request error",
+
+          {
+
+            requestId:
+              req?.requestId,
+
+            userId:
+              req?.user?.id ||
+              null,
+
+            method:
+              req?.method,
+
+            path:
+              req?.originalUrl,
+
+            status:
+              safeStatus,
+
+            code
+
+          }
+
+        );
+
+      } catch (
+        loggingError
+      ) {
+
+        console.error(
+
+          "Final error logging failed:",
+
+          loggingError
+
+        );
+
+      }
+
+    }
+
+
+    if (
+      res.headersSent
+    ) {
+
+      return next(
+        error
+      );
+
+    }
+
+
+    return res.status(
+      safeStatus
+    ).json({
+
+      success:
+        false,
+
+      error:
+        message,
+
+      code,
+
+      requestId:
+        req?.requestId ||
+        null
+
+    });
+
+  }
+
+);
+
+
+// ============================================================
+
 
 async function startServer() {
 
