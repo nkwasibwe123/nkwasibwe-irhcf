@@ -37,7 +37,7 @@ jobs:
             echo "Render health check attempt ${attempt}/18"
             if curl --silent --show-error --fail --max-time 15 "$health_url" --output /tmp/irhcf-health.json; then
               cat /tmp/irhcf-health.json
-              if node -e 'const h = JSON.parse(require("fs").readFileSync("/tmp/irhcf-health.json", "utf8")); if (!h.success || !h.mediaProviders || typeof h.mediaProviders.videoGeneration !== "boolean") process.exit(1); for (const [name, ready] of Object.entries(h.mediaProviders)) if (!ready) console.log("::warning::Media provider " + name + " is not configured.");'; then
+              if node -e 'const h = JSON.parse(require("fs").readFileSync("/tmp/irhcf-health.json", "utf8")); if (!h.success || !h.mediaProviders || typeof h.mediaProviders.videoGeneration !== "boolean") process.exit(1); for (const [name, ready] of Object.entries(h.mediaProviders)) if (!ready) console.log("::warning::Media provider " + name + " is not configured."); if (h.integrationProviders) for (const [name, ready] of Object.entries(h.integrationProviders)) if (!ready) console.log("::warning::Integration provider " + name + " is not configured.");'; then
                 base_url="https://nkwasibwe-irhcf.onrender.com"
                 route_code=$(curl --silent --show-error --max-time 15 -o /tmp/irhcf-task-route.json -w "%{http_code}" -X POST -H "Content-Type: application/json" -d '{}' "$base_url/api/tasks")
                 echo "POST /api/tasks deployment readiness -> HTTP $route_code"
