@@ -25,6 +25,7 @@ jobs:
         run: npm test
 
   live-health:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     needs: syntax
     steps:
@@ -37,10 +38,17 @@ jobs:
             if curl --silent --show-error --fail --max-time 15 "$health_url" --output /tmp/irhcf-health.json; then
               cat /tmp/irhcf-health.json
               if node -e 'const h = JSON.parse(require("fs").readFileSync("/tmp/irhcf-health.json", "utf8")); if (!h.success || !h.mediaProviders || typeof h.mediaProviders.videoGeneration !== "boolean") process.exit(1); for (const [name, ready] of Object.entries(h.mediaProviders)) if (!ready) console.log("::warning::Media provider " + name + " is not configured.");'; then
-                echo "Render backend health endpoint returned success."
-                exit 0
+                base_url="https://nkwasibwe-irhcf.onrender.com"
+                route_code=$(curl --silent --show-error --max-time 15 -o /tmp/irhcf-task-route.json -w "%{http_code}" -X POST -H "Content-Type: application/json" -d '{}' "$base_url/api/tasks")
+                echo "POST /api/tasks deployment readiness -> HTTP $route_code"
+                if [[ "$route_code" == "401" || "$route_code" == "403" ]]; then
+                  echo "Render health endpoint and task manager route are ready."
+                  exit 0
+                fi
+                echo "Render is healthy but /api/tasks is not ready yet; waiting for the deployment."
+              else
+                echo "Health endpoint responded, but the payload reported an unhealthy service."
               fi
-              echo "Health endpoint responded, but the payload reported an unhealthy service."
             fi
             sleep 10
           done
