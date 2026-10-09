@@ -102,7 +102,7 @@ async function buildSandbox({ files, entry = null } = {}) {
       // Preserve the original validation error.
     }
 
-    error.code = error.code || "SANDBOX_VALIDATION_FAILED";
+    error.code = "SANDBOX_VALIDATION_FAILED";
     throw error;
   }
 }
