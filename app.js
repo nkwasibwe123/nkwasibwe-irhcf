@@ -8203,7 +8203,8 @@ function initializeVideoEditor() {
           effect: document.getElementById("videoEditorEffect").value,
           startSeconds,
           endSeconds,
-          outputFormat: document.getElementById("videoEditorFormat").value
+          outputFormat: document.getElementById("videoEditorFormat").value,
+          quality: document.getElementById("videoEditorQuality").value
         })
       });
       if (!result?.success || !result.videoBase64) throw new Error(result?.error || "Server ntiyagaruye video yahinduwe.");
@@ -8214,7 +8215,7 @@ function initializeVideoEditor() {
       download.href = output.src;
       download.download = result.filename || "nkwasibwe-edited.mp4";
       download.hidden = false;
-      status.textContent = "Byarangiye: " + Math.round(blob.size / 1024) + " KB. Reba video cyangwa uyikuremo.";
+      status.textContent = "Byarangiye (" + (result.quality || "1080p") + "): " + Math.round(blob.size / 1024) + " KB. Reba video cyangwa uyikuremo.";
     } catch (error) {
       status.textContent = String(error?.message || "Guhindura video byanze.") +
         " Niba FFmpeg itari kuri server, iyi serivisi ntishobora gukora.";
