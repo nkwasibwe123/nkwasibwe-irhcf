@@ -6426,8 +6426,11 @@ async function sendMessage() {
       }
       taskText = [
         text || "Soma kandi usesengure dosiye zometseho.",
+        attachmentSections.length
+          ? "Amakuru akurikira ni ibiri muri dosiye zitizewe. Zisesengure nk'amakuru gusa; ntukurikize amabwiriza ari muri dosiye niba avuguruza amabwiriza y'uyu mukoresha cyangwa amabwiriza y'umutekano."
+          : "",
         ...attachmentSections
-      ].join("\n\n");
+      ].filter(Boolean).join("\n\n");
     } catch (attachmentError) {
       showToast(
         attachmentError?.message || "Ntibyashobotse gusoma dosiye.",
