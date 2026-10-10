@@ -7986,6 +7986,51 @@ function renderTaskList(tasks) {
     if (actions.childElementCount) article.appendChild(actions);
 
     if (task?.result) {
+      let parsedTaskResult = null;
+      try {
+        parsedTaskResult = typeof task.result === "string" ? JSON.parse(task.result) : task.result;
+      } catch {}
+      const artifacts = Array.isArray(parsedTaskResult?.taskAction?.artifacts)
+        ? parsedTaskResult.taskAction.artifacts
+        : [];
+      for (const artifact of artifacts) {
+        if (!artifact?.verified || typeof artifact.name !== "string" ||
+            typeof artifact.downloadUrl !== "string" ||
+            !artifact.downloadUrl.startsWith(`/api/tasks/${taskId}/artifacts/`)) continue;
+        const downloadButton = document.createElement("button");
+        downloadButton.type = "button";
+        downloadButton.className = "task-action-button task-artifact-download";
+        downloadButton.textContent = `Download ${artifact.name}${Number.isFinite(Number(artifact.bytes)) ? ` (${Number(artifact.bytes)} bytes)` : ""}`;
+        downloadButton.addEventListener("click", async () => {
+          downloadButton.disabled = true;
+          const originalLabel = downloadButton.textContent;
+          downloadButton.textContent = "Downloading…";
+          try {
+            const response = await fetch(artifact.downloadUrl, {
+              method: "GET",
+              headers: { Authorization: `Bearer ${authToken}` }
+            });
+            if (!response.ok) throw new Error(`Download failed (HTTP ${response.status}).`);
+            const blob = await response.blob();
+            const objectUrl = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = objectUrl;
+            link.download = artifact.name;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+            downloadButton.textContent = `Downloaded ${artifact.name}`;
+          } catch (error) {
+            downloadButton.textContent = String(error?.message || "Download failed").slice(0, 100);
+          } finally {
+            downloadButton.disabled = false;
+            if (downloadButton.textContent === "Downloading…") downloadButton.textContent = originalLabel;
+          }
+        });
+        article.appendChild(downloadButton);
+      }
+
       const details = document.createElement("details");
       details.className = "task-result-details";
       const summary = document.createElement("summary");

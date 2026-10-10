@@ -20,6 +20,7 @@
 
 const crypto = require("crypto");
 const express = require("express");
+const { buildTaskArtifact } = require("./task-artifacts");
 
 const TASK_STATES = Object.freeze({
   PLANNED: "PLANNED",
@@ -92,9 +93,10 @@ function isUsableTaskResult(result) {
   if (typeof result !== "object" || Array.isArray(result)) return false;
   if (result.success === false) return false;
   if (result.agent?.responseQuality?.verified === false) return false;
+  if (result.taskAction?.required && (!Array.isArray(result.taskAction.artifacts) || !result.taskAction.artifacts.some(item => item?.verified === true && typeof item?.content === "string" && item.content.trim()))) return false;
 
   const contentCandidates = [
-    result.response?.content,
+    typeof result.response === "string" ? result.response : result.response?.content,
     result.answer,
     result.output,
     result.content,
@@ -700,7 +702,17 @@ class TaskEngine {
         message: "Execution finished; verifying result.",
         checkpoint: {
           phase: "VERIFY",
-          execution: safeJson(executionResult)
+          execution: {
+            success: executionResult?.success !== false,
+            code: executionResult?.code || null,
+            taskAction: executionResult?.taskAction ? {
+              required: Boolean(executionResult.taskAction.required),
+              artifacts: (executionResult.taskAction.artifacts || []).map(({ name, mimeType, bytes, verified, verification, downloadUrl }) => ({
+                name, mimeType, bytes, verified, verification, downloadUrl
+              })),
+              error: executionResult.taskAction.error || null
+            } : null
+          }
         }
       });
 
@@ -1145,6 +1157,34 @@ function createTaskRouter({
         code: "TASK_LIST_FAILED"
       });
     }
+  });
+
+  router.get("/:id/artifacts/:filename", authenticateToken, async (req, res) => {
+    const taskId = Number(req.params.id);
+    if (!Number.isInteger(taskId) || taskId <= 0) {
+      return res.status(400).json({ success: false, code: "TASK_ID_INVALID", error: "Invalid task id." });
+    }
+    const task = await engine.getTask(taskId, req.user.id);
+    if (!task) {
+      return res.status(404).json({ success: false, code: "TASK_NOT_FOUND", error: "Task not found." });
+    }
+    let result;
+    try {
+      result = typeof task.result === "string" ? JSON.parse(task.result) : task.result;
+    } catch {
+      result = null;
+    }
+    const filename = String(req.params.filename || "");
+    const artifact = Array.isArray(result?.taskAction?.artifacts)
+      ? result.taskAction.artifacts.find(item => item?.name === filename && item?.verified === true && typeof item?.content === "string")
+      : null;
+    if (!artifact) {
+      return res.status(404).json({ success: false, code: "TASK_ARTIFACT_NOT_FOUND", error: "Verified artifact not found." });
+    }
+    res.setHeader("Content-Type", artifact.mimeType || "application/octet-stream");
+    res.setHeader("Content-Disposition", 'attachment; filename="' + artifact.name.replace(/[^a-zA-Z0-9._-]/g, "_") + '"');
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    return res.status(200).send(artifact.content);
   });
 
   router.get("/:id", authenticateToken, async (req, res) => {

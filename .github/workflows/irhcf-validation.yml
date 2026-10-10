@@ -61,7 +61,10 @@ jobs:
           base_url="https://nkwasibwe-irhcf.onrender.com"
           for route in \
             "/api/media/image" \
+            "/api/media/image/edit" \
             "/api/media/video" \
+            "/api/media/video/edit" \
+            "/api/chat" \
             "/api/media/music" \
             "/api/media/speech" \
             "/api/media/transcribe" \
