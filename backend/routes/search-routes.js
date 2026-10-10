@@ -69,7 +69,7 @@ function registerSearchRoutes(app, authenticateToken) {
         ...buildSearchContext(result)
       });
     } catch {
-      return res.status(500).json({ success: false, error: "Unable to build search context."     return res.status(500).json({ success: false, error: "Unable to build search context.", code: "SEARCH_CONTEXT_FAILED" });
+      return res.status(500).json({ success: false, error: "Unable to build search context.", code: "SEARCH_CONTEXT_FAILED" });
     }
   });
 
