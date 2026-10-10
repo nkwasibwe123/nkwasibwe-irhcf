@@ -90,6 +90,15 @@ function validateClaimAssessments(assessment, sources = []) {
     const hasSupport = sourceAssessments.some(source => source.relationship === "supports");
     const hasContradiction = sourceAssessments.some(source => source.relationship === "contradicts");
     const reason = String(item?.reason || "").replace(/\s+/g, " ").trim().slice(0, 600);
+
+    // If supplied sources point in opposite directions, do not let
+    // the model silently choose a winner. Preserve both assessments
+    // and mark the claim as needing further evidence.
+    if (hasSupport && hasContradiction) {
+      status = "insufficient_evidence";
+      issues.push("CONFLICTING_SOURCE_EVIDENCE");
+    }
+
     // A source ID alone proves provenance, not the direction of
     // evidence. Require an explicit per-source relationship before
     // accepting either support or contradiction.
