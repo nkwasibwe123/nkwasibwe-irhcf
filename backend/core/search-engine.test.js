@@ -37,3 +37,14 @@ test("empty query and invalid document fail safely", async () => {
   assert.equal(normalizeUrl("https://example.com/path#section"), "https://example.com/path");
   assert.deepEqual(tokenize("Énergie à Kigali"), ["energie", "a", "kigali"]);
 });
+
+test("index capacity is enforced without blocking replacement of existing ids", () => {
+  const engine = new IRHCFSearchEngine({ maxDocuments: 1 });
+  engine.indexDocument({ id: "same", title: "First", text: "first body" });
+  assert.equal(engine.indexDocument({ id: "same", title: "Updated", text: "updated body" }).documentCount, 1);
+  assert.throws(
+    () => engine.indexDocument({ id: "second", title: "Second", text: "second body" }),
+    /limit reached/
+  );
+  assert.equal(engine.searchLocal("updated")[0].title, "Updated");
+});
