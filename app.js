@@ -8310,7 +8310,7 @@ function nextTaskStepLabel(activeStage, status) {
     "Kugenzura dosiye n'ibisubizo.",
     "Kukugezaho dosiye zagenzuwe."
   ];
-  return next[Math.min(5, Math.max(0, activeStage - 1))] || next[0];
+  return next[Math.min(5, Math.max(0, activeStage))] || next[0];
 }
 
 function renderTaskProgressStages(activeStage, isComplete, isFailed) {
