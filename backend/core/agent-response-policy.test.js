@@ -120,3 +120,37 @@ test("response verifier reports an empty answer", () => {
   assert.equal(result.valid, false);
   assert.deepEqual(result.issues, ["EMPTY_RESPONSE"]);
 });
+
+test("response verifier reports insufficient evidence for current facts", () => {
+  const result = verifyAgentResponse(
+    "What is the latest exchange rate?",
+    "The rate is 1,400 RWF per USD.",
+    "en",
+    { researchRequired: true, researchPerformed: false, sources: [] }
+  );
+  assert.equal(result.valid, false);
+  assert.ok(result.issues.includes("RESEARCH_EVIDENCE_UNAVAILABLE"));
+  assert.equal(result.evidence.status, "insufficient_evidence");
+});
+
+test("response verifier rejects citations outside the supplied source set", () => {
+  const result = verifyAgentResponse(
+    "Summarize this",
+    "The report says so: https://not-provided.example/article",
+    "en",
+    { researchRequired: true, researchPerformed: true, sources: [{ title: "Allowed", url: "https://allowed.example/" }] }
+  );
+  assert.equal(result.valid, false);
+  assert.ok(result.issues.includes("UNSUPPORTED_CITATION"));
+});
+
+test("response verifier explains that source provenance is not factual proof", () => {
+  const result = verifyAgentResponse(
+    "Explain the finding",
+    "The finding is described here.",
+    "en",
+    { researchRequired: true, researchPerformed: true, sources: [{ title: "Report", url: "https://report.example/" }] }
+  );
+  assert.equal(result.valid, true);
+  assert.match(result.evidence.disclaimer, /does not prove/);
+});
