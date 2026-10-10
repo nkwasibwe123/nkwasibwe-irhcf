@@ -13150,7 +13150,40 @@ if (researchRequired) {
   liveResearch =
     await performLiveResearch(
       validatedTask,
-      userLanguage
+      userLanguage,
+      async ({ task, language }) => {
+        const languageInstruction = {
+          rw: "Respond in natural Kinyarwanda.",
+          fr: "Répondez en français naturel.",
+          en: "Respond in clear English."
+        }[language] || "Respond in the same language as the user.";
+
+        return callGeminiWithTimeout(
+          [
+            {
+              role: "system",
+              content: [
+                "You are IRHCF's live research worker.",
+                "Use Google Search grounding to investigate the user's question.",
+                "Prioritize official, primary, and reputable sources.",
+                "Separate verified facts from uncertainty and conflicting reports.",
+                "Include dates for time-sensitive claims.",
+                "Do not fabricate citations, URLs, quotations, or search results.",
+                languageInstruction
+              ].join("\\n")
+            },
+            {
+              role: "user",
+              content: String(task || "").slice(0, 12000)
+            }
+          ],
+          {
+            googleSearch: true,
+            temperature: 0.1,
+            maxTokens: 2500
+          }
+        );
+      }
     );
 
   liveResearch.required =
