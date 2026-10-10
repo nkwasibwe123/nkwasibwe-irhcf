@@ -167,29 +167,7 @@
         <div class="header-actions">
 
 
-          <label class="language-control" for="languageSelect" title="Response language / Ururimi">
-            <span aria-hidden="true">🌐</span>
-            <select id="languageSelect" aria-label="Response language">
-              <option value="auto">Auto / Phone</option>
-              <option value="rw">Kinyarwanda</option>
-              <option value="en">English</option>
-              <option value="fr">Français</option>
-              <option value="sw">Kiswahili</option>
-              <option value="ar">العربية</option>
-              <option value="es">Español</option>
-              <option value="pt">Português</option>
-              <option value="de">Deutsch</option>
-              <option value="zh">中文</option>
-              <option value="hi">हिन्दी</option>
-              <option value="ja">日本語</option>
-              <option value="ko">한국어</option>
-              <option value="it">Italiano</option>
-              <option value="ru">Русский</option>
-              <option value="tr">Türkçe</option>
-              <option value="nl">Nederlands</option>
-              <option value="pl">Polski</option>
-            </select>
-          </label>
+
 
           <!-- ACTION CENTER / REQUIREMENTS -->
           <button
@@ -265,6 +243,35 @@
             </div>
             <button id="dashboardCloseButton" class="icon-button" type="button" aria-label="Close dashboard">×</button>
           </div>
+          <section class="dashboard-language-settings" aria-labelledby="languageSettingsTitle">
+            <div>
+              <h3 id="languageSettingsTitle">🌐 Language settings / Igenamiterere ry'ururimi</h3>
+              <p>By default, IRHCF follows your phone language. Choose a language here to override it; select Auto / Phone to return to automatic mode. You can still write to IRHCF in any language.</p>
+            </div>
+            <label class="language-control dashboard-language-control" for="languageSelect" title="Response language / Ururimi">
+              <span aria-hidden="true">🌐</span>
+              <select id="languageSelect" aria-label="Response language">
+                <option value="auto">Auto / Phone</option>
+                <option value="rw">Kinyarwanda</option>
+                <option value="en">English</option>
+                <option value="fr">Français</option>
+                <option value="sw">Kiswahili</option>
+                <option value="ar">العربية</option>
+                <option value="es">Español</option>
+                <option value="pt">Português</option>
+                <option value="de">Deutsch</option>
+                <option value="zh">中文</option>
+                <option value="hi">हिन्दी</option>
+                <option value="ja">日本語</option>
+                <option value="ko">한국어</option>
+                <option value="it">Italiano</option>
+                <option value="ru">Русский</option>
+                <option value="tr">Türkçe</option>
+                <option value="nl">Nederlands</option>
+                <option value="pl">Polski</option>
+              </select>
+            </label>
+          </section>
           <div class="dashboard-grid">
             <button class="dashboard-card" type="button" data-dashboard-action="file"><span class="dashboard-card-icon">📎</span><strong>Add File</strong><span>Documents, PDF, spreadsheets and text.</span></button>
             <button class="dashboard-card" type="button" data-dashboard-action="photo"><span class="dashboard-card-icon">🖼️</span><strong>Add Photo</strong><span>Images for analysis or creation workflows.</span></button>
