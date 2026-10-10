@@ -91,7 +91,7 @@ function editVideoFile({ inputPath, outputPath, request, spawn = defaultSpawn, t
       if (error) reject(error);
       else if (!fs.existsSync(outputPath) || !fs.statSync(outputPath).size) {
         reject(mediaError("FFmpeg completed without producing an output file.", "VIDEO_OUTPUT_EMPTY"));
-      } else resolve({ outputPath, outputFormat: normalized.outputFormat, effect: normalized.effect });
+      } else resolve({ outputPath, outputFormat: normalized.outputFormat, effect: normalized.effect, quality: normalized.quality });
     };
 
     const timer = setTimeout(() => {
