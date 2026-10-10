@@ -33,7 +33,8 @@ const {
 
 const {
   TaskEngine,
-  createTaskRouter
+  createTaskRouter,
+  isUsableTaskResult
 } = require("./core/task-engine");
 
 const { AdapterRegistry } = require("./core/adapter-registry");
@@ -31700,17 +31701,13 @@ const persistentTaskEngine =
         result
       }) => {
 
-        const usable =
-          result !== null &&
-          result !== undefined;
+        const usable = isUsableTaskResult(result);
 
         return {
-          verified:
-            usable,
-          reason:
-            usable
-              ? "Agent execution returned a result."
-              : "Agent execution returned no result."
+          verified: usable,
+          reason: usable
+            ? "Agent returned non-empty output and passed its response-quality verification."
+            : "Agent output is empty, explicitly failed, or failed response-quality verification."
         };
 
       }
