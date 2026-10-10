@@ -30,12 +30,16 @@ test("voice note and live voice controls use the existing authenticated IRHCF AP
   const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
   const voice = fs.readFileSync(path.join(root, "voice-client.js"), "utf8");
   const server = fs.readFileSync(path.join(root, "backend", "server.js"), "utf8");
+  const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
 
   assert.match(html, /id="voiceButton"/, "Voice-note recording control must exist.");
   assert.match(html, /id="liveVoiceButton"/, "Live voice control must exist.");
   assert.match(voice, /\/api\/media\/transcribe/, "Voice notes must use the existing transcription endpoint.");
   assert.match(voice, /\/api\/voice\/realtime/, "Live voice must use the authenticated server-side SDP endpoint.");
-  assert.match(voice, /nkwasibwe_auth_token/, "Voice requests must use the existing authentication token.");
+  assert.match(voice, /nkwasibwe_auth_token/, "Live voice must use the existing authentication token.");
+  assert.match(app, /async function toggleVoiceRecording\(/, "The existing composer must own voice-note recording.");
+  assert.match(app, /async function transcribeAudioFile\(/, "Voice notes must use the existing transcription flow.");
+  assert.doesNotMatch(voice, /getElementById\(["']voiceButton["']\)/, "The live voice module must not register a duplicate voice-note handler.");
   assert.match(server, /app\.post\([\s\S]{0,80}["']\/api\/voice\/realtime["'][\s\S]{0,100}authenticateToken/, "Realtime voice session creation must be authenticated.");
   assert.match(server, /https:\/\/api\.openai\.com\/v1\/realtime\/calls/, "Realtime calls must be negotiated server-side.");
 });
