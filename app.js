@@ -5367,7 +5367,7 @@ function getFriendlyErrorMessage(
   const providerCode = String(error?.response?.code || error?.code || "").toLowerCase();
   const providerStatus = Number(error?.status || error?.response?.status || 0);
 
-  if (providerCode.includes("credit_balance_exhausted") || providerCode.includes("insufficient_quota")) {
+  if (providerCode.includes("credit_balance_exhausted") || providerCode.includes("insufficient_quota") || providerCode.includes("provider_credits_exhausted")) {
     return "Konti ya API y'um provider nta credits zisigaye. Iyi feature ntishobora gukora kugeza hongerwemo credits cyangwa hagashyizweho provider ifite balance; Nkwasibwe ntizigomba kubeshya ko yakoze dosiye.";
   }
   if (providerCode.includes("music_api_not_available") || lowerError.includes("music api is not available for free users")) {
