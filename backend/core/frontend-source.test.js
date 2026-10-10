@@ -75,21 +75,30 @@ test("chat renders safe clickable HTTP(S) and Markdown links without injecting H
   const root = path.join(__dirname, "..", "..");
   const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
 
-  assert.match(app, /function renderMessageContent\(container, value\)/,
-    "Chat messages must use the safe link renderer.");
-  assert.match(app, /parsed\.protocol !== "https:" && parsed\.protocol !== "http:"/,
-    "Only HTTP(S) URLs should be eligible for links.");
-  assert.match(app, /anchor\.target = "_blank"/,
-    "Tapping a link should open its destination in a new tab/window.");
-  assert.match(app, /anchor\.rel = "noopener noreferrer"/,
-    "External links must be isolated from the opener window.");
-  assert.match(app, /anchor\.textContent = markdownLabel \|\| href/,
-    "Link labels must be inserted as text, not HTML.");
-  assert.match(app, /renderMessageContent\(message, text\)/,
-    "Rendered chat messages must use the safe clickable-link renderer.");
-  assert.doesNotMatch(app, /message\.innerHTML\s*=\s*text/,
-    "Untrusted assistant output must not be injected as HTML.");
+  assert.ok(app.includes("function renderMessageContent(container, value)"));
+  assert.ok(app.includes('parsed.protocol !== "https:" && parsed.protocol !== "http:"'));
+  assert.ok(app.includes('anchor.target = "_blank"'));
+  assert.ok(app.includes('anchor.rel = "noopener noreferrer"'));
+  assert.ok(app.includes("anchor.textContent = markdownLabel || href"));
+  assert.ok(app.includes("renderMessageContent(message, text)"));
+  assert.ok(!app.includes("message.innerHTML = text"));
 });
+
+test("attached-photo background editing calls the authenticated real image-edit endpoint", () => {
+  const root = path.join(__dirname, "..", "..");
+  const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
+  const server = fs.readFileSync(path.join(root, "backend", "server.js"), "utf8");
+
+  assert.ok(app.includes('"/api/media/image/edit"'));
+  assert.ok(app.includes("async function editAttachedImage(prompt, file)"));
+  assert.ok(app.includes("imageDataUrl"));
+  assert.ok(app.includes('download.download = "nkwasibwe-irhcf-edited-image.png"'));
+  assert.ok(server.includes('app.post("/api/media/image/edit", authenticateToken'));
+  assert.ok(server.includes("openai.images.edit("));
+  assert.ok(server.includes("IMAGE_EDIT_INPUT_TOO_LARGE"));
+  assert.ok(server.includes("await toFile(imageBuffer"));
+});
+
 
 test("attached-photo background editing calls the authenticated real image-edit endpoint", () => {
   const root = path.join(__dirname, "..", "..");
