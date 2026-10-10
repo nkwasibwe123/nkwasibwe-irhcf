@@ -593,6 +593,36 @@ class TaskEngine {
     );
   }
 
+  async assertTaskStillOwned(taskId) {
+    const result = await this.pool.query(
+      `SELECT status, worker_id
+       FROM tasks
+       WHERE id = $1
+       LIMIT 1`,
+      [taskId]
+    );
+
+    const current = result.rows[0];
+    const activeStatuses = new Set([
+      TASK_STATES.RUNNING,
+      TASK_STATES.VERIFYING
+    ]);
+
+    if (
+      !current ||
+      !activeStatuses.has(current.status) ||
+      current.worker_id !== this.workerId
+    ) {
+      const error = new Error(
+        "Task execution was interrupted because it was cancelled, paused, or reassigned."
+      );
+      error.code = "TASK_INTERRUPTED";
+      throw error;
+    }
+
+    return current;
+  }
+
   async executeClaimedTask(task) {
     let taskRun = null;
     let agentRun = null;
@@ -636,6 +666,9 @@ class TaskEngine {
           this.updateProgress(task.id, update)
       });
 
+      // Cancellation or pause may happen while the executor is running.
+      await this.assertTaskStillOwned(task.id);
+
       await this.finishAgentStep(
         executionStep.id,
         "completed",
@@ -651,12 +684,28 @@ class TaskEngine {
         }
       });
 
-      await this.pool.query(
+      const verifying = await this.pool.query(
         `UPDATE tasks
          SET status = $2, updated_at = CURRENT_TIMESTAMP
-         WHERE id = $1`,
-        [task.id, TASK_STATES.VERIFYING]
+         WHERE id = $1
+           AND status = $3
+           AND worker_id = $4
+         RETURNING id`,
+        [
+          task.id,
+          TASK_STATES.VERIFYING,
+          TASK_STATES.RUNNING,
+          this.workerId
+        ]
       );
+
+      if (!verifying.rows.length) {
+        const interrupted = new Error(
+          "Task state changed before verification could start."
+        );
+        interrupted.code = "TASK_INTERRUPTED";
+        throw interrupted;
+      }
 
       const verifyStep = await this.createAgentStep(
         agentRun,
@@ -696,11 +745,52 @@ class TaskEngine {
         throw verificationError;
       }
 
+      await this.assertTaskStillOwned(task.id);
+
       await this.finishAgentStep(
         verifyStep.id,
         "completed",
         verification
       );
+
+      const completed = await this.pool.query(
+        `UPDATE tasks
+         SET
+           status = $2,
+           progress = 100,
+           progress_message = $3,
+           result = $4,
+           error = NULL,
+           worker_id = NULL,
+           locked_at = NULL,
+           completed_at = CURRENT_TIMESTAMP,
+           updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1
+           AND status = $5
+           AND worker_id = $6
+         RETURNING *`,
+        [
+          task.id,
+          TASK_STATES.COMPLETED,
+          "Task completed and verified.",
+          safeText(
+            typeof executionResult === "string"
+              ? executionResult
+              : JSON.stringify(executionResult),
+            50000
+          ),
+          TASK_STATES.VERIFYING,
+          this.workerId
+        ]
+      );
+
+      if (!completed.rows.length) {
+        const interrupted = new Error(
+          "Task state changed before completion could be committed."
+        );
+        interrupted.code = "TASK_INTERRUPTED";
+        throw interrupted;
+      }
 
       await this.finishTaskRun(
         taskRun.id,
@@ -719,34 +809,7 @@ class TaskEngine {
           : JSON.stringify(executionResult)
       );
 
-      const completed = await this.pool.query(
-        `UPDATE tasks
-         SET
-           status = $2,
-           progress = 100,
-           progress_message = $3,
-           result = $4,
-           error = NULL,
-           worker_id = NULL,
-           locked_at = NULL,
-           completed_at = CURRENT_TIMESTAMP,
-           updated_at = CURRENT_TIMESTAMP
-         WHERE id = $1
-         RETURNING *`,
-        [
-          task.id,
-          TASK_STATES.COMPLETED,
-          "Task completed and verified.",
-          safeText(
-            typeof executionResult === "string"
-              ? executionResult
-              : JSON.stringify(executionResult),
-            50000
-          )
-        ]
-      );
-
-      return completed.rows[0] || null;
+      return completed.rows[0];
     } catch (error) {
       const message = safeText(
         error?.message || String(error),
@@ -778,6 +841,11 @@ class TaskEngine {
           null,
           message
         ).catch(() => {});
+      }
+
+      if (error?.code === "TASK_INTERRUPTED") {
+        // Preserve the user-directed state change; do not retry or requeue.
+        return this.getTask(task.id, task.user_id);
       }
 
       return this.handleTaskFailure(task, message);
