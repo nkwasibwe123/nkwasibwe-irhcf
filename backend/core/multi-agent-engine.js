@@ -134,6 +134,28 @@ async function runSpecialistTeam({
           ? ""
           : clean(JSON.stringify(rawBrief), 2500);
 
+      if (execution?.verification?.verified === false) {
+        return {
+          specialist: specialist.id,
+          description: specialist.description,
+          provider: execution?.provider || null,
+          model: execution?.model || null,
+          status: "failed",
+          error: clean(execution.verification.reason || "Specialist output failed verification.", 1000)
+        };
+      }
+
+      if (!brief) {
+        return {
+          specialist: specialist.id,
+          description: specialist.description,
+          provider: execution?.provider || null,
+          model: execution?.model || null,
+          status: "failed",
+          error: "Specialist provider returned an empty brief."
+        };
+      }
+
       return {
         specialist: specialist.id,
         description: specialist.description,
