@@ -92,9 +92,11 @@ async function runSpecialistTeam({
   }
 
   const selected = selectSpecialists(team, maxSpecialists, task);
-  const results = [];
 
-  for (const specialist of selected) {
+  // Specialists are independent, bounded analysis calls. Run them concurrently
+  // to reduce wall-clock latency while preserving deterministic result ordering.
+  // Each failure is captured locally so one provider failure does not cancel the team.
+  const results = await Promise.all(selected.map(async (specialist) => {
     try {
       const execution = await executionEngine.execute({
         action: "generate_text",
@@ -120,22 +122,28 @@ async function runSpecialistTeam({
         }
       });
 
-      results.push({
+      const rawBrief =
+        execution?.result?.choices?.[0]?.message?.content ??
+        execution?.result?.output_text ??
+        execution?.result?.content ??
+        execution?.result;
+
+      const brief = typeof rawBrief === "string"
+        ? clean(rawBrief, 2500)
+        : rawBrief == null
+          ? ""
+          : clean(JSON.stringify(rawBrief), 2500);
+
+      return {
         specialist: specialist.id,
         description: specialist.description,
         provider: execution?.provider || null,
         model: execution?.model || null,
-        brief: clean(
-          execution?.result?.choices?.[0]?.message?.content ??
-          execution?.result?.output_text ??
-          execution?.result?.content ??
-          execution?.result,
-          2500
-        ),
+        brief,
         status: "completed"
-      });
+      };
     } catch (error) {
-      results.push({
+      return {
         specialist: specialist.id,
         description: specialist.description,
         status: "failed",
@@ -143,10 +151,10 @@ async function runSpecialistTeam({
           error?.message || String(error),
           1000
         )
-      });
+      };
     }
-  }
-
+  }));
+ 
   return {
     mode: "specialist_team",
     teamTypes: Array.isArray(team?.teamTypes) ? team.teamTypes : [],
