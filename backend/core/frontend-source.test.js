@@ -189,3 +189,19 @@ test("camera capture is available in the chat composer and refreshes frontend as
   assert.match(html, /src="app\.js\?v=2\.0\.7"/);
   assert.match(html, /href="style\.css\?v=2\.0\.7"/);
 });
+
+
+test("chat video-edit intent routes an attached clip to the real FFmpeg editor instead of generic chat advice", () => {
+  const root = path.join(__dirname, "..", "..");
+  const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
+  const server = fs.readFileSync(path.join(root, "backend", "server.js"), "utf8");
+  const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  assert.match(app, /const videoEditIntent =/);
+  assert.match(app, /await startVideoEditFromChat\(videoAttachments\[0\], text\)/);
+  assert.match(app, /composerState\.pendingVideoEditPrompt = text/);
+  assert.match(app, /function startVideoEditFromChat\(file, prompt\)/);
+  assert.match(app, /form\.requestSubmit\(\)/);
+  assert.match(app, /API_ENDPOINTS\.videoEditing/);
+  assert.match(server, /app\.post\("\/api\/media\/video\/edit", authenticateToken/);
+  assert.match(html, /id="videoEditorPanel"/);
+});
