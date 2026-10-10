@@ -508,7 +508,8 @@ const STORAGE_KEYS = Object.freeze({
 // APPLICATION VERSION
 // ============================================================
 
-const APP_VERSION =\n  "2.0.6";
+const APP_VERSION =
+  "2.0.6";
 
 
 
