@@ -90,10 +90,13 @@ function validateClaimAssessments(assessment, sources = []) {
     const hasSupport = sourceAssessments.some(source => source.relationship === "supports");
     const hasContradiction = sourceAssessments.some(source => source.relationship === "contradicts");
     const reason = String(item?.reason || "").replace(/\s+/g, " ").trim().slice(0, 600);
-    if (status === "supported" && (!sourceIds.length || (rawAssessments.length && !hasSupport))) {
+    // A source ID alone proves provenance, not the direction of
+    // evidence. Require an explicit per-source relationship before
+    // accepting either support or contradiction.
+    if (status === "supported" && !hasSupport) {
       status = "insufficient_evidence"; issues.push("SUPPORTED_WITHOUT_SOURCE_SUPPORT");
     }
-    if (status === "contradicted" && (!sourceIds.length || (rawAssessments.length && !hasContradiction))) {
+    if (status === "contradicted" && !hasContradiction) {
       status = "insufficient_evidence"; issues.push("CONTRADICTED_WITHOUT_SOURCE_CONFLICT");
     }
     claims.push({ claim, status, sourceIds, sourceAssessments, reason });
