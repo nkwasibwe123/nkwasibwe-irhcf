@@ -33,6 +33,51 @@ test("research failure is explicit and never claims a search was performed", asy
   assert.match(result.answer, /Ntabwo nshoboye/);
 });
 
+test("live research uses grounded provider results and preserves source URLs", async () => {
+  const result = await performLiveResearch(
+    "Who is the current president of Rwanda?",
+    "en",
+    async ({ task, language }) => {
+      assert.match(task, /current president/);
+      assert.equal(language, "en");
+      return {
+        choices: [{ message: { content: "The grounded result says the office holder is X." } }],
+        __geminiGroundingMetadata: {
+          groundingChunks: [
+            { web: { uri: "https://www.gov.rw/", title: "Government of Rwanda" } },
+            { web: { uri: "https://www.gov.rw/", title: "Duplicate source" } },
+            { web: { uri: "javascript:alert(1)", title: "Unsafe URL" } },
+            { web: { uri: "https://www.reuters.com/world/", title: "Reuters" } }
+          ]
+        }
+      };
+    }
+  );
+
+  assert.equal(result.performed, true);
+  assert.equal(result.reason, "GEMINI_GOOGLE_SEARCH_GROUNDING");
+  assert.equal(result.sources.length, 2);
+  assert.equal(result.sources[0].url, "https://www.gov.rw/");
+  assert.match(result.context, /GROUNDED SOURCES/);
+  assert.match(result.context, /Reuters/);
+});
+
+test("live research refuses to claim success without grounded source URLs", async () => {
+  const result = await performLiveResearch(
+    "latest news",
+    "rw",
+    async () => ({
+      choices: [{ message: { content: "An unsupported answer." } }],
+      __geminiGroundingMetadata: { groundingChunks: [] }
+    })
+  );
+
+  assert.equal(result.performed, false);
+  assert.equal(result.reason, "LIVE_RESEARCH_NO_GROUNDED_SOURCES");
+  assert.deepEqual(result.sources, []);
+  assert.match(result.answer, /Ntabwo nshoboye/);
+});
+
 test("response quality instruction includes language and truthfulness rules", () => {
   const instruction = buildResponseQualityInstruction("rw", "Mfasha");
   assert.match(instruction, /Kinyarwanda/);
