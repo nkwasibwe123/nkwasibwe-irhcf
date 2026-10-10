@@ -1780,3 +1780,44 @@ body {
 @media (max-width: 560px) {
   .header-actions > .language-control select { max-width: 78px; }
 }
+
+
+/* Uploaded media stays attached to the matching chat message. */
+.message-attachments {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  max-width: 100%;
+}
+.message-attachment {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  border-radius: 12px;
+}
+.message-attachment-image {
+  display: block;
+  width: auto;
+  max-width: min(100%, 420px);
+  max-height: 320px;
+  object-fit: contain;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.16);
+}
+.message-attachment-name {
+  display: inline-block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  opacity: 0.88;
+}
+.message-content-wrapper { min-width: 0; }
+.message { min-width: 0; }
+@media (max-width: 600px) {
+  .message { max-width: min(90%, 680px); }
+  .message-attachment-image { max-height: 260px; }
+}
