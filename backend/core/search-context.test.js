@@ -40,3 +40,16 @@ test("caps sources, snippets, and total context size", () => {
   assert.equal(output.sources.length, MAX_SOURCES);
   assert.ok(output.context.length <= MAX_CONTEXT_LENGTH);
 });
+
+test("normalizes HTTP(S) URLs and rejects credentials, malformed URLs, and other schemes", () => {
+  const output = buildSearchContext({ results: [
+    { title: "Hash", url: "https://example.org/path#private" },
+    { title: "Credentials", url: "https://user:pass@example.org/private" },
+    { title: "Bad host", url: "https:// not a host" },
+    { title: "Data", url: "data:text/html,hello" }
+  ] });
+  assert.equal(output.sources[0].url, "https://example.org/path");
+  assert.equal(output.sources[1].url, null);
+  assert.equal(output.sources[2].url, null);
+  assert.equal(output.sources[3].url, null);
+});
