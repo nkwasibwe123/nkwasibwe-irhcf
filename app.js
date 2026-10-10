@@ -245,6 +245,7 @@ const taskProgressTrack = document.getElementById("taskProgressTrack");
 const taskProgressFill = document.getElementById("taskProgressFill");
 const taskProgressPercent = document.getElementById("taskProgressPercent");
 const taskProgressCurrent = document.getElementById("taskProgressCurrent");
+const taskProgressNext = document.getElementById("taskProgressNext");
 const taskProgressStages = document.getElementById("taskProgressStages");
 const taskProgressResult = document.getElementById("taskProgressResult");
 const taskPublishPrompt = document.getElementById("taskPublishPrompt");
@@ -8298,6 +8299,20 @@ function taskStageIndex(task, progress) {
   return progress >= 80 ? 5 : progress >= 55 ? 4 : progress >= 30 ? 3 : progress >= 10 ? 2 : 1;
 }
 
+function nextTaskStepLabel(activeStage, status) {
+  if (status === "COMPLETED") return "Nkwasibwe izakubaza niba ushaka kuyishyira online.";
+  if (["FAILED", "CANCELLED", "CANCELED"].includes(status)) return "Gusuzuma ikosa no kugena uko rikosorwa.";
+  const next = [
+    "Gusobanukirwa ibisabwa neza.",
+    "Gutegura gahunda yo kubikora.",
+    "Kubaka deliverable nyayo.",
+    "Kugerageza no gukosora ibibazo.",
+    "Kugenzura dosiye n'ibisubizo.",
+    "Kukugezaho dosiye zagenzuwe."
+  ];
+  return next[Math.min(5, Math.max(0, activeStage - 1))] || next[0];
+}
+
 function renderTaskProgressStages(activeStage, isComplete, isFailed) {
   if (!taskProgressStages) return;
   for (const item of taskProgressStages.querySelectorAll("[data-stage]")) {
@@ -8395,7 +8410,9 @@ function renderTaskProgress(task) {
   if (taskProgressTrack) taskProgressTrack.setAttribute("aria-valuenow", String(progress));
   if (taskProgressPercent) taskProgressPercent.textContent = `${progress}%`;
   if (taskProgressCurrent) taskProgressCurrent.textContent = message;
-  renderTaskProgressStages(taskStageIndex(task, progress), completed, failed);
+  const activeStage = taskStageIndex(task, progress);
+  if (taskProgressNext) taskProgressNext.innerHTML = "<strong>Ibikurikiraho:</strong> " + nextTaskStepLabel(activeStage, status);
+  renderTaskProgressStages(activeStage, completed, failed);
   renderTaskArtifactButtons(task);
   if (taskProgressUpdated) taskProgressUpdated.textContent = `Iheruka kugenzurwa: ${new Date().toLocaleTimeString()}`;
 
@@ -8427,10 +8444,7 @@ async function refreshTaskProgressPanel() {
       (Date.parse(a?.created_at || "") || Number(a?.id) || 0)
     );
     const latestActive = tasks.find(taskStatusIsActive);
-    const latestCompletedDeliverable = tasks.find(task =>
-      String(task?.status || "").toUpperCase() === "COMPLETED" && taskIsDeliverable(task)
-    );
-    const latest = latestActive || latestCompletedDeliverable || tasks[0];
+    const latest = latestActive || tasks[0];
     if (latest) renderTaskProgress(latest);
     else taskProgressPanel.hidden = true;
   } catch (error) {
