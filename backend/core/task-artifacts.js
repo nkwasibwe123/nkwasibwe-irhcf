@@ -60,6 +60,9 @@ function extractDeliverable(text, extension) {
 function buildTaskArtifact({ task, result, taskId } = {}) {
   const request = requestedArtifact(task);
   if (!request) return { required: false, artifacts: [] };
+  if (!result || result.success === false) {
+    return { required: true, artifacts: [], error: "Agent execution failed; no artifact was created." };
+  }
   const responseText = getResponseText(result);
   const content = extractDeliverable(responseText, request.extension);
   if (!content.trim()) {
