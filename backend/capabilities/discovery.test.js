@@ -44,6 +44,7 @@ test("critical capability requires every quality gate and explicit promotion", (
   });
   const withoutPromotion = evaluateExpansionReadiness(plan, {
     ...passingGates,
+    explicit_promotion: false,
     authorization: true
   });
   assert.equal(withoutPromotion.ready, false);
