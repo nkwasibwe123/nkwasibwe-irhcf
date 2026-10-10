@@ -19,6 +19,9 @@ test("FFmpeg arguments include a real color filter and MP4 codec settings", () =
   assert.ok(args.includes("-t"));
   assert.ok(args.includes("6"));
   assert.ok(args.includes("libx264"));
+  assert.ok(args.includes("1920:1080:force_original_aspect_ratio=decrease"), "default export should render Full HD");
+  assert.ok(args.includes("-crf"));
+  assert.ok(args.includes("18"));
   assert.equal(args.at(-1), "/tmp/output.mp4");
 });
 
@@ -65,11 +68,12 @@ test("renderer invokes FFmpeg and verifies a non-empty output", async () => {
   try {
     const result = await editVideoFile({
       inputPath, outputPath,
-      request: { effect: "warm", startSeconds: 0, endSeconds: 3, outputFormat: "mp4" },
+      request: { effect: "warm", startSeconds: 0, endSeconds: 3, outputFormat: "mp4", quality: "720p" },
       spawn: fakeSpawn, timeoutMs: 1000
     });
     assert.equal(result.effect, "warm");
     assert.equal(result.outputFormat, "mp4");
+    assert.equal(result.quality, "720p");
     assert.ok(fs.statSync(outputPath).size > 0);
     assert.ok(capturedArgs.includes("colorbalance=rs=0.10:gs=0.02:bs=-0.08"));
   } finally {
@@ -89,4 +93,8 @@ test("renderer explicitly rejects subtitle burn-in until implemented", async () 
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test("renderer rejects unsupported HD export quality", () => {
+  assert.throws(() => buildFfmpegArgs("/tmp/in.mp4", "/tmp/out.mp4", { quality: "8k" }), { code: "VIDEO_QUALITY_UNSUPPORTED" });
 });
