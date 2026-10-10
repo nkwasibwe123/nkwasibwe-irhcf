@@ -196,6 +196,7 @@ test("chat video-edit intent routes an attached clip to the real FFmpeg editor i
   const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
   const server = fs.readFileSync(path.join(root, "backend", "server.js"), "utf8");
   const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  assert.match(app, /initializeVideoEditor\(\)/, "Video editor form handlers must be initialized at app startup.");
   assert.match(app, /const videoEditIntent =/);
   assert.match(app, /await startVideoEditFromChat\(videoAttachments\[0\], text\)/);
   assert.match(app, /composerState\.pendingVideoEditPrompt = text/);
