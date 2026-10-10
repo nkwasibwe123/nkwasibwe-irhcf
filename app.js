@@ -6662,6 +6662,13 @@ async function sendMessage() {
   const imageAttachments = selectedAttachments.filter(file =>
     /^image\/(png|jpeg|webp)$/i.test(String(file.type || ""))
   );
+  // Diagnostic marker lets us prove which frontend code is serving the request.
+  console.info("[IRHCF IMAGE EDIT ROUTING v2.0.4]", {
+    imageEditIntent,
+    attachmentCount: selectedAttachments.length,
+    imageAttachmentCount: imageAttachments.length,
+    promptPreview: text.slice(0, 120)
+  });
   if (imageEditIntent) {
     if (selectedAttachments.length === 0) {
       if (!fileInput) {
