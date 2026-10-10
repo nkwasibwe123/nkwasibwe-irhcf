@@ -11,7 +11,8 @@ const passingGates = {
   sandbox: true,
   tests: true,
   security_review: true,
-  regression: true
+  regression: true,
+  explicit_promotion: true
 };
 
 test("capability expansion cannot promote when authorization is absent", () => {
