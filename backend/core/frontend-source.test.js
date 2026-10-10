@@ -90,3 +90,26 @@ test("chat renders safe clickable HTTP(S) and Markdown links without injecting H
   assert.doesNotMatch(app, /message\.innerHTML\s*=\s*text/,
     "Untrusted assistant output must not be injected as HTML.");
 });
+
+test("attached-photo background editing calls the authenticated real image-edit endpoint", () => {
+  const root = path.join(__dirname, "..", "..");
+  const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
+  const server = fs.readFileSync(path.join(root, "backend", "server.js"), "utf8");
+
+  assert.match(app, /imageEditing:\s*["']\/api\/media\/image\/edit["']/,
+    "The frontend must use the dedicated image-edit route.");
+  assert.match(app, /async function editAttachedImage\(prompt, file\)/,
+    "Photo editing must be an explicit executable frontend flow.");
+  assert.match(app, /body:\s*JSON\.stringify\(\{[\s\S]{0,160}imageDataUrl/,
+    "The selected image bytes must be sent to the backend.");
+  assert.match(app, /download\.download = ["']nkwasibwe-irhcf-edited-image\.png["']/,
+    "The resulting edited image must be downloadable.");
+  assert.match(server, /app\.post\(["']\/api\/media\/image\/edit["'],\s*authenticateToken/,
+    "Image editing must be protected by authentication.");
+  assert.match(server, /openai\.images\.edit\(/,
+    "The backend must invoke the actual image-edit provider.");
+  assert.match(server, /IMAGE_EDIT_INPUT_TOO_LARGE/,
+    "Image editing must enforce an input size limit.");
+  assert.match(server, /await toFile\(imageBuffer/,
+    "The backend must convert validated image bytes into a provider upload.");
+});
