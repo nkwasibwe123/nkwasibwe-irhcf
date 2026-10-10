@@ -4038,6 +4038,86 @@ app.post("/api/media/music", authenticateToken, async (req, res) => {
 });
 
 // ============================================================
+// AUTHENTICATED REAL-TIME VOICE SESSION (WebRTC)
+// The API key stays on the server; the browser only submits SDP.
+// ============================================================
+
+app.post(
+  "/api/voice/realtime",
+  authenticateToken,
+  express.text({ type: ["application/sdp", "text/plain"], limit: "1mb" }),
+  async (req, res) => {
+    try {
+      if (!OPENAI_API_KEY) {
+        return res.status(503).json({
+          success: false,
+          error: "Live voice is unavailable because OPENAI_API_KEY is not configured.",
+          code: "VOICE_PROVIDER_UNAVAILABLE"
+        });
+      }
+
+      const sdp = String(req.body || "").trim();
+      if (!sdp || !sdp.startsWith("v=0")) {
+        return res.status(400).json({
+          success: false,
+          error: "A valid WebRTC SDP offer is required.",
+          code: "VOICE_SDP_REQUIRED"
+        });
+      }
+
+      const form = new FormData();
+      form.set("sdp", sdp);
+      form.set("session", JSON.stringify({
+        type: "realtime",
+        model: process.env.OPENAI_REALTIME_MODEL || "gpt-realtime-2.1",
+        instructions: [
+          "You are Nkwasibwe IRHCF, a helpful multilingual AI assistant.",
+          "Speak naturally and concisely in the language the user uses.",
+          "Support Kinyarwanda and English, and adapt to other languages when possible.",
+          "Listen for the user's complete turn and allow natural interruptions.",
+          "Do not claim you performed external actions unless a connected IRHCF tool confirms them."
+        ].join(" "),
+        audio: {
+          output: { voice: "marin" }
+        }
+      }));
+
+      const upstream = await fetch("https://api.openai.com/v1/realtime/calls", {
+        method: "POST",
+        headers: { Authorization: "Bearer " + OPENAI_API_KEY },
+        body: form,
+        signal: AbortSignal.timeout(30000)
+      });
+      const answer = await upstream.text();
+
+      if (!upstream.ok) {
+        console.error("[VOICE_REALTIME] Provider rejected session:", {
+          status: upstream.status,
+          response: answer.slice(0, 500)
+        });
+        return res.status(upstream.status >= 400 && upstream.status < 500 ? upstream.status : 502).json({
+          success: false,
+          error: "Live voice session could not be created. Check OpenAI API access, model availability and billing.",
+          code: "VOICE_SESSION_CREATE_FAILED"
+        });
+      }
+
+      return res.status(200).type("application/sdp").send(answer);
+    } catch (error) {
+      console.error("[VOICE_REALTIME] Session failed:", {
+        code: error?.code || null,
+        message: String(error?.message || "Voice session failed").slice(0, 300)
+      });
+      return res.status(502).json({
+        success: false,
+        error: "Could not connect the live voice service. Check the network and provider configuration.",
+        code: "VOICE_SESSION_FAILED"
+      });
+    }
+  }
+);
+
+// ============================================================
 // AUTHENTICATED AUDIO TRANSCRIPTION
 // Accepts bounded base64 audio uploads and returns editable text.
 // ============================================================
