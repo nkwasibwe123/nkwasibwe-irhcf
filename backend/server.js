@@ -30002,12 +30002,21 @@ app.get(
           health.status !==
           "unhealthy",
 
+        // These flags describe implemented/configured paths, not merely
+        // the presence of an unrelated API key. Video and music generation
+        // are not wired to verified concrete providers yet.
         mediaProviders: {
           imageGeneration: Boolean(openai),
           speechGeneration: Boolean(openai),
           audioTranscription: Boolean(openai),
-          videoGeneration: Boolean(OPENAI_API_KEY),
-          musicGeneration: Boolean(ELEVENLABS_API_KEY)
+          videoGeneration: false,
+          musicGeneration: false
+        },
+        mediaProviderConfiguration: {
+          openai: Boolean(OPENAI_API_KEY),
+          elevenLabs: Boolean(ELEVENLABS_API_KEY),
+          videoGeneration: "not_integrated",
+          musicGeneration: "not_integrated"
         },
 
         // Search readiness reflects configuration only, not a guarantee
