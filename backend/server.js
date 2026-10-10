@@ -217,6 +217,8 @@ const LIMITS = Object.freeze({
 // APPLICATION
 // ============================================================
 
+const { registerSearchRoutes } = require("./routes/search-routes");
+
 const app = express();
 
 app.disable("x-powered-by");
@@ -319,6 +321,8 @@ app.use(
 //   - duplicated active-request state
 //
 // ============================================================
+
+registerSearchRoutes(app, authenticateToken);
 
 // Request context is initialized by the canonical
 // security/request-context middleware in Part 2.
