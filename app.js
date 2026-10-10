@@ -6457,8 +6457,11 @@ async function sendMessage() {
   // UPDATE TITLE
   // ----------------------------------------------------------
 
+  const displayedUserText = text ||
+    `Soma kandi usesengure dosiye zometseho: ${selectedAttachments.map(file => file.name).join(", ")}`;
+
   updateCurrentConversationTitle(
-    text
+    displayedUserText
   );
 
 
@@ -6467,7 +6470,7 @@ async function sendMessage() {
   // ----------------------------------------------------------
 
   const userMessageRow = addMessage(
-    text,
+    displayedUserText,
     "user"
   );
 
