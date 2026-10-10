@@ -6627,9 +6627,14 @@ function getLocalClockAnswer(question) {
 function isExplicitBuildTask(text) {
   const value = String(text || "").trim();
   if (!value) return false;
+  // Short Kinyarwanda follow-ups such as "Ngaho yinkorere" mean
+  // "go ahead and make it". Route them to the executor so the agent can
+  // resume the concrete deliverable already discussed in this session.
+  if (/^(?:ngaho\\s+)?(?:yi)?nkorere(?:\\s+ubwo)?[.!\\s]*$/i.test(value) ||
+      /^(?:ngaho\\s+)?(?:bikore|kora\\s+ubwo|tangira\\s+kubikora)[.!\\s]*$/i.test(value)) return true;
   // Questions asking for instructions stay in chat; only direct creation
   // commands should create an execution task.
-  if (/^(?:how\s+to|how\s+(?:do|can|should)\s+i|what\s+is\s+the\s+way|nigute|uko\s+n(?:a|i)kora|mbwira\s+uko)\b/i.test(value)) return false;
+  if (/^(?:how\\s+to|how\\s+(?:do|can|should)\\s+i|what\\s+is\\s+the\\s+way|nigute|uko\\s+n(?:a|i)kora|mbwira\\s+uko)\\b/i.test(value)) return false;
   const target = "(?:website|web\\s*site|urubuga|application|app|software|program|code|script|html|javascript|dosiye|file|spreadsheet|report)";
   return new RegExp("\\b(?:create|build|make|write|generate|develop|implement|produce)\\b.{0,100}\\b" + target + "\\b", "i").test(value) ||
     new RegExp("\\b(?:nkorera|nkore|mukorere|kora)\\b.{0,100}\\b" + target + "\\b", "i").test(value) ||
@@ -6906,6 +6911,8 @@ async function sendMessage() {
         "Build and generate the actual requested deliverable; do not respond with instructions or a plan only.",
         "Create complete file contents, verify the result, and attach downloadable verified artifacts.",
         "Use the current conversation context for any project, school, name, design, or requirements already discussed.",
+        "If the latest message is a short follow-up such as 'Ngaho yinkorere', recover the most recent concrete deliverable request from this same authenticated session and execute it; do not return another how-to guide. If the prior request cannot be recovered, report that limitation clearly instead of inventing requirements.",
+        "For a school website, produce a complete responsive MVP with real HTML/CSS/JS files, working navigation, school profile, academics, admissions, news/events, FAQ, and contact form UI. Mark unknown school facts as editable placeholders; do not invent phone numbers, addresses, fees, staff, or history.",
         "User's requested work:",
         taskText
       ].join("\\n\\n");
