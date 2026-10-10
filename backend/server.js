@@ -3848,7 +3848,8 @@ app.post("/api/media/video/edit", authenticateToken, async (req, res) => {
         effect: req.body?.effect,
         startSeconds: req.body?.startSeconds,
         endSeconds: req.body?.endSeconds,
-        outputFormat
+        outputFormat,
+        quality: req.body?.quality
       },
       timeoutMs: 180000
     });
@@ -3861,13 +3862,14 @@ app.post("/api/media/video/edit", authenticateToken, async (req, res) => {
       videoBase64: output.toString("base64"),
       effect: result.effect,
       outputFormat: result.outputFormat,
+      quality: result.quality,
       sizeBytes: output.length
     });
   } catch (error) {
     const code = String(error?.code || "VIDEO_EDIT_FAILED");
     const status = code === "VIDEO_INPUT_NOT_FOUND" ? 400
       : code === "VIDEO_EFFECT_UNSUPPORTED" || code === "VIDEO_TRIM_INVALID" ||
-        code === "VIDEO_FORMAT_UNSUPPORTED" || code === "VIDEO_OUTPUT_EXTENSION_MISMATCH" ? 400
+        code === "VIDEO_FORMAT_UNSUPPORTED" || code === "VIDEO_QUALITY_UNSUPPORTED" || code === "VIDEO_OUTPUT_EXTENSION_MISMATCH" ? 400
       : code === "FFMPEG_UNAVAILABLE" ? 503
       : code === "VIDEO_RENDER_TIMEOUT" ? 504 : 422;
     console.error("[MEDIA_VIDEO_EDIT] Render failed:", {

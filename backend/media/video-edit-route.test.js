@@ -15,6 +15,8 @@ test("video edit API is authenticated and enforces bounded video input", () => {
   assert.match(server, /await editVideoFile\(/);
   assert.match(server, /await fs\.rm\(tempDir, \{ recursive: true, force: true \}\)/);
   assert.match(server, /videoBase64: output\.toString\("base64"\)/);
+  assert.match(server, /quality: req\.body\?\.quality/);
+  assert.match(server, /quality: result\.quality/);
 });
 
 test("video edit API reports unsupported subtitle burn-in instead of silently ignoring it", () => {
@@ -38,14 +40,17 @@ test("mobile video editor UI is connected to the authenticated endpoint", () => 
   assert.match(html, /data-dashboard-action="video-edit"/);
   assert.match(html, /id="videoEditorForm"/);
   assert.match(html, /id="videoEditorEffect"/);
+  assert.match(html, /id="videoEditorQuality"/);
+  assert.match(html, /Full HD \(1080p\)/);
   assert.match(html, /id="videoEditorStart"/);
   assert.match(html, /id="videoEditorEnd"/);
   assert.match(html, /id="videoEditorDownload"/);
-  assert.match(html, /app\.js\?v=2\.0\.6/);
-  assert.match(html, /style\.css\?v=2\.0\.6/);
+  assert.match(html, /app\.js\?v=2\.0\.7/);
+  assert.match(html, /style\.css\?v=2\.0\.7/);
   assert.match(app, /videoEditing:\s*"\/api\/media\/video\/edit"/);
   assert.match(app, /apiRequest\(API_ENDPOINTS\.videoEditing/);
   assert.match(app, /function initializeVideoEditor\(/);
+  assert.match(app, /quality: document\.getElementById\("videoEditorQuality"\)\.value/);
   assert.match(css, /\.video-editor-fields/);
   assert.match(css, /min-height: 44px/);
 });

@@ -5905,7 +5905,8 @@ const composerState = {
   mediaRecorder: null,
   recordingChunks: [],
   recording: false,
-  pendingImageEditPrompt: ""
+  pendingImageEditPrompt: "",
+  pendingVideoEditPrompt: ""
 };
 
 
@@ -5978,6 +5979,22 @@ async function prepareVideoFromReference(file) {
 function handleFileSelection(
   event
 ) {
+
+  if (composerState.pendingVideoEditPrompt) {
+    const prompt = composerState.pendingVideoEditPrompt;
+    composerState.pendingVideoEditPrompt = "";
+    const selectedVideo = Array.from(event.target.files || []).find(file =>
+      ["video/mp4", "video/webm", "video/quicktime"].includes(String(file.type || "").toLowerCase())
+    );
+    event.target.value = "";
+    fileInput.accept = "image/*,video/*,audio/*,application/pdf,text/*,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    if (!selectedVideo) {
+      setStatus("Hitamo video ya MP4, WebM cyangwa MOV kugira ngo nyitunganye.", "normal");
+      return;
+    }
+    void startVideoEditFromChat(selectedVideo, prompt);
+    return;
+  }
 
   // If the user requested photo editing before selecting a photo,
   // continue that exact request as soon as they choose an image.
@@ -6666,6 +6683,28 @@ async function sendMessage() {
   });
 
   const imageEditIntent = /background|back\s*ground|remove\s+background|change\s+background|edit\s+(the\s+)?photo|edit\s+(the\s+)?image|replace\s+(the\s+)?background|hindura|guhindura|inyuma|kuraho/i.test(text);
+  const videoEditIntent = /\\b(edit|improve|enhance|make|fix|trim|cut|polish)\\b.{0,60}\\b(video|clip|footage)\\b|\\b(video|clip|footage)\\b.{0,60}\\b(edit|improve|enhance|look good|beautiful|cinematic|trim|cut)\\b|\\b(nkorera neza|itunganye|video ibe isa neza|hindura video|gukata video)\\b/i.test(text);
+  const videoAttachments = selectedAttachments.filter(file =>
+    ["video/mp4", "video/webm", "video/quicktime"].includes(String(file.type || "").toLowerCase())
+  );
+  if (videoEditIntent) {
+    if (videoAttachments.length === 1 && selectedAttachments.length === 1) {
+      await startVideoEditFromChat(videoAttachments[0], text);
+      return;
+    }
+    if (selectedAttachments.length === 0) {
+      if (!fileInput) { setStatus("Ntibishobotse gufungura ahatoranyirizwa video.", "normal"); return; }
+      composerState.pendingVideoEditPrompt = text;
+      fileInput.accept = "video/mp4,video/webm,video/quicktime";
+      setStatus("Hitamo video ushaka ko ntunganya; nzakoresha editor nyayo aho gutanga inama gusa.", "normal");
+      showToast("Banza uhitemo video ushaka gutunganya.", "normal");
+      fileInput.click();
+      return;
+    }
+    showToast("Hitamo video imwe gusa (MP4, WebM cyangwa MOV).", "warning");
+    setStatus("Koresha video imwe gusa kuri buri gikorwa cyo gutunganya.", "normal");
+    return;
+  }
   const imageAttachments = selectedAttachments.filter(file =>
     /^image\/(png|jpeg|webp)$/i.test(String(file.type || ""))
   );
@@ -8134,6 +8173,56 @@ async function createLongRunningTask(event) {
   }
 }
 
+function videoEffectFromPrompt(prompt) {
+  const value = String(prompt || "").toLowerCase();
+  if (/black.?and.?white|monochrome/.test(value)) return "monochrome";
+  if (/vintage|retro/.test(value)) return "vintage";
+  if (/warm/.test(value)) return "warm";
+  if (/cool/.test(value)) return "cool";
+  if (/blur/.test(value)) return "blur";
+  if (/sharpen|sharp|clearer/.test(value)) return "sharpen";
+  if (/vivid|saturat/.test(value)) return "vivid";
+  if (/fade.?in/.test(value)) return "fade-in";
+  if (/fade.?out/.test(value)) return "fade-out";
+  return "cinematic";
+}
+
+async function startVideoEditFromChat(file, prompt) {
+  const panel = document.getElementById("videoEditorPanel");
+  const form = document.getElementById("videoEditorForm");
+  const fileInput = document.getElementById("videoEditorFile");
+  const effect = document.getElementById("videoEditorEffect");
+  const status = document.getElementById("videoEditorStatus");
+  if (!panel || !form || !fileInput || !effect) {
+    setStatus("Video Editor ntirafunguka. Fungura dashboard > Video Editor.", "error");
+    return;
+  }
+  if (file.size > 6 * 1024 * 1024) {
+    setStatus("Video irenze 6 MB. Hitamo video ntoya (ntarengwa 6 MB).", "normal");
+    showToast("Video irenze 6 MB.", "warning");
+    return;
+  }
+  if (!["video/mp4", "video/webm", "video/quicktime"].includes(String(file.type || "").toLowerCase())) {
+    setStatus("Hitamo video ya MP4, WebM cyangwa MOV.", "normal");
+    return;
+  }
+  panel.hidden = false;
+  effect.value = videoEffectFromPrompt(prompt);
+  try {
+    const transfer = new DataTransfer();
+    transfer.items.add(file);
+    fileInput.files = transfer.files;
+    fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+    status.textContent = "IRHCF iri gutunganya video yawe ikoresheje FFmpeg: " + effect.value + "…";
+    setTimeout(() => {
+      if (!form.querySelector("button[type=submit]")?.disabled) form.requestSubmit();
+    }, 0);
+  } catch (error) {
+    status.textContent = "Browser ntiyemeye kohereza video muri editor. Fungura editor, uhitemo video, ukande Render video.";
+    console.warn("[IRHCF VIDEO EDIT ROUTING]", error);
+  }
+}
+
 function initializeVideoEditor() {
   const panel = document.getElementById("videoEditorPanel");
   const form = document.getElementById("videoEditorForm");
@@ -8203,7 +8292,8 @@ function initializeVideoEditor() {
           effect: document.getElementById("videoEditorEffect").value,
           startSeconds,
           endSeconds,
-          outputFormat: document.getElementById("videoEditorFormat").value
+          outputFormat: document.getElementById("videoEditorFormat").value,
+          quality: document.getElementById("videoEditorQuality").value
         })
       });
       if (!result?.success || !result.videoBase64) throw new Error(result?.error || "Server ntiyagaruye video yahinduwe.");
@@ -8214,7 +8304,7 @@ function initializeVideoEditor() {
       download.href = output.src;
       download.download = result.filename || "nkwasibwe-edited.mp4";
       download.hidden = false;
-      status.textContent = "Byarangiye: " + Math.round(blob.size / 1024) + " KB. Reba video cyangwa uyikuremo.";
+      status.textContent = "Byarangiye (" + (result.quality || "1080p") + "): " + Math.round(blob.size / 1024) + " KB. Reba video cyangwa uyikuremo.";
     } catch (error) {
       status.textContent = String(error?.message || "Guhindura video byanze.") +
         " Niba FFmpeg itari kuri server, iyi serivisi ntishobora gukora.";
@@ -9944,6 +10034,9 @@ async function initializeApp() {
 
     }
 
+
+    // Bind the real FFmpeg editor controls during startup.
+    if (typeof initializeVideoEditor === "function") initializeVideoEditor();
 
     // ----------------------------------------------------------
     // AUTO RESIZE INPUT

@@ -20,7 +20,7 @@
 
   <link
     rel="stylesheet"
-    href="style.css?v=2.0.6"
+    href="style.css?v=2.0.8"
   >
 
 </head>
@@ -338,6 +338,9 @@
                 </label>
                 <label for="videoEditorStart">Trim start (seconds)<input id="videoEditorStart" type="number" min="0" max="86400" step="0.1" value="0"></label>
                 <label for="videoEditorEnd">Trim end (seconds; optional)<input id="videoEditorEnd" type="number" min="0" max="86400" step="0.1" placeholder="End of video"></label>
+                <label for="videoEditorQuality">Export quality
+                  <select id="videoEditorQuality"><option value="1080p" selected>Full HD (1080p)</option><option value="720p">HD (720p)</option></select>
+                </label>
                 <label for="videoEditorFormat">Output format
                   <select id="videoEditorFormat"><option value="mp4">MP4</option><option value="webm">WebM</option><option value="mov">MOV</option></select>
                 </label>
@@ -843,7 +846,7 @@ STATUS BAR
        ================================================ -->
 
   <script
-    src="app.js?v=2.0.6"
+    src="app.js?v=2.0.8"
   ></script>
   <script
     src="voice-client.js"
