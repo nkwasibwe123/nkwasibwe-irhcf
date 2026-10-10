@@ -13,7 +13,7 @@ test("FFmpeg arguments include a real color filter and MP4 codec settings", () =
     effect: "monochrome", startSeconds: 2, endSeconds: 8, outputFormat: "mp4"
   });
   assert.ok(args.includes("-vf"));
-  assert.ok(args.includes("hue=s=0"));
+  assert.ok(args.join(",").includes("hue=s=0"));
   assert.ok(args.includes("-ss"));
   assert.ok(args.includes("2"));
   assert.ok(args.includes("-t"));
@@ -75,7 +75,7 @@ test("renderer invokes FFmpeg and verifies a non-empty output", async () => {
     assert.equal(result.outputFormat, "mp4");
     assert.equal(result.quality, "720p");
     assert.ok(fs.statSync(outputPath).size > 0);
-    assert.ok(capturedArgs.includes("colorbalance=rs=0.10:gs=0.02:bs=-0.08"));
+    assert.ok(capturedArgs.join(",").includes("colorbalance=rs=0.10:gs=0.02:bs=-0.08"));
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }
