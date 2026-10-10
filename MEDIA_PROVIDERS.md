@@ -6,7 +6,8 @@ This document describes the real media endpoints currently wired into the backen
 
 - `DATABASE_URL` — PostgreSQL connection string. Required for authentication, conversations, and ownership-safe video job tracking.
 - `JWT_SECRET` — a long, random secret used to verify user sessions.
-- `OPENAI_API_KEY` — used for image generation, text-to-speech, audio transcription, and Sora video generation.\n- `GEMINI_API_KEY` — used for Gemini Google Search grounding when IRHCF detects a request that needs current or externally changing information. The OpenAI project must have access to the relevant endpoints/models and sufficient billing/credits.
+- `OPENAI_API_KEY` — used for image generation, text-to-speech, audio transcription, and Sora video generation. The OpenAI project must have access to the relevant endpoints/models and sufficient billing/credits.
+- `GEMINI_API_KEY` — used for Gemini Google Search grounding when IRHCF detects a request that needs current or externally changing information.
 - `ELEVENLABS_API_KEY` — used for Music v2.5 song generation. The ElevenLabs account must have access to the Music API and sufficient credits.
 
 Configure these in the backend host's environment/secrets settings, then restart or redeploy the backend. Do not commit actual secret values.
