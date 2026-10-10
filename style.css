@@ -1773,3 +1773,10 @@ body {
   .dashboard-language-control { align-self: flex-start; }
   .dashboard-language-control select { max-width: 220px; }
 }
+
+
+/* Keep the language picker easy to find even before opening the dashboard. */
+.header-actions > .language-control { margin-right: 2px; }
+@media (max-width: 560px) {
+  .header-actions > .language-control select { max-width: 78px; }
+}
