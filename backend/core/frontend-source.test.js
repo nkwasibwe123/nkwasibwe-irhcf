@@ -77,7 +77,7 @@ test("chat renders safe clickable HTTP(S) and Markdown links without injecting H
 
   assert.match(app, /function renderMessageContent\(container, value\)/,
     "Chat messages must use the safe link renderer.");
-  assert.match(app, /https\?:\\/\\//,
+  assert.match(app, /parsed\.protocol !== "https:" && parsed\.protocol !== "http:"/,
     "Only HTTP(S) URLs should be eligible for links.");
   assert.match(app, /anchor\.target = "_blank"/,
     "Tapping a link should open its destination in a new tab/window.");
