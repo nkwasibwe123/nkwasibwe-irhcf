@@ -90,6 +90,7 @@ const {
   resumeSchedule
 } = require("./core/schedule-service");
 const { ScheduleWorker } = require("./core/schedule-worker");
+const { requestedArtifact, buildTaskArtifact } = require("./core/task-artifacts");
 const { buildProjectPlan, shouldBecomeLongRunning } = require("./core/project-autopilot");
 const {
   buildCapabilityExpansionPlan
@@ -32133,8 +32134,20 @@ const persistentTaskEngine =
             specialistTeam
           );
 
+        const artifactRequest = requestedArtifact(executionTask);
+        const artifactInstruction = artifactRequest
+          ? [
+              "",
+              "REQUIRED REAL FILE DELIVERABLE:",
+              "The user asked for a file. Create the actual file content, not instructions about how the user could create it.",
+              "Return the complete file content inside one fenced code block suitable for the requested filename " + artifactRequest.name + ".",
+              "For source code, return only the source in the code fence; do not put explanations inside the file.",
+              "Do not claim the file was tested or deployed unless the task runner reports that check."
+            ].join("\n")
+          : "";
+
         const masterTask =
-          specialistBriefs
+          (specialistBriefs
             ? [
                 executionTask,
                 "",
@@ -32144,7 +32157,7 @@ const persistentTaskEngine =
                 "MASTER AGENT INSTRUCTION:",
                 "Use the specialist briefs as internal working evidence. Resolve conflicts, verify important claims, and produce the final task result. Do not claim that specialist recommendations are external actions already performed."
               ].join("\n")
-            : executionTask;
+            : executionTask) + artifactInstruction;
 
         const result =
           await executeNkwasibweAgent({
@@ -32152,6 +32165,17 @@ const persistentTaskEngine =
             task: masterTask,
             sessionId
           });
+
+        const taskAction = artifactRequest
+          ? buildTaskArtifact({ task: executionTask, result, taskId })
+          : { required: false, artifacts: [] };
+
+        if (artifactRequest && !taskAction.artifacts.length) {
+          const error = new Error(taskAction.error || "Required task artifact was not produced or verified.");
+          error.code = "TASK_ARTIFACT_VERIFICATION_FAILED";
+          error.taskAction = taskAction;
+          throw error;
+        }
 
         await updateProgress({
           progress: 60,
@@ -32172,6 +32196,7 @@ const persistentTaskEngine =
 
         return {
           ...result,
+          taskAction,
           specialistTeam
         };
       },
