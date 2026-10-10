@@ -237,6 +237,27 @@ const taskList =
 let taskRefreshTimer = null;
 let taskListBusy = false;
 
+const taskProgressPanel = document.getElementById("taskProgressPanel");
+const taskProgressTitle = document.getElementById("taskProgressTitle");
+const taskProgressSubtitle = document.getElementById("taskProgressSubtitle");
+const taskProgressStatus = document.getElementById("taskProgressStatus");
+const taskProgressTrack = document.getElementById("taskProgressTrack");
+const taskProgressFill = document.getElementById("taskProgressFill");
+const taskProgressPercent = document.getElementById("taskProgressPercent");
+const taskProgressCurrent = document.getElementById("taskProgressCurrent");
+const taskProgressNext = document.getElementById("taskProgressNext");
+const taskProgressStages = document.getElementById("taskProgressStages");
+const taskProgressResult = document.getElementById("taskProgressResult");
+const taskPublishPrompt = document.getElementById("taskPublishPrompt");
+const taskPublishYes = document.getElementById("taskPublishYes");
+const taskPublishNo = document.getElementById("taskPublishNo");
+const taskProgressUpdated = document.getElementById("taskProgressUpdated");
+const taskProgressOpenManager = document.getElementById("taskProgressOpenManager");
+let taskProgressBusy = false;
+let taskProgressTimer = null;
+const TASK_PROGRESS_PROMPT_KEY = "nkwasibwe_task_publish_prompted";
+
+
 const actionCenterButton =
   document.getElementById(
     "actionCenterButton"
@@ -5857,10 +5878,24 @@ function addTypingIndicator() {
 
   indicator.innerHTML =
     `
-      <div class="message-content">
-        <span>...</span>
+      <div class="typing-agent-avatar" aria-hidden="true">N</div>
+      <div class="typing-agent-content">
+        <strong class="typing-agent-title">Nkwasibwe <span class="typing-thinking-dots" aria-hidden="true"><i></i><i></i><i></i></span></strong>
+        <span class="typing-agent-status">Thinking…</span>
       </div>
     `;
+  const thinkingStatuses = [
+    "Thinking…",
+    "Iri gusobanukirwa ibyo wasabye…",
+    "Iri gutegura intambwe ikurikira…",
+    "Iri kugenzura uko yakora task…"
+  ];
+  let thinkingIndex = 0;
+  const thinkingLabel = indicator.querySelector(".typing-agent-status");
+  indicator._thinkingTimer = window.setInterval(() => {
+    thinkingIndex = (thinkingIndex + 1) % thinkingStatuses.length;
+    if (thinkingLabel && indicator.isConnected) thinkingLabel.textContent = thinkingStatuses[thinkingIndex];
+  }, 1800);
 
   messages.appendChild(
     indicator
@@ -5885,6 +5920,7 @@ function removeTypingIndicator(
     indicator.parentNode
   ) {
 
+    if (indicator._thinkingTimer) window.clearInterval(indicator._thinkingTimer);
     indicator.parentNode.removeChild(
       indicator
     );
@@ -8198,6 +8234,297 @@ async function refreshTaskList() {
     taskListBusy = false;
     if (taskRefreshButton) taskRefreshButton.disabled = false;
   }
+}
+
+
+function taskStatusIsActive(task) {
+  return !["COMPLETED", "FAILED", "CANCELLED", "CANCELED"].includes(
+    String(task?.status || "").toUpperCase()
+  );
+}
+
+function taskMetadata(task) {
+  if (!task?.metadata) return {};
+  if (typeof task.metadata === "object") return task.metadata;
+  try { return JSON.parse(task.metadata); } catch { return {}; }
+}
+
+function taskIsDeliverable(task) {
+  const metadata = taskMetadata(task);
+  let result = task?.result;
+  if (typeof result === "string") {
+    try { result = JSON.parse(result); } catch { result = null; }
+  }
+  const artifacts = Array.isArray(result?.taskAction?.artifacts)
+    ? result.taskAction.artifacts
+    : [];
+  return metadata.deliverableRequired === true ||
+    metadata.source === "irhcf_chat_build_request" ||
+    artifacts.some(item => item?.verified === true);
+}
+
+function taskStatusLabel(status) {
+  const labels = {
+    PLANNED: "Yateguwe",
+    QUEUED: "Iri ku murongo",
+    PENDING: "Itegereje",
+    RUNNING: "Irimo gukora",
+    EXECUTING: "Irimo gukora",
+    IN_PROGRESS: "Irimo gukora",
+    TESTING: "Irimo kugerageza",
+    VERIFYING: "Irimo kugenzura",
+    WAITING_FOR_USER: "Itegereje igisubizo cyawe",
+    WAITING_FOR_TOOL: "Itegereje igikoresho",
+    PAUSED: "Yahagaritswe by'agateganyo",
+    COMPLETED: "Yarangiye",
+    FAILED: "Yahuye n'ikibazo",
+    CANCELLED: "Yahagaritswe",
+    CANCELED: "Yahagaritswe"
+  };
+  return labels[String(status || "").toUpperCase()] || String(status || "UNKNOWN").replace(/_/g, " ");
+}
+
+function taskStageIndex(task, progress) {
+  const status = String(task?.status || "").toUpperCase();
+  if (["COMPLETED"].includes(status)) return 6;
+  if (["VERIFYING"].includes(status)) return 5;
+  if (["TESTING"].includes(status)) return 4;
+  if (["RUNNING", "EXECUTING", "IN_PROGRESS"].includes(status)) {
+    if (progress >= 85) return 5;
+    if (progress >= 65) return 4;
+    if (progress >= 35) return 3;
+    return 2;
+  }
+  if (["QUEUED", "PENDING", "PLANNED"].includes(status)) return progress >= 15 ? 2 : 1;
+  return progress >= 80 ? 5 : progress >= 55 ? 4 : progress >= 30 ? 3 : progress >= 10 ? 2 : 1;
+}
+
+function nextTaskStepLabel(activeStage, status) {
+  if (status === "COMPLETED") return "Nkwasibwe izakubaza niba ushaka kuyishyira online.";
+  if (["FAILED", "CANCELLED", "CANCELED"].includes(status)) return "Gusuzuma ikosa no kugena uko rikosorwa.";
+  const next = [
+    "Gusobanukirwa ibisabwa neza.",
+    "Gutegura gahunda yo kubikora.",
+    "Kubaka deliverable nyayo.",
+    "Kugerageza no gukosora ibibazo.",
+    "Kugenzura dosiye n'ibisubizo.",
+    "Kukugezaho dosiye zagenzuwe."
+  ];
+  return next[Math.min(5, Math.max(0, activeStage))] || next[0];
+}
+
+function renderTaskProgressStages(activeStage, isComplete, isFailed) {
+  if (!taskProgressStages) return;
+  for (const item of taskProgressStages.querySelectorAll("[data-stage]")) {
+    const stage = item.dataset.stage;
+    const stageNumber = ({ understand: 1, plan: 2, execute: 3, test: 4, verify: 5, deliver: 6 })[stage] || 0;
+    item.classList.toggle("is-done", isComplete || (!isFailed && stageNumber < activeStage));
+    item.classList.toggle("is-current", !isComplete && !isFailed && stageNumber === activeStage);
+    item.classList.toggle("is-failed", isFailed && stageNumber === activeStage);
+  }
+}
+
+function renderTaskArtifactButtons(task) {
+  if (!taskProgressResult) return;
+  taskProgressResult.replaceChildren();
+  let result = task?.result;
+  if (typeof result === "string") {
+    try { result = JSON.parse(result); } catch { result = null; }
+  }
+  const artifacts = Array.isArray(result?.taskAction?.artifacts)
+    ? result.taskAction.artifacts
+    : [];
+  const verified = artifacts.filter(artifact =>
+    artifact?.verified === true &&
+    typeof artifact.name === "string" &&
+    typeof artifact.downloadUrl === "string" &&
+    artifact.downloadUrl.startsWith(`/api/tasks/${Number(task.id)}/artifacts/`)
+  );
+  if (verified.length) {
+    const title = document.createElement("strong");
+    title.textContent = "Dosiye zagenzuwe zo gukuramo:";
+    taskProgressResult.appendChild(title);
+    for (const artifact of verified) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "task-action-button";
+      button.textContent = "⬇ " + artifact.name;
+      button.addEventListener("click", async () => {
+        button.disabled = true;
+        const oldText = button.textContent;
+        button.textContent = "Irimo gukuramo…";
+        try {
+          const response = await fetch(artifact.downloadUrl, {
+            headers: { Authorization: `Bearer ${authToken}` }
+          });
+          if (!response.ok) throw new Error(`Download yanze (HTTP ${response.status}).`);
+          const objectUrl = URL.createObjectURL(await response.blob());
+          const link = document.createElement("a");
+          link.href = objectUrl;
+          link.download = artifact.name;
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+          button.textContent = "Yakuweho: " + artifact.name;
+        } catch (error) {
+          button.textContent = String(error?.message || "Download yanze").slice(0, 90);
+        } finally {
+          button.disabled = false;
+          if (button.textContent === "Irimo gukuramo…") button.textContent = oldText;
+        }
+      });
+      taskProgressResult.appendChild(button);
+    }
+    taskProgressResult.hidden = false;
+  } else {
+    taskProgressResult.hidden = true;
+  }
+}
+
+function renderTaskProgress(task) {
+  if (!taskProgressPanel || !task) return;
+  const status = String(task.status || "UNKNOWN").toUpperCase();
+  const progress = status === "COMPLETED"
+    ? 100
+    : Math.max(0, Math.min(100, Number(task.progress) || 0));
+  const active = taskStatusIsActive(task);
+  const failed = ["FAILED", "CANCELLED", "CANCELED"].includes(status);
+  const completed = status === "COMPLETED";
+  const message = String(task.progress_message || task.error ||
+    (status === "PLANNED" ? "Task iri gutegereza gutangira." : "Nkwasibwe iri gukora intambwe ikurikira."));
+  taskProgressPanel.hidden = false;
+  if (taskProgressTitle) taskProgressTitle.textContent = `Task #${task.id}: ${String(task.task || "Igikorwa").slice(0, 110)}`;
+  if (taskProgressSubtitle) {
+    taskProgressSubtitle.textContent = completed
+      ? "Turangije. Nkwasibwe yagenzuye uko task yarangiye."
+      : failed
+        ? "Task yahagaze. Reba ubutumwa bw'ikibazo hano hepfo."
+        : `Nkwasibwe iri gukora — ${taskStatusLabel(status)}…`;
+  }
+  if (taskProgressStatus) {
+    taskProgressStatus.textContent = taskStatusLabel(status);
+    taskProgressStatus.dataset.status = status;
+  }
+  if (taskProgressFill) taskProgressFill.style.width = `${progress}%`;
+  if (taskProgressTrack) taskProgressTrack.setAttribute("aria-valuenow", String(progress));
+  if (taskProgressPercent) taskProgressPercent.textContent = `${progress}%`;
+  if (taskProgressCurrent) taskProgressCurrent.textContent = message;
+  const activeStage = taskStageIndex(task, progress);
+  if (taskProgressNext) taskProgressNext.innerHTML = "<strong>Ibikurikiraho:</strong> " + nextTaskStepLabel(activeStage, status);
+  renderTaskProgressStages(activeStage, completed, failed);
+  renderTaskArtifactButtons(task);
+  if (taskProgressUpdated) taskProgressUpdated.textContent = `Iheruka kugenzurwa: ${new Date().toLocaleTimeString()}`;
+
+  const promptKey = `${TASK_PROGRESS_PROMPT_KEY}_${task.id}`;
+  const promptAlreadyHandled = (() => {
+    try { return localStorage.getItem(promptKey) === "handled"; } catch { return false; }
+  })();
+  const shouldAskToPublish = completed && taskIsDeliverable(task) && !promptAlreadyHandled &&
+    taskMetadata(task).source !== "task_progress_deploy_confirmation";
+  if (taskPublishPrompt) taskPublishPrompt.hidden = !shouldAskToPublish;
+  if (taskPublishYes) {
+    taskPublishYes.dataset.taskId = String(task.id);
+    taskPublishYes.disabled = !shouldAskToPublish;
+  }
+  if (taskPublishNo) taskPublishNo.dataset.taskId = String(task.id);
+}
+
+async function refreshTaskProgressPanel() {
+  if (!taskProgressPanel || taskProgressBusy || !authToken) return;
+  taskProgressBusy = true;
+  try {
+    const data = await apiRequest(API_ENDPOINTS.tasks + "?limit=50", {
+      method: "GET",
+      timeoutMs: 15000
+    });
+    if (!data?.success || !Array.isArray(data.tasks)) return;
+    const tasks = data.tasks.slice().sort((a, b) =>
+      (Date.parse(b?.created_at || "") || Number(b?.id) || 0) -
+      (Date.parse(a?.created_at || "") || Number(a?.id) || 0)
+    );
+    const latestActive = tasks.find(taskStatusIsActive);
+    const latest = latestActive || tasks[0];
+    if (latest) renderTaskProgress(latest);
+    else taskProgressPanel.hidden = true;
+  } catch (error) {
+    console.warn("[IRHCF TASK PROGRESS] Refresh failed:", error);
+    if (taskProgressPanel && !taskProgressPanel.hidden && taskProgressSubtitle) {
+      taskProgressSubtitle.textContent = "Ntibyashobotse kuvugurura status; kongera kugerageza…";
+    }
+  } finally {
+    taskProgressBusy = false;
+  }
+}
+
+async function requestTaskDeployment(taskId) {
+  if (!authToken || !Number.isSafeInteger(Number(taskId))) return;
+  if (taskPublishYes) {
+    taskPublishYes.disabled = true;
+    taskPublishYes.textContent = "Tegura deployment…";
+  }
+  try {
+    const queued = await apiRequest(API_ENDPOINTS.tasks, {
+      method: "POST",
+      body: JSON.stringify({
+        task: [
+          "The user explicitly approved publishing the completed deliverable online.",
+          "Inspect the completed task and its verified artifacts, then deploy using only an already configured, authorized hosting target in this repository/project.",
+          "Do not buy a domain, create paid resources, expose secrets, or change unrelated production systems.",
+          "If no authorized deployment target or credentials are configured, do not pretend deployment succeeded; report exactly what is missing and provide the safest next step.",
+          `Approved completed task ID: ${Number(taskId)}.`
+        ].join("\\n\\n"),
+        sessionId: ensureSessionId(),
+        metadata: {
+          source: "task_progress_deploy_confirmation",
+          userExplicitlyApproved: true,
+          approvedTaskId: Number(taskId),
+          deliverableRequired: false
+        }
+      }),
+      timeoutMs: 30000
+    });
+    if (!queued?.success || !queued.task) throw new Error(queued?.error || "Deployment task ntiyashyizwe ku murongo.");
+    try { localStorage.setItem(`${TASK_PROGRESS_PROMPT_KEY}_${taskId}`, "handled"); } catch {}
+    if (taskPublishPrompt) taskPublishPrompt.hidden = true;
+    if (taskProgressSubtitle) taskProgressSubtitle.textContent = `Wemeje deployment. Deployment task #${queued.task.id} yatangiye; reba status yayo hano.`;
+    if (taskProgressStatus) taskProgressStatus.textContent = "Deployment yemejwe";
+    showToast("Wemeje ko tuyishyira online. Nkwasibwe iri kugenzura deployment target iboneka.", "normal");
+    void refreshTaskProgressPanel();
+  } catch (error) {
+    if (taskProgressSubtitle) taskProgressSubtitle.textContent = String(error?.message || "Deployment ntiyatangijwe.");
+    showToast(String(error?.message || "Deployment ntiyatangijwe."), "error");
+  } finally {
+    if (taskPublishYes) {
+      taskPublishYes.disabled = false;
+      taskPublishYes.textContent = "Yego, shyira online";
+    }
+  }
+}
+
+if (taskPublishYes) {
+  taskPublishYes.addEventListener("click", () => {
+    void requestTaskDeployment(Number(taskPublishYes.dataset.taskId));
+  });
+}
+if (taskPublishNo) {
+  taskPublishNo.addEventListener("click", () => {
+    const id = taskPublishNo.dataset.taskId;
+    try { localStorage.setItem(`${TASK_PROGRESS_PROMPT_KEY}_${id}`, "handled"); } catch {}
+    if (taskPublishPrompt) taskPublishPrompt.hidden = true;
+    if (taskProgressSubtitle) taskProgressSubtitle.textContent = "Task irabitswe hano. Nta kintu cyashyizwe online.";
+  });
+}
+if (taskProgressOpenManager) {
+  taskProgressOpenManager.addEventListener("click", () => openTaskManager());
+}
+if (taskProgressPanel) {
+  void refreshTaskProgressPanel();
+  taskProgressTimer = window.setInterval(() => void refreshTaskProgressPanel(), 5000);
+  window.addEventListener("online", () => void refreshTaskProgressPanel());
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) void refreshTaskProgressPanel();
+  });
 }
 
 function openTaskManager() {
