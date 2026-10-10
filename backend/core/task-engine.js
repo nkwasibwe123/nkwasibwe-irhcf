@@ -20,6 +20,7 @@
 
 const crypto = require("crypto");
 const express = require("express");
+const { buildTaskArtifact } = require("./task-artifacts");
 
 const TASK_STATES = Object.freeze({
   PLANNED: "PLANNED",
@@ -94,7 +95,7 @@ function isUsableTaskResult(result) {
   if (result.agent?.responseQuality?.verified === false) return false;
 
   const contentCandidates = [
-    result.response?.content,
+    typeof result.response === "string" ? result.response : result.response?.content,
     result.answer,
     result.output,
     result.content,
@@ -1145,6 +1146,34 @@ function createTaskRouter({
         code: "TASK_LIST_FAILED"
       });
     }
+  });
+
+  router.get("/:id/artifacts/:filename", authenticateToken, async (req, res) => {
+    const taskId = Number(req.params.id);
+    if (!Number.isInteger(taskId) || taskId <= 0) {
+      return res.status(400).json({ success: false, code: "TASK_ID_INVALID", error: "Invalid task id." });
+    }
+    const task = await engine.getTask(taskId, req.user.id);
+    if (!task) {
+      return res.status(404).json({ success: false, code: "TASK_NOT_FOUND", error: "Task not found." });
+    }
+    let result;
+    try {
+      result = typeof task.result === "string" ? JSON.parse(task.result) : task.result;
+    } catch {
+      result = null;
+    }
+    const filename = String(req.params.filename || "");
+    const artifact = Array.isArray(result?.taskAction?.artifacts)
+      ? result.taskAction.artifacts.find(item => item?.name === filename && item?.verified === true && typeof item?.content === "string")
+      : null;
+    if (!artifact) {
+      return res.status(404).json({ success: false, code: "TASK_ARTIFACT_NOT_FOUND", error: "Verified artifact not found." });
+    }
+    res.setHeader("Content-Type", artifact.mimeType || "application/octet-stream");
+    res.setHeader("Content-Disposition", 'attachment; filename="' + artifact.name.replace(/[^a-zA-Z0-9._-]/g, "_") + '"');
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    return res.status(200).send(artifact.content);
   });
 
   router.get("/:id", authenticateToken, async (req, res) => {
