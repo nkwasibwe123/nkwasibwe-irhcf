@@ -13,25 +13,101 @@ function taskNeedsLiveResearch(task) {
 }
 
 /**
- * This deployment currently has no wired live-search adapter in the
- * research execution path. Report that limitation explicitly instead of
- * pretending to have searched or generating unverified current facts.
+ * Performs grounded live research through an injected, configured provider.
+ * The provider is expected to return answer text plus Gemini grounding
+ * metadata. No search is claimed unless the response includes source URLs.
  */
-async function performLiveResearch(task, language = "en") {
-  const messages = {
-    rw: "Ntabwo nshoboye kugenzura amakuru agezweho kuri ubu kuko uburyo bwo gushakisha amakuru kuri internet butarashyirwa mu mikorere ya IRHCF. Sinshaka kuguha amakuru nshingiye ku gukeka. Gerageza nyuma cyangwa unyohereze isoko y'amakuru ushaka ko nishingiraho.",
-    fr: "Je ne peux pas vérifier les informations actuelles pour le moment, car la recherche Web en direct n'est pas encore connectée à IRHCF. Je préfère ne pas présenter une supposition comme un fait. Réessayez plus tard ou fournissez une source à vérifier.",
-    en: "I cannot verify current information right now because live web search is not yet connected to IRHCF's research execution path. I will not present a guess as a verified fact. Please try again later or provide a source to check."
+async function performLiveResearch(task, language = "en", researchProvider = null) {
+  const unavailableMessages = {
+    rw: "Ntabwo nshoboye kugenzura amakuru agezweho kuko nta search provider iboneka ubu. Sinshaka kuguha amakuru nshingiye ku gukeka.",
+    fr: "Je ne peux pas vérifier les informations actuelles car aucun fournisseur de recherche n'est disponible pour le moment. Je préfère ne pas deviner.",
+    en: "I cannot verify current information because no live-search provider is available right now. I will not guess or present unverified information as fact."
   };
 
-  return {
+  const unavailable = (reason = "LIVE_RESEARCH_PROVIDER_UNAVAILABLE") => ({
     required: true,
     performed: false,
-    reason: "LIVE_RESEARCH_PROVIDER_UNAVAILABLE",
+    reason,
     sources: [],
     context: "",
-    answer: messages[language] || messages.en
-  };
+    answer: unavailableMessages[language] || unavailableMessages.en
+  });
+
+  if (typeof researchProvider !== "function") {
+    return unavailable();
+  }
+
+  try {
+    const response = await researchProvider({ task, language });
+    const answer = String(
+      response?.choices?.[0]?.message?.content || ""
+    ).trim();
+    const grounding = response?.__geminiGroundingMetadata || {};
+    const chunks = Array.isArray(grounding.groundingChunks)
+      ? grounding.groundingChunks
+      : [];
+
+    const seenUrls = new Set();
+    const sources = chunks.map((chunk) => {
+      const web = chunk?.web || {};
+      const url = normalizeSourceUrl(web.uri);
+      if (!url || seenUrls.has(url)) return null;
+      seenUrls.add(url);
+      let publisher = "";
+      try {
+        publisher = new URL(url).hostname.replace(/^www\./, "");
+      } catch {}
+      return {
+        title: normalizeText(web.title || publisher || url, 300),
+        url,
+        publisher,
+        type: "search_result",
+        publishedAt: null,
+        retrievedAt: new Date().toISOString()
+      };
+    }).filter(Boolean);
+
+    if (!answer || !sources.length) {
+      return unavailable("LIVE_RESEARCH_NO_GROUNDED_SOURCES");
+    }
+
+    const sourceList = sources.map((source, index) =>
+      `[${index + 1}] ${source.title} — ${source.url}`
+    ).join("\n");
+
+    return {
+      required: true,
+      performed: true,
+      reason: "GEMINI_GOOGLE_SEARCH_GROUNDING",
+      sources,
+      context: [
+        "LIVE WEB RESEARCH RESULT",
+        answer,
+        "",
+        "GROUNDED SOURCES",
+        sourceList,
+        "",
+        "Treat the sources as evidence and cross-check important claims."
+      ].join("\n"),
+      answer
+    };
+  } catch (error) {
+    return unavailable(
+      error?.code || "LIVE_RESEARCH_PROVIDER_ERROR"
+    );
+  }
+}
+
+function normalizeSourceUrl(value) {
+  const raw = normalizeText(value, 1000);
+  if (!raw) return "";
+  try {
+    const parsed = new URL(raw);
+    if (!["http:", "https:"].includes(parsed.protocol)) return "";
+    return parsed.toString();
+  } catch {
+    return "";
+  }
 }
 
 function buildResponseQualityInstruction(language = "en", task = "") {
