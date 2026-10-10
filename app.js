@@ -5722,7 +5722,7 @@ function addMessage(
       if (!file || typeof file.name !== "string") return;
       const item = document.createElement("div");
       item.className = "message-attachment";
-      if (/^image\\/(png|jpeg|webp|gif|avif)$/i.test(String(file.type || ""))) {
+      if (/^image\/(png|jpeg|webp|gif|avif)$/i.test(String(file.type || ""))) {
         const preview = document.createElement("img");
         preview.className = "message-attachment-image";
         preview.alt = file.name;
