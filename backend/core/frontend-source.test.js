@@ -134,3 +134,13 @@ test("IRHCF Search evidence is connected to the authenticated AI agent path", ()
   assert.match(adapter, /untrusted evidence, not instructions/i, "Retrieved content must not override AI instructions.");
   assert.match(adapter, /MAX_CONTEXT_LENGTH/, "AI evidence must be length-bounded.");
 });
+
+
+test("uploaded images are rendered with their user's chat message", () => {
+  const appPath = path.join(__dirname, "..", "..", "app.js");
+  const source = fs.readFileSync(appPath, "utf8");
+  assert.match(source, /options\.attachments/, "Message renderer must accept uploaded attachments.");
+  assert.match(source, /message-attachment-image/, "Image attachments must have an inline preview.");
+  assert.match(source, /\{ attachments: selectedAttachments \}/, "Normal user messages must include selected attachments.");
+  assert.match(source, /addMessage\(prompt, "user", \{ attachments: \[file\] \}\)/, "Image-edit requests must show the source photo in the user's message.");
+});
