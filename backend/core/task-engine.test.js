@@ -95,7 +95,7 @@ test("retry is not reported as a successful repair without a confirmed fix", asy
 
   assert.equal(updates.length, 2);
   assert.match(updates[1].params[3], /not yet confirmed fixed/i);
-  assert.equal(JSON.parse(updates[1].params[2]).repair.repaired, false);
+  assert.equal(updates[1].params[2].repair.repaired, false);
 });
 
 test("autonomous task verification rejects empty, failed, and quality-invalid output", () => {
