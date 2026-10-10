@@ -644,15 +644,28 @@
       "
     >
 
-    <!-- VOICE -->
+    <!-- VOICE NOTE: record, transcribe, then review before sending -->
     <button
       id="voiceButton"
       class="composer-button"
       type="button"
-      aria-label="Voice"
-      title="Voice"
+      aria-label="Record voice note"
+      title="Record voice note"
+      aria-pressed="false"
     >
-      🎤
+      🎙️
+    </button>
+
+    <!-- LIVE VOICE: continuous speech-to-speech conversation -->
+    <button
+      id="liveVoiceButton"
+      class="composer-button"
+      type="button"
+      aria-label="Start live voice conversation"
+      title="Start live voice conversation"
+      aria-pressed="false"
+    >
+      🔊
     </button>
 
     <!-- MESSAGE -->
