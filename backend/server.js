@@ -217,7 +217,8 @@ const LIMITS = Object.freeze({
 // APPLICATION
 // ============================================================
 
-const { registerSearchRoutes } = require("./routes/search-routes");
+const { registerSearchRoutes, searchIRHCF } = require("./routes/search-routes");
+const { buildAIResearchContext } = require("./core/search-ai-context");
 
 const app = express();
 
@@ -13389,6 +13390,37 @@ if (researchRequired) {
           : 0
     }
   );
+}
+
+// ----------------------------------------------------------
+// IRHCF SEARCH -> AI CONTEXT
+// ----------------------------------------------------------
+// Add bounded, source-labelled results from IRHCF Search as
+// supplementary evidence. Retrieved page text is untrusted;
+// it must never override system instructions.
+// ----------------------------------------------------------
+
+let irhcfSearchContext = null;
+if (researchRequired) {
+  try {
+    const searchResult = await searchIRHCF(validatedTask, {
+      limit: 5,
+      web: true,
+      language: userLanguage
+    });
+    irhcfSearchContext = buildAIResearchContext(searchResult);
+  } catch (error) {
+    console.warn("[IRHCF SEARCH] Supplementary research failed:", {
+      code: String(error?.code || "IRHCF_SEARCH_FAILED").slice(0, 100)
+    });
+  }
+}
+
+if (irhcfSearchContext && irhcfSearchContext.context) {
+  agentMessages.push({
+    role: "system",
+    content: irhcfSearchContext.context
+  });
 }
 
 // ----------------------------------------------------------
