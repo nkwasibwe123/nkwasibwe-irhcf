@@ -44,3 +44,27 @@ test("voice note and live voice controls use the existing authenticated IRHCF AP
   assert.match(server, /app\.post\([\s\S]{0,80}["']\/api\/voice\/realtime["'][\s\S]{0,100}authenticateToken/, "Realtime voice session creation must be authenticated.");
   assert.match(server, /https:\/\/api\.openai\.com\/v1\/realtime\/calls/, "Realtime calls must be negotiated server-side.");
 });
+
+
+test("chat attachments are included as bounded text context and unsupported binary files are rejected", () => {
+  const root = path.join(__dirname, "..", "..");
+  const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
+
+  assert.match(app, /const selectedAttachments\s*=\s*\[\.\.\.composerState\.attachments\]/);
+  assert.match(app, /if \(!text && selectedAttachments\.length === 0\)/,
+    "Attachment-only messages should be allowed while empty submissions are rejected.");
+  assert.match(app, /const textAttachmentExtensions = new Set\(/,
+    "Supported text/code extensions must be explicit.");
+  assert.match(app, /unsupportedAttachments\.length/,
+    "Unsupported binary attachments must be rejected, not silently ignored.");
+  assert.match(app, /await file\.text\(\)/,
+    "Attachment content must be read before sending the chat request.");
+  assert.match(app, /file\.size > 1024 \* 1024/,
+    "Individual text attachments must have a size limit.");
+  assert.match(app, /totalCharacters > 80000/,
+    "Combined attachment content must have a total size limit.");
+  assert.match(app, /message:\s*taskText/,
+    "The backend chat payload must contain the actual attachment content.");
+  assert.match(app, /ATTACHED FILE:/,
+    "Attachment boundaries and filenames must be preserved in the AI context.");
+});
