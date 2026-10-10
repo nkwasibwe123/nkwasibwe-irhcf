@@ -20,7 +20,7 @@
 
   <link
     rel="stylesheet"
-    href="style.css?v=2.0.9"
+    href="style.css?v=2.0.10"
   >
 
 </head>
@@ -673,6 +673,46 @@
              MESSAGES
              ============================================ -->
 
+        <!-- Persistent task progress lives outside the chat transcript. -->
+        <section id="taskProgressPanel" class="task-progress-panel" aria-labelledby="taskProgressTitle" aria-live="polite" hidden>
+          <div class="task-progress-heading">
+            <div class="task-agent-avatar" aria-hidden="true">N<span class="task-agent-pulse"></span></div>
+            <div class="task-progress-heading-copy">
+              <h3 id="taskProgressTitle">Nkwasibwe task progress</h3>
+              <p id="taskProgressSubtitle">Nkwasibwe iri gutegura intambwe ikurikira…</p>
+            </div>
+            <span id="taskProgressStatus" class="task-status">PLANNED</span>
+          </div>
+          <div class="task-progress-overview">
+            <div class="task-progress-track" role="progressbar" aria-label="Task progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="taskProgressTrack">
+              <div id="taskProgressFill" class="task-progress-fill"></div>
+            </div>
+            <strong id="taskProgressPercent">0%</strong>
+          </div>
+          <p id="taskProgressCurrent" class="task-progress-current">Task iri gutegurwa…</p>
+          <ol id="taskProgressStages" class="task-progress-stages">
+            <li data-stage="understand">Gusobanukirwa ibyo wasabye</li>
+            <li data-stage="plan">Gutegura igikorwa</li>
+            <li data-stage="execute">Gukora deliverable nyayo</li>
+            <li data-stage="test">Kugerageza no gukosora</li>
+            <li data-stage="verify">Kugenzura ibisubizo</li>
+            <li data-stage="deliver">Kuguha dosiye n’ibisubizo</li>
+          </ol>
+          <div id="taskProgressResult" class="task-progress-result" hidden></div>
+          <div id="taskPublishPrompt" class="task-publish-prompt" hidden>
+            <strong>Igikorwa kirarangiye. Ushaka ko tuyishyira online?</strong>
+            <p>Nta domain izagurwa. Gushyira online bizatangira ari uko ubyemeje hano.</p>
+            <div class="task-progress-actions">
+              <button id="taskPublishYes" type="button" class="task-action-button">Yego, shyira online</button>
+              <button id="taskPublishNo" type="button" class="task-action-button">Oya, reka ibe hano</button>
+            </div>
+          </div>
+          <div class="task-progress-footer">
+            <span id="taskProgressUpdated">Igenzura rishya buri masegonda 5</span>
+            <button id="taskProgressOpenManager" type="button" class="task-action-button">Reba tasks zose</button>
+          </div>
+        </section>
+
         <section
           id="messages"
           class="messages"
@@ -843,7 +883,7 @@ STATUS BAR
        ================================================ -->
 
   <script
-    src="app.js?v=2.0.9"
+    src="app.js?v=2.0.10"
   ></script>
   <script
     src="voice-client.js"
