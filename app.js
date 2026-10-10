@@ -6373,15 +6373,69 @@ async function sendMessage() {
   const text =
     userInput.value.trim();
 
+  const selectedAttachments =
+    [...composerState.attachments];
 
-  if (!text) {
-
+  if (!text && selectedAttachments.length === 0) {
     userInput.focus();
-
     return;
-
   }
 
+  // The chat API currently accepts text tasks, not binary uploads.
+  // Convert supported text-based files into bounded, explicit context;
+  // refuse other file types instead of silently dropping them.
+  const textAttachmentExtensions = new Set([
+    "txt", "md", "markdown", "csv", "json", "xml", "yaml", "yml",
+    "html", "htm", "css", "js", "jsx", "ts", "tsx", "py", "java",
+    "c", "h", "cpp", "hpp", "cs", "go", "rs", "php", "rb", "sql",
+    "sh", "toml", "ini", "log"
+  ]);
+  const unsupportedAttachments = selectedAttachments.filter(file => {
+    const extension = String(file.name || "").split(".").pop().toLowerCase();
+    return !textAttachmentExtensions.has(extension) &&
+      !["text/plain", "text/markdown", "text/csv", "application/json",
+        "application/xml", "text/xml", "text/html", "text/css",
+        "text/javascript"].includes(String(file.type || "").toLowerCase());
+  });
+
+  if (unsupportedAttachments.length) {
+    showToast(
+      "Chat ishyigikira dosiye z'inyandiko/code (TXT, MD, CSV, JSON, XML, HTML, CSS, JS, PY, SQL n'izindi text). Amafoto, PDF, audio na video bisaba workflow yabigenewe.",
+      "warning"
+    );
+    return;
+  }
+
+  let taskText = text;
+  if (selectedAttachments.length) {
+    try {
+      let totalCharacters = 0;
+      const attachmentSections = [];
+      for (const file of selectedAttachments) {
+        if (file.size > 1024 * 1024) {
+          throw new Error(`Dosiye ${file.name} irenze 1 MB kuri text attachment.`);
+        }
+        const fileText = await file.text();
+        totalCharacters += fileText.length;
+        if (totalCharacters > 80000) {
+          throw new Error("Inyandiko zose hamwe zirengeje inyuguti 80,000.");
+        }
+        attachmentSections.push(
+          `--- ATTACHED FILE: ${file.name} ---\n${fileText}\n--- END FILE ---`
+        );
+      }
+      taskText = [
+        text || "Soma kandi usesengure dosiye zometseho.",
+        ...attachmentSections
+      ].join("\n\n");
+    } catch (attachmentError) {
+      showToast(
+        attachmentError?.message || "Ntibyashobotse gusoma dosiye.",
+        "error"
+      );
+      return;
+    }
+  }
 
   // ----------------------------------------------------------
   // START REQUEST
@@ -6470,7 +6524,7 @@ async function sendMessage() {
           body:
             JSON.stringify({
               message:
-                text,
+                taskText,
 
               sessionId:
                 activeSessionId,
