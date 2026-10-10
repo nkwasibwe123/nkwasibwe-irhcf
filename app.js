@@ -182,6 +182,11 @@ const attachButton =
     "attachButton"
   );
 
+const cameraButton =
+  document.getElementById(
+    "cameraButton"
+  );
+
 const dashboardButton =
   document.getElementById(
     "dashboardButton"
@@ -501,7 +506,7 @@ const STORAGE_KEYS = Object.freeze({
 // ============================================================
 
 const APP_VERSION =
-  "2.0.2";
+  "2.0.3";
 
 
 
@@ -8417,11 +8422,11 @@ if (
   attachButton.addEventListener(
     "click",
     () => {
-
       fileInput.dataset.transcribeAudio = "false";
       fileInput.dataset.videoReference = "false";
+      fileInput.removeAttribute("capture");
+      fileInput.accept = "image/*,video/*,audio/*,application/pdf,text/*,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
       fileInput.click();
-
     }
   );
 
@@ -8430,6 +8435,16 @@ if (
     handleFileSelection
   );
 
+}
+
+if (cameraButton && fileInput) {
+  cameraButton.addEventListener("click", () => {
+    fileInput.dataset.transcribeAudio = "false";
+    fileInput.dataset.videoReference = "false";
+    fileInput.accept = "image/*";
+    fileInput.setAttribute("capture", "environment");
+    fileInput.click();
+  });
 }
 
 
