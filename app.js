@@ -6104,7 +6104,7 @@ function renderAttachmentPreview() {
           "attachment-item";
 
         // Show a real thumbnail for selected photos instead of only a filename.
-        if (/^image\\/(png|jpeg|webp|gif|avif)$/i.test(String(file.type || ""))) {
+        if (/^image\/(png|jpeg|webp|gif|avif)$/i.test(String(file.type || ""))) {
           const thumbnail = document.createElement("img");
           thumbnail.className = "attachment-thumbnail";
           thumbnail.alt = "Photo preview: " + file.name;
