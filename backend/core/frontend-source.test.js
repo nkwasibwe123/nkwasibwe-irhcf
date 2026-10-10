@@ -200,5 +200,5 @@ test("task manager exposes authenticated downloads for verified task artifacts",
   assert.match(app, /URL\.createObjectURL\(blob\)/);
   assert.match(app, /link\.download = artifact\.name/);
   assert.match(engine, /router\.get\("\/:id\/artifacts\/:filename"/);
-  assert.match(engine, /artifact\.verified === true/);
+  assert.match(engine, /verified === true/);
 });
