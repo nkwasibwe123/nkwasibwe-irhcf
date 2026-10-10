@@ -13,8 +13,7 @@
   if (!noteButton || !input) return;
 
   const API_BASE = (() => {
-    const config = window.APP_CONFIG || window.IRHCF_CONFIG || {};
-    return String(config.apiBaseUrl || "").replace(/\/$/, "");
+    return String(window.IRHCF_API_BASE_URL || "").replace(/\/$/, "");
   })();
   const getToken = () => localStorage.getItem("nkwasibwe_auth_token") || "";
   const authHeaders = () => {
