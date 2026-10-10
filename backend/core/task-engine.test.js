@@ -123,12 +123,12 @@ test("file-producing task creates a syntax-verified downloadable artifact", () =
   const action = buildTaskArtifact({
     task,
     taskId: 42,
-    result: { success: true, response: "```javascript\\nconsole.log('hello');\\n```" }
+    result: { success: true, response: "```javascript\nconsole.log('hello');\n```" }
   });
   assert.equal(action.required, true);
   assert.equal(action.artifacts.length, 1);
   assert.equal(action.artifacts[0].verified, true);
-  assert.match(action.artifacts[0].downloadUrl, /\\/api\\/tasks\\/42\\/artifacts\\/hello.js/);
+  assert.ok(action.artifacts[0].downloadUrl.endsWith("/api/tasks/42/artifacts/hello.js"));
   assert.equal(isUsableTaskResult({ success: true, response: "ok", taskAction: action }), true);
 });
 
@@ -137,7 +137,7 @@ test("file task cannot complete if generated JavaScript fails syntax verificatio
   const action = buildTaskArtifact({
     task,
     taskId: 7,
-    result: { success: true, response: "```javascript\\nconst = ;\\n```" }
+    result: { success: true, response: "```javascript\nconst = ;\n```" }
   });
   assert.equal(action.artifacts.length, 0);
   assert.match(action.error, /syntax verification/i);
