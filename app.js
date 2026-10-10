@@ -51,6 +51,44 @@ const APP_CONFIG = Object.freeze({
 });
 
 
+// Language preference: follow the device locale by default, unless the user chooses a language.
+const IRHCF_LANGUAGE_STORAGE_KEY = "nkwasibwe_language_preference";
+const IRHCF_LANGUAGE_NAMES = Object.freeze({
+  rw: "Kinyarwanda", en: "English", fr: "French", sw: "Kiswahili",
+  ar: "Arabic", es: "Spanish", pt: "Portuguese", de: "German",
+  zh: "Chinese", hi: "Hindi", ja: "Japanese", ko: "Korean",
+  it: "Italian", ru: "Russian", tr: "Turkish", nl: "Dutch", pl: "Polish"
+});
+function getDeviceLanguage() {
+  const raw = String(navigator.languages?.[0] || navigator.language || "en").toLowerCase();
+  const base = raw.split("-")[0];
+  return IRHCF_LANGUAGE_NAMES[base] ? base : "en";
+}
+function getPreferredResponseLanguage() {
+  try {
+    const saved = localStorage.getItem(IRHCF_LANGUAGE_STORAGE_KEY);
+    if (saved && saved !== "auto" && IRHCF_LANGUAGE_NAMES[saved]) return saved;
+  } catch (_) {}
+  return getDeviceLanguage();
+}
+function initializeLanguageControl() {
+  const select = document.getElementById("languageSelect");
+  if (!select) return;
+  let saved = "auto";
+  try { saved = localStorage.getItem(IRHCF_LANGUAGE_STORAGE_KEY) || "auto"; } catch (_) {}
+  select.value = saved === "auto" || IRHCF_LANGUAGE_NAMES[saved] ? saved : "auto";
+  select.addEventListener("change", () => {
+    try {
+      if (select.value === "auto") localStorage.removeItem(IRHCF_LANGUAGE_STORAGE_KEY);
+      else localStorage.setItem(IRHCF_LANGUAGE_STORAGE_KEY, select.value);
+    } catch (_) {}
+    select.title = select.value === "auto"
+      ? "Automatically follow phone language"
+      : "Response language: " + (IRHCF_LANGUAGE_NAMES[select.value] || select.value);
+  });
+}
+initializeLanguageControl();
+
 const API_BASE_URL =
   APP_CONFIG.apiBaseUrl;
 
@@ -6686,7 +6724,13 @@ async function sendMessage() {
                 activeSessionId,
 
               session_id:
-                activeSessionId
+                activeSessionId,
+
+              responseLanguage:
+                getPreferredResponseLanguage(),
+
+              languagePreference:
+                (document.getElementById("languageSelect")?.value || "auto")
             })
         }
       );
