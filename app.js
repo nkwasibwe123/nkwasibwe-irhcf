@@ -8133,7 +8133,7 @@ async function createLongRunningTask(event) {
   }
 }
 
-async function initializeVideoEditor() {
+function initializeVideoEditor() {
   const panel = document.getElementById("videoEditorPanel");
   const form = document.getElementById("videoEditorForm");
   const fileInput = document.getElementById("videoEditorFile");
@@ -8223,7 +8223,7 @@ async function initializeVideoEditor() {
   });
 }
 
-function dashboardAction(action) {
+async function dashboardAction(action) {
 
   const actions = {
     file: {
