@@ -146,6 +146,9 @@ const API_ENDPOINTS = Object.freeze({
   videoGeneration:
     "/api/media/video",
 
+  videoEditing:
+    "/api/media/video/edit",
+
   musicGeneration:
     "/api/media/music",
 
