@@ -501,7 +501,7 @@ const STORAGE_KEYS = Object.freeze({
 // ============================================================
 
 const APP_VERSION =
-  "2.0.1";
+  "2.0.2";
 
 
 
@@ -6102,6 +6102,25 @@ function renderAttachmentPreview() {
 
         item.className =
           "attachment-item";
+
+        // Show a real thumbnail for selected photos instead of only a filename.
+        if (/^image\\/(png|jpeg|webp|gif|avif)$/i.test(String(file.type || ""))) {
+          const thumbnail = document.createElement("img");
+          thumbnail.className = "attachment-thumbnail";
+          thumbnail.alt = "Photo preview: " + file.name;
+          thumbnail.loading = "lazy";
+          thumbnail.decoding = "async";
+          thumbnail.style.width = "56px";
+          thumbnail.style.height = "56px";
+          thumbnail.style.objectFit = "cover";
+          thumbnail.style.borderRadius = "8px";
+          thumbnail.style.flexShrink = "0";
+          const thumbnailUrl = URL.createObjectURL(file);
+          thumbnail.src = thumbnailUrl;
+          thumbnail.addEventListener("load", () => URL.revokeObjectURL(thumbnailUrl), { once: true });
+          thumbnail.addEventListener("error", () => URL.revokeObjectURL(thumbnailUrl), { once: true });
+          item.appendChild(thumbnail);
+        }
 
         const info =
           document.createElement(
