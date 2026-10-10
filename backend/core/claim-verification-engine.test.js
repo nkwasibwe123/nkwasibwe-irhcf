@@ -26,7 +26,7 @@ test("prompt asks for atomic claims and distinguishes contradiction from missing
 test("validates supported claims only when they reference a supplied source", () => {
   const result = validateClaimAssessments({
     claims: [
-      { claim: "The project started in 2024.", status: "supported", sourceIds: [1], reason: "Direct match." },
+      { claim: "The project started in 2024.", status: "supported", sourceAssessments: [{ sourceId: 1, relationship: "supports", reason: "Excerpt explicitly gives 2024." }], reason: "Direct match." },
       { claim: "It started in 2023.", status: "supported", sourceIds: [], reason: "No source." }
     ]
   }, sources);
@@ -48,6 +48,19 @@ test("distinguishes contradictory claims from claims with insufficient evidence"
   assert.equal(result.counts.contradicted, 1);
   assert.equal(result.claims[0].sourceAssessments[0].relationship, "contradicts");
   assert.equal(result.counts.insufficient_evidence, 1);
+});
+
+test("a source ID without an explicit relationship cannot prove support or contradiction", () => {
+  const result = validateClaimAssessments({
+    claims: [
+      { claim: "Claim with provenance only", status: "supported", sourceIds: [1] },
+      { claim: "Claim with no directional evidence", status: "contradicted", sourceIds: [2] }
+    ]
+  }, sources);
+  assert.equal(result.claims[0].status, "insufficient_evidence");
+  assert.equal(result.claims[1].status, "insufficient_evidence");
+  assert.ok(result.issues.includes("SUPPORTED_WITHOUT_SOURCE_SUPPORT"));
+  assert.ok(result.issues.includes("CONTRADICTED_WITHOUT_SOURCE_CONFLICT"));
 });
 
 test("rejects source IDs not present in supplied evidence and downgrades unsupported judgments", () => {
