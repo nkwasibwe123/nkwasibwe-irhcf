@@ -86,6 +86,26 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function isUsableTaskResult(result) {
+  if (result === null || result === undefined) return false;
+  if (typeof result === "string") return result.trim().length > 0;
+  if (typeof result !== "object" || Array.isArray(result)) return false;
+  if (result.success === false) return false;
+  if (result.agent?.responseQuality?.verified === false) return false;
+
+  const contentCandidates = [
+    result.response?.content,
+    result.answer,
+    result.output,
+    result.content,
+    result.result?.output_text
+  ];
+
+  return contentCandidates.some(
+    value => typeof value === "string" && value.trim().length > 0
+  );
+}
+
 class TaskEngine {
   constructor(options = {}) {
     if (!options.pool) {
@@ -714,8 +734,8 @@ class TaskEngine {
       );
 
       let verification = {
-        verified: true,
-        reason: "No custom verifier configured."
+        verified: false,
+        reason: "No custom verifier is configured; refusing to mark the task complete."
       };
 
       if (this.verifier) {
@@ -1199,5 +1219,6 @@ function createTaskRouter({
 module.exports = {
   TaskEngine,
   TASK_STATES,
-  createTaskRouter
+  createTaskRouter,
+  isUsableTaskResult
 };
