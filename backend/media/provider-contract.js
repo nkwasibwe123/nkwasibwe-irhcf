@@ -58,6 +58,11 @@ function normalizeVideoEditRequest(request = {}) {
     throw mediaError("Unsupported video output format.", "VIDEO_FORMAT_UNSUPPORTED");
   }
 
+  const quality = String(request.quality || "1080p").trim().toLowerCase();
+  if (!["720p", "1080p"].includes(quality)) {
+    throw mediaError("Video quality must be 720p or 1080p.", "VIDEO_QUALITY_UNSUPPORTED");
+  }
+
   const subtitles = request.subtitles == null ? null : String(request.subtitles);
   if (subtitles && subtitles.length > 20000) {
     throw mediaError("Subtitle text exceeds the 20000 character limit.", "VIDEO_SUBTITLES_TOO_LONG");
@@ -70,6 +75,7 @@ function normalizeVideoEditRequest(request = {}) {
     startSeconds,
     endSeconds,
     outputFormat,
+    quality,
     subtitles
   });
 }

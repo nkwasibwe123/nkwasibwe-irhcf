@@ -20,9 +20,9 @@ const VIDEO_FILTERS = Object.freeze({
 });
 
 const OUTPUT_OPTIONS = Object.freeze({
-  mp4: ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-c:a", "aac", "-movflags", "+faststart"],
-  webm: ["-c:v", "libvpx-vp9", "-deadline", "realtime", "-cpu-used", "6", "-c:a", "libopus"],
-  mov: ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-c:a", "aac"]
+  mp4: ["-c:v", "libx264", "-preset", "medium", "-crf", "18", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart"],
+  webm: ["-c:v", "libvpx-vp9", "-deadline", "good", "-cpu-used", "2", "-crf", "30", "-b:v", "0", "-c:a", "libopus", "-b:a", "160k"],
+  mov: ["-c:v", "libx264", "-preset", "medium", "-crf", "18", "-c:a", "aac", "-b:a", "192k"]
 });
 
 function mediaError(message, code) {
@@ -45,6 +45,8 @@ function buildFfmpegArgs(inputPath, outputPath, request) {
   }
 
   const filters = [];
+  const dimensions = normalized.quality === "720p" ? "1280:720" : "1920:1080";
+  filters.push("scale=" + dimensions + ":force_original_aspect_ratio=decrease", "pad=" + dimensions + ":(ow-iw)/2:(oh-ih)/2");
   const presetFilter = VIDEO_FILTERS[normalized.effect];
   if (presetFilter) filters.push(presetFilter);
   if (normalized.effect === "fade-out") {
@@ -89,7 +91,7 @@ function editVideoFile({ inputPath, outputPath, request, spawn = defaultSpawn, t
       if (error) reject(error);
       else if (!fs.existsSync(outputPath) || !fs.statSync(outputPath).size) {
         reject(mediaError("FFmpeg completed without producing an output file.", "VIDEO_OUTPUT_EMPTY"));
-      } else resolve({ outputPath, outputFormat: normalized.outputFormat, effect: normalized.effect });
+      } else resolve({ outputPath, outputFormat: normalized.outputFormat, effect: normalized.effect, quality: normalized.quality });
     };
 
     const timer = setTimeout(() => {
