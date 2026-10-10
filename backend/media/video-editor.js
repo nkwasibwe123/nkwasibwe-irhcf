@@ -3,6 +3,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { spawn: defaultSpawn } = require("node:child_process");
+const bundledFfmpegPath = require("ffmpeg-static");
 const { normalizeVideoEditRequest } = require("./provider-contract");
 
 const VIDEO_FILTERS = Object.freeze({
@@ -98,7 +99,7 @@ function editVideoFile({ inputPath, outputPath, request, spawn = defaultSpawn, t
     }, timeoutMs);
 
     try {
-      child = spawn("ffmpeg", args, { stdio: ["ignore", "ignore", "pipe"] });
+      child = spawn(bundledFfmpegPath || "ffmpeg", args, { stdio: ["ignore", "ignore", "pipe"] });
     } catch (error) {
       finish(mediaError("FFmpeg is not available on this server.", "FFMPEG_UNAVAILABLE"));
       return;
