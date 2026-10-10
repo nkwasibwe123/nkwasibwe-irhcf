@@ -31684,13 +31684,15 @@ const persistentTaskEngine =
         error,
         attempt
       }) => ({
-        repaired: true,
+        // This handler does not edit code or directly fix the root cause.
+        // It only records context for a controlled retry; do not claim a repair.
+        repaired: false,
         strategy: "contextual_reexecution",
         attempt,
         error: String(error || "").slice(0, 2000),
         task: String(task || "").slice(0, 500),
         nextStep:
-          "Re-execute the task with the persisted failure context and run verification again."
+          "Retry the task with persisted failure context, then verify the result. The root cause is not considered repaired unless the retry passes verification."
       }),
 
     verifier:
