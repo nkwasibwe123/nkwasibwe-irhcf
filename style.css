@@ -1709,3 +1709,16 @@ body {
     flex-direction: column;
   }
 }
+
+
+/* Voice controls: clear recording/live-session state on mobile and desktop. */
+.composer-button.recording {
+  border-color: var(--danger);
+  color: var(--danger);
+  box-shadow: 0 0 0 2px rgba(240, 93, 94, 0.18);
+  animation: irhcf-voice-pulse 1.2s ease-in-out infinite;
+}
+@keyframes irhcf-voice-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.65; }
+}
