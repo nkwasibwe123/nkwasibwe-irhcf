@@ -8032,15 +8032,11 @@ if (
 // VOICE BUTTON
 // ============================================================
 
-const browserSpeechRecognitionAvailable = Boolean(
-  window.SpeechRecognition ||
-  window.webkitSpeechRecognition
-);
-
-// Prefer direct speech-to-text when supported. MediaRecorder remains
-// the fallback on browsers without SpeechRecognition, avoiding two
-// microphone handlers running for one click.
-if (voiceButton && !browserSpeechRecognitionAvailable) {
+// Use one consistent voice-note path on every supported browser:
+// MediaRecorder captures the audio, then the authenticated backend
+// transcribes it. Do not skip the handler just because SpeechRecognition
+// exists; this composer does not register a SpeechRecognition instance.
+if (voiceButton) {
   voiceButton.addEventListener(
     "click",
     toggleVoiceRecording
