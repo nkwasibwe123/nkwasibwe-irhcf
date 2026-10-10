@@ -50,6 +50,22 @@ test("distinguishes contradictory claims from claims with insufficient evidence"
   assert.equal(result.counts.insufficient_evidence, 1);
 });
 
+test("conflicting supporting and contradicting sources are explicitly marked unresolved", () => {
+  const result = validateClaimAssessments({
+    claims: [{
+      claim: "The project started in 2024.",
+      status: "supported",
+      sourceAssessments: [
+        { sourceId: 1, relationship: "supports", reason: "Source says 2024." },
+        { sourceId: 2, relationship: "contradicts", reason: "Source says 2025." }
+      ]
+    }]
+  }, sources);
+  assert.equal(result.claims[0].status, "insufficient_evidence");
+  assert.ok(result.issues.includes("CONFLICTING_SOURCE_EVIDENCE"));
+  assert.equal(result.claims[0].sourceAssessments.length, 2);
+});
+
 test("a source ID without an explicit relationship cannot prove support or contradiction", () => {
   const result = validateClaimAssessments({
     claims: [
