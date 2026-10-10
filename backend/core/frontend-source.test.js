@@ -91,8 +91,8 @@ test("attached-photo background editing calls the authenticated real image-edit 
 
   assert.ok(app.includes('"/api/media/image/edit"'));
   const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
-  assert.match(html, /src="app\.js\?v=2\.0\.1"/, "Deploying a new frontend version must bypass stale cached app.js.");
-  assert.match(html, /href="style\.css\?v=2\.0\.1"/, "Deploying a new frontend version must refresh the related stylesheet.");
+  assert.match(html, /src="app\.js\?v=2\.0\.2"/, "Deploying a new frontend version must bypass stale cached app.js.");
+  assert.match(html, /href="style\.css\?v=2\.0\.2"/, "Deploying a new frontend version must refresh the related stylesheet.");
   assert.ok(app.includes("async function editAttachedImage(prompt, file)"));
   assert.ok(app.includes("pendingImageEditPrompt"), "A background-edit request made before choosing a photo must be remembered.");
   assert.match(app, /fileInput\.click\(\)/, "The app must open the photo picker when an edit request has no attached photo.");
@@ -163,4 +163,16 @@ test("chat role styles match the classes emitted by addMessage", () => {
   const source = fs.readFileSync(path.join(__dirname, "..", "..", "style.css"), "utf8");
   assert.match(source, /\.message\.user\s*\{/);
   assert.match(source, /\.message\.ai\s*\{/);
+});
+
+
+test("selected image attachments show thumbnails in the composer and refresh frontend assets", () => {
+  const root = path.join(__dirname, "..", "..");
+  const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
+  const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  assert.match(app, /attachment-thumbnail/);
+  assert.match(app, /Photo preview: /);
+  assert.match(app, /URL\.createObjectURL\(file\)/);
+  assert.match(html, /src="app\.js\?v=2\.0\.2"/);
+  assert.match(html, /href="style\.css\?v=2\.0\.2"/);
 });
