@@ -13821,7 +13821,8 @@ let selfRepairResult = {
 
 if (
   !verification.valid &&
-  AGENT_CONFIG.SELF_REPAIR_ENABLED === true
+  AGENT_CONFIG.SELF_REPAIR_ENABLED === true &&
+  typeof selfRepairAgentResponse === "function"
 ) {
 
   selfRepairResult =
