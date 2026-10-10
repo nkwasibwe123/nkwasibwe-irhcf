@@ -12,7 +12,15 @@
 const PROJECT_TYPES = Object.freeze([
   "software",
   "website",
+  "web_app",
   "mobile_app",
+  "desktop_app",
+  "api_service",
+  "browser_extension",
+  "game",
+  "ai_model",
+  "data_pipeline",
+  "plugin",
   "media",
   "music",
   "video",
@@ -43,15 +51,24 @@ function normalize(value, max = 5000) {
 function inferProjectType(idea) {
   const text = normalize(idea).toLowerCase();
 
-  if (/website|web app|web application|urubuga/.test(text)) return "website";
-  if (/mobile app|android app|ios app|app/.test(text)) return "mobile_app";
+  // Match specific software products before the generic "app/software" rules.
+  if (/browser extension|chrome extension|firefox add-on|extension ya browser/.test(text)) return "browser_extension";
+  if (/desktop app|desktop application|windows app|mac app|linux app/.test(text)) return "desktop_app";
+  if (/mobile app|android app|ios app|flutter app|react native app|app ya telefoni/.test(text)) return "mobile_app";
+  if (/web app|web application|web application|single-page app|web dashboard/.test(text)) return "web_app";
+  if (/website|web site|urubuga|site ya internet/.test(text)) return "website";
+  if (/api service|rest api|graphql api|backend service|microservice/.test(text)) return "api_service";
+  if (/game|video game|umukino/.test(text)) return "game";
+  if (/ai model|machine learning model|train a model|model ya ai/.test(text)) return "ai_model";
+  if (/data pipeline|etl pipeline|data processing/.test(text)) return "data_pipeline";
+  if (/plugin|extension module|add-on/.test(text)) return "plugin";
   if (/song|music|indirimbo/.test(text)) return "music";
   if (/video|film|movie|cinema/.test(text)) return "video";
-  if (/image|photo|poster|logo/.test(text)) return "media";
+  if (/image|photo|poster|logo|ifoto/.test(text)) return "media";
   if (/research|study|sesengura|shakisha/.test(text)) return "research";
   if (/business|company|startup|ubucuruzi/.test(text)) return "business";
-  if (/schedule|daily|weekly|automatic|automation/.test(text)) return "automation";
-  if (/software|program|system|platform|api|database|code/.test(text)) return "software";
+  if (/schedule|daily|weekly|automatic|automation|ikora yonyine/.test(text)) return "automation";
+  if (/software|program|system|platform|api|database|code|application|app|porogaramu/.test(text)) return "software";
   return "general";
 }
 
