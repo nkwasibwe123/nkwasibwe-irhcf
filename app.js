@@ -54,6 +54,9 @@ const APP_CONFIG = Object.freeze({
 const API_BASE_URL =
   APP_CONFIG.apiBaseUrl;
 
+// Share the canonical API base with modular clients such as voice-client.js.
+window.IRHCF_API_BASE_URL = API_BASE_URL;
+
 
 
 // ============================================================
