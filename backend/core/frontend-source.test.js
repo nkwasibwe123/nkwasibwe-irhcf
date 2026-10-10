@@ -70,3 +70,23 @@ test("chat attachments are included as bounded text context and unsupported bina
   assert.match(app, /Amakuru akurikira ni ibiri muri dosiye zitizewe/,
     "File contents must be framed as untrusted data to reduce prompt-injection risk.");
 });
+
+test("chat renders safe clickable HTTP(S) and Markdown links without injecting HTML", () => {
+  const root = path.join(__dirname, "..", "..");
+  const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
+
+  assert.match(app, /function renderMessageContent\(container, value\)/,
+    "Chat messages must use the safe link renderer.");
+  assert.match(app, /https\?:\\/\\//,
+    "Only HTTP(S) URLs should be eligible for links.");
+  assert.match(app, /anchor\.target = "_blank"/,
+    "Tapping a link should open its destination in a new tab/window.");
+  assert.match(app, /anchor\.rel = "noopener noreferrer"/,
+    "External links must be isolated from the opener window.");
+  assert.match(app, /anchor\.textContent = markdownLabel \|\| href/,
+    "Link labels must be inserted as text, not HTML.");
+  assert.match(app, /renderMessageContent\(message, text\)/,
+    "Rendered chat messages must use the safe clickable-link renderer.");
+  assert.doesNotMatch(app, /message\.innerHTML\s*=\s*text/,
+    "Untrusted assistant output must not be injected as HTML.");
+});
