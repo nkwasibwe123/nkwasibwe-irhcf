@@ -58,7 +58,7 @@ async function performLiveResearch(task, language = "en", researchProvider = nul
         publisher = new URL(url).hostname.replace(/^www\./, "");
       } catch {}
       return {
-        title: String(web.title || publisher || url).replace(/\\s+/g, " ").trim().slice(0, 300),
+        title: String(web.title || publisher || url).trim().slice(0, 300),
         url,
         publisher,
         type: "search_result",
@@ -99,7 +99,7 @@ async function performLiveResearch(task, language = "en", researchProvider = nul
 }
 
 function normalizeSourceUrl(value) {
-  const raw = String(value ?? "").replace(/\\s+/g, " ").trim().slice(0, 1000);
+  const raw = String(value ?? "").trim().slice(0, 1000);
   if (!raw) return "";
   try {
     const parsed = new URL(raw);
