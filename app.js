@@ -6627,6 +6627,9 @@ function getLocalClockAnswer(question) {
 function isExplicitBuildTask(text) {
   const value = String(text || "").trim();
   if (!value) return false;
+  // Questions asking for instructions stay in chat; only direct creation
+  // commands should create an execution task.
+  if (/^(?:how\\s+to|how\\s+(?:do|can|should)\\s+i|what\\s+is\\s+the\\s+way|nigute|uko\\s+n(?:a|i)kora|mbwira\\s+uko)\\b/i.test(value)) return false;
   const target = "(?:website|web\\s*site|urubuga|application|app|software|program|code|script|html|javascript|dosiye|file|spreadsheet|report)";
   return new RegExp("\\b(?:create|build|make|write|generate|develop|implement|produce)\\b.{0,100}\\b" + target + "\\b", "i").test(value) ||
     new RegExp("\\b(?:nkorera|nkore|mukorere|kora)\\b.{0,100}\\b" + target + "\\b", "i").test(value) ||
