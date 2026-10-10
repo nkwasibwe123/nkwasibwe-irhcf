@@ -221,3 +221,14 @@ test("chat routes explicit build requests to the persistent task executor and an
   assert.match(html, /src="app\.js\?v=2\.0\.8"/);
   assert.match(html, /href="style\.css\?v=2\.0\.8"/);
 });
+
+
+test("media endpoints distinguish exhausted API credits from generic provider failures", () => {
+  const root = path.join(__dirname, "..", "..");
+  const server = fs.readFileSync(path.join(root, "backend", "server.js"), "utf8");
+
+  assert.match(server, /PROVIDER_CREDITS_EXHAUSTED/);
+  assert.match(server, /API credit balance is exhausted/);
+  assert.match(server, /the original photo was not changed/);
+  assert.match(server, /no audio was generated/);
+});
