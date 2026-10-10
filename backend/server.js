@@ -30009,6 +30009,12 @@ app.get(
           musicGeneration: Boolean(ELEVENLABS_API_KEY)
         },
 
+        // Search readiness reflects configuration only, not a guarantee
+        // that the external provider account, quota, or model is operational.
+        researchProviders: {
+          googleSearchGrounding: Boolean(GEMINI_API_KEY)
+        },
+
         // Report configuration presence only; never expose secret values.
         integrationProviders: {
           googleOAuth: Boolean(
