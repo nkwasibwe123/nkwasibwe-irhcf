@@ -73,19 +73,28 @@ function getPreferredResponseLanguage() {
   return getDeviceLanguage();
 }
 function initializeLanguageControl() {
-  const select = document.getElementById("languageSelect");
-  if (!select) return;
+  const selects = [
+    document.getElementById("languageSelect"),
+    document.getElementById("languageSelectDashboard")
+  ].filter(Boolean);
+  if (!selects.length) return;
   let saved = "auto";
   try { saved = localStorage.getItem(IRHCF_LANGUAGE_STORAGE_KEY) || "auto"; } catch (_) {}
-  select.value = saved === "auto" || IRHCF_LANGUAGE_NAMES[saved] ? saved : "auto";
-  select.addEventListener("change", () => {
-    try {
-      if (select.value === "auto") localStorage.removeItem(IRHCF_LANGUAGE_STORAGE_KEY);
-      else localStorage.setItem(IRHCF_LANGUAGE_STORAGE_KEY, select.value);
-    } catch (_) {}
-    select.title = select.value === "auto"
-      ? "Automatically follow phone language"
-      : "Response language: " + (IRHCF_LANGUAGE_NAMES[select.value] || select.value);
+  const initialValue = saved === "auto" || IRHCF_LANGUAGE_NAMES[saved] ? saved : "auto";
+  selects.forEach((select) => {
+    select.value = initialValue;
+    select.addEventListener("change", () => {
+      const value = select.value || "auto";
+      try {
+        if (value === "auto") localStorage.removeItem(IRHCF_LANGUAGE_STORAGE_KEY);
+        else localStorage.setItem(IRHCF_LANGUAGE_STORAGE_KEY, value);
+      } catch (_) {}
+      selects.forEach((other) => { other.value = value; });
+      const title = value === "auto"
+        ? "Automatically follow phone language"
+        : "Response language: " + (IRHCF_LANGUAGE_NAMES[value] || value);
+      selects.forEach((other) => { other.title = title; });
+    });
   });
 }
 initializeLanguageControl();
