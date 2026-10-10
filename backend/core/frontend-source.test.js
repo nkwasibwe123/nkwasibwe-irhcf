@@ -164,3 +164,15 @@ test("chat role styles match the classes emitted by addMessage", () => {
   assert.match(source, /\.message\.user\s*\{/);
   assert.match(source, /\.message\.ai\s*\{/);
 });
+
+
+test("selected image attachments show thumbnails in the composer and refresh frontend assets", () => {
+  const root = path.join(__dirname, "..", "..");
+  const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
+  const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  assert.match(app, /attachment-thumbnail/);
+  assert.match(app, /Photo preview: /);
+  assert.match(app, /URL\.createObjectURL\(file\)/);
+  assert.match(html, /src="app\.js\?v=2\.0\.2"/);
+  assert.match(html, /href="style\.css\?v=2\.0\.2"/);
+});
