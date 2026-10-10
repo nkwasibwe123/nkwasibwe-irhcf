@@ -109,6 +109,49 @@ test("specialist execution aggregates successful and failed agents", async () =>
   assert.match(formatSpecialistBriefs(result), /SPECIALIST: requirements/);
 });
 
+
+test("specialists execute concurrently and results retain selected order", async () => {
+  const started = [];
+  let release;
+  const barrier = new Promise(resolve => { release = resolve; });
+  const team = {
+    specialists: [
+      { id: "requirements", description: "Requirements" },
+      { id: "testing", description: "Testing" },
+      { id: "security", description: "Security" }
+    ]
+  };
+
+  const pending = runSpecialistTeam({
+    task: "review",
+    team,
+    maxSpecialists: 3,
+    executionEngine: {
+      async execute(request) {
+        const id = request.metadata.specialist;
+        started.push(id);
+        if (started.length === 3) release();
+        await barrier;
+        return {
+          provider: "test-provider",
+          model: "test-model",
+          result: { output_text: "brief:" + id }
+        };
+      }
+    }
+  });
+
+  const result = await pending;
+  assert.deepEqual(started, ["requirements", "security", "testing"]);
+  assert.deepEqual(result.results.map(item => item.specialist), [
+    "requirements",
+    "security",
+    "testing"
+  ]);
+  assert.equal(result.completed, 3);
+  assert.equal(result.failed, 0);
+});
+
 test("missing specialist execution adapter fails clearly", async () => {
   await assert.rejects(
     runSpecialistTeam({ task: "test", team: {}, executionEngine: null }),
