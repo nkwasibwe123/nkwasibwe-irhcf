@@ -702,7 +702,17 @@ class TaskEngine {
         message: "Execution finished; verifying result.",
         checkpoint: {
           phase: "VERIFY",
-          execution: safeJson(executionResult)
+          execution: {
+            success: executionResult?.success !== false,
+            code: executionResult?.code || null,
+            taskAction: executionResult?.taskAction ? {
+              required: Boolean(executionResult.taskAction.required),
+              artifacts: (executionResult.taskAction.artifacts || []).map(({ name, mimeType, bytes, verified, verification, downloadUrl }) => ({
+                name, mimeType, bytes, verified, verification, downloadUrl
+              })),
+              error: executionResult.taskAction.error || null
+            } : null
+          }
         }
       });
 
