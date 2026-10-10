@@ -911,7 +911,9 @@ class TaskEngine {
             }),
             repairResult?.waitForUser
               ? "Waiting for user input."
-              : "Repair/retry completed; task queued for retest."
+              : repairResult?.repaired === true
+                ? "Repair step reported success; task queued for verification."
+                : "Retry prepared; task queued for retest. The root cause is not yet confirmed fixed."
           ]
         );
 
