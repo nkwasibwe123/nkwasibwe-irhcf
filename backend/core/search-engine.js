@@ -18,6 +18,7 @@ function normalizeUrl(value) {
   try {
     const url = new URL(String(value || ""));
     if (!["http:", "https:"].includes(url.protocol)) return null;
+    if (!url.hostname || url.username || url.password) return null;
     url.hash = "";
     return url.toString();
   } catch { return null; }
