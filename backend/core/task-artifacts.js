@@ -17,10 +17,10 @@ function requestedArtifact(task) {
   const text = String(task || "").trim();
   if (!FILE_REQUEST.test(text)) return null;
   const match = text.match(EXTENSION);
-  const defaultName = /\\b(website|html|web page)\\b/i.test(text) ? "index.html"
-    : /\\b(csv|spreadsheet)\\b/i.test(text) ? "output.csv"
-    : /\\bjson\\b/i.test(text) ? "output.json"
-    : /\\b(code|script|javascript|typescript|app|application|component|module)\\b/i.test(text) ? "index.js"
+  const defaultName = /\b(website|html|web page)\b/i.test(text) ? "index.html"
+    : /\b(csv|spreadsheet)\b/i.test(text) ? "output.csv"
+    : /\bjson\b/i.test(text) ? "output.json"
+    : /\b(code|script|javascript|typescript|app|application|component|module)\b/i.test(text) ? "index.js"
     : "task-deliverable.md";
   let name = match?.[1] || defaultName;
   name = name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120);
