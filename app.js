@@ -6634,7 +6634,7 @@ async function sendMessage() {
         "text/javascript"].includes(String(file.type || "").toLowerCase());
   });
 
-  const imageEditIntent = /background|back\s*ground|remove\\s+background|change\\s+background|edit\\s+(the\\s+)?photo|edit\\s+(the\\s+)?image|replace\\s+(the\\s+)?background|hindura|guhindura|inyuma|kuraho/i.test(text);
+  const imageEditIntent = /background|back\s*ground|remove\s+background|change\s+background|edit\s+(the\s+)?photo|edit\s+(the\s+)?image|replace\s+(the\s+)?background|hindura|guhindura|inyuma|kuraho/i.test(text);
   const imageAttachments = selectedAttachments.filter(file =>
     /^image\/(png|jpeg|webp)$/i.test(String(file.type || ""))
   );
