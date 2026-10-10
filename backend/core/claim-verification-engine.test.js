@@ -72,5 +72,5 @@ test("caps claims, normalizes duplicates, and never returns unvalidated status v
   const result = validateClaimAssessments({ claims }, sources);
   assert.ok(result.claims.length <= 50);
   assert.equal(result.claims.filter(item => item.claim === "Same claim").length, 1);
-  assert.equal(result.claims.find(item => item.claim === "Claim 3").status, "supported");
+  assert.equal(result.claims.find(item => item.claim === "Claim 3").status, "insufficient_evidence");
 });
