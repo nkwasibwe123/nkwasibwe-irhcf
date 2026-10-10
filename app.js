@@ -10035,6 +10035,9 @@ async function initializeApp() {
     }
 
 
+    // Bind the real FFmpeg editor controls during startup.
+    if (typeof initializeVideoEditor === "function") initializeVideoEditor();
+
     // ----------------------------------------------------------
     // AUTO RESIZE INPUT
     // ----------------------------------------------------------
