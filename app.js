@@ -5866,7 +5866,8 @@ const composerState = {
   attachments: [],
   mediaRecorder: null,
   recordingChunks: [],
-  recording: false
+  recording: false,
+  pendingImageEditPrompt: ""
 };
 
 
@@ -5939,6 +5940,24 @@ async function prepareVideoFromReference(file) {
 function handleFileSelection(
   event
 ) {
+
+  // If the user requested photo editing before selecting a photo,
+  // continue that exact request as soon as they choose an image.
+  if (composerState.pendingImageEditPrompt) {
+    const prompt = composerState.pendingImageEditPrompt;
+    composerState.pendingImageEditPrompt = "";
+    const selectedImage = Array.from(event.target.files || []).find(file =>
+      /^image\/(png|jpeg|webp)$/i.test(String(file.type || ""))
+    );
+    event.target.value = "";
+    if (!selectedImage) {
+      showToast("Hitamo ifoto ya PNG, JPG/JPEG cyangwa WebP.", "warning");
+      setStatus("Nta foto yatoranyijwe. Ongera wohereze amabwiriza hanyuma uhitemo ifoto.", "normal");
+      return;
+    }
+    void editAttachedImage(prompt, selectedImage);
+    return;
+  }
 
   if (fileInput?.dataset.videoReference === "true") {
     fileInput.dataset.videoReference = "false";
@@ -6588,13 +6607,25 @@ async function sendMessage() {
     /^image\/(png|jpeg|webp)$/i.test(String(file.type || ""))
   );
   if (imageEditIntent) {
+    if (selectedAttachments.length === 0) {
+      if (!fileInput) {
+        setStatus("Ntibishobotse gufungura ahatoranyirizwa ifoto. Ongera ufungure app.", "normal");
+        return;
+      }
+      composerState.pendingImageEditPrompt = text;
+      setStatus("Hitamo ifoto ushaka guhindura; ndahita nyihindurira background.", "normal");
+      showToast("Banza uhitemo ifoto ushaka guhindura.", "normal");
+      fileInput.accept = "image/png,image/jpeg,image/webp";
+      fileInput.click();
+      return;
+    }
     if (imageAttachments.length !== 1 || selectedAttachments.length !== 1) {
       showToast(
-        "Kugira ngo mpindure ifoto, shyiraho ifoto imwe (PNG/JPG/WebP) hanyuma wohereze amabwiriza yo kuyihindura hamwe na yo.",
+        "Hitamo ifoto imwe gusa (PNG/JPG/WebP) kugira ngo mpindure background yayo.",
         "warning"
       );
       setStatus(
-        "Ongeraho ifoto muri ubu butumwa, urugero: “Change the background to a white studio background”, hanyuma wongere wohereze.",
+        "Ongeraho ifoto imwe gusa, cyangwa wandike amabwiriza yo guhindura ifoto maze uhitemo ifoto igihe app ibigusabye.",
         "normal"
       );
       return;
