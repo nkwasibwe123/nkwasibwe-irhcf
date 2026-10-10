@@ -6603,7 +6603,7 @@ async function editAttachedImage(prompt, file) {
 
 function getLocalClockAnswer(question) {
   const value = String(question || "").trim().toLowerCase();
-  const asksTime = /\\b(what time is it|current time|time now|what's the time|tell me the time)\\b/.test(value) ||
+  const asksTime = /\b(what time is it|current time|time now|what's the time|tell me the time)\b/.test(value) ||
     /(?:ubu|nonese).{0,24}(?:saa|isaha|igihe|time)/.test(value) ||
     /(?:ni|ubu ni).{0,18}(?:morning|afternoon|evening|night|mu gitondo|nimugoroba|nijoro)/.test(value) ||
     /(?:is it|are we in).{0,18}(?:morning|afternoon|evening|night)/.test(value);
