@@ -35,21 +35,41 @@ function normalizeText(value, max = 5000) {
   return String(value ?? "").replace(/\s+/g, " ").trim().slice(0, max);
 }
 
+function normalizeSourceUrl(value) {
+  const raw = normalizeText(value, 1000);
+  if (!raw) return "";
+  try {
+    const parsed = new URL(raw);
+    if (!["http:", "https:"].includes(parsed.protocol)) return "";
+    parsed.username = "";
+    parsed.password = "";
+    parsed.hash = "";
+    return parsed.toString();
+  } catch {
+    return "";
+  }
+}
+
 function normalizeSources(sources) {
   if (!Array.isArray(sources)) return [];
 
-  return sources
-    .map((source) => ({
-      title: normalizeText(source?.title, 300),
-      url: normalizeText(source?.url, 1000),
+  const seen = new Set();
+  const normalized = [];
+  for (const source of sources) {
+    const url = normalizeSourceUrl(source?.url);
+    const title = normalizeText(source?.title, 300);
+    if (!url || !title || seen.has(url)) continue;
+    seen.add(url);
+    normalized.push({
+      title,
+      url,
       publisher: normalizeText(source?.publisher, 200),
-      type: SOURCE_CLASSES.includes(source?.type)
-        ? source.type
-        : "search_result",
-      publishedAt: source?.publishedAt || null,
-      retrievedAt: source?.retrievedAt || new Date().toISOString()
-    }))
-    .filter((source) => source.title || source.url);
+      type: SOURCE_CLASSES.includes(source?.type) ? source.type : "search_result",
+      publishedAt: normalizeText(source?.publishedAt, 100) || null,
+      retrievedAt: normalizeText(source?.retrievedAt, 100) || new Date().toISOString()
+    });
+  }
+  return normalized;
 }
 
 function buildResearchPlan({
