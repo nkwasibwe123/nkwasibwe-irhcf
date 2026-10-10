@@ -8021,7 +8021,7 @@ async function createLongRunningTask(event) {
   }
 }
 
-function dashboardAction(action) {
+async function dashboardAction(action) {
 
   const actions = {
     file: {
