@@ -29,10 +29,10 @@ async function ensureIndexLoaded() {
       for (const document of documents) {
         try { engine.indexDocument(document); } catch { /* Skip malformed legacy rows safely. */ }
       }
-    })().catch(error => {
-      storageWarning = "Search persistence is unavailable; the in-memory index is still active.";
-      loadingPromise = null;
-      throw error;
+    })().catch(() => {
+      storageWarning = "PostgreSQL search persistence is unavailable; in-memory search remains active.";
+      // Keep the API usable when the optional database store is temporarily down.
+      loadingPromise = Promise.resolve();
     });
   }
   return loadingPromise;
