@@ -64,9 +64,7 @@ function buildCapabilityExpansionPlan({
   const name = normalize(requestedCapability);
 
   if (!name) {
-    throw new Error(
-      "A requested capability is required."
-    );
+    throw new Error("A requested capability is required.");
   }
 
   const risk = inferRisk({
@@ -96,7 +94,8 @@ function buildCapabilityExpansionPlan({
               "sandbox",
               "tests",
               "security_review",
-              "regression"
+              "regression",
+              "explicit_promotion"
             ]
     },
     stages: STAGES.map((stage, index) => ({
@@ -120,6 +119,14 @@ function evaluateExpansionReadiness(plan, results = {}) {
   if (!plan) {
     return {
       ready: false,
+      canPromote: false,
+      missing: [
+        "sandbox",
+        "tests",
+        "security_review",
+        "regression",
+        "authorization"
+      ],
       reason: "No expansion plan supplied."
     };
   }
@@ -131,17 +138,21 @@ function evaluateExpansionReadiness(plan, results = {}) {
     "regression"
   ];
 
+  required.push("explicit_promotion");
+
   const missing = required.filter(
     (key) => results[key] !== true
   );
 
+  const gatesPassed = missing.length === 0;
+  const explicitlyAuthorized = results.authorization === true;
+
   return {
-    ready: missing.length === 0,
+    ready: gatesPassed,
     missing,
-    canPromote:
-      missing.length === 0 &&
-      results.authorization !== false,
-      risk: plan.risk
+    canPromote: gatesPassed && explicitlyAuthorized,
+    authorizationRequired: true,
+    risk: plan.risk
   };
 }
 
