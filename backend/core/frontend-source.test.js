@@ -38,6 +38,7 @@ test("voice note and live voice controls use the existing authenticated IRHCF AP
   assert.match(voice, /\/api\/voice\/realtime/, "Live voice must use the authenticated server-side SDP endpoint.");
   assert.match(voice, /nkwasibwe_auth_token/, "Live voice must use the existing authentication token.");
   assert.match(app, /async function toggleVoiceRecording\(/, "The existing composer must own voice-note recording.");
+  assert.match(app, /if \(voiceButton\) \{\s*voiceButton\.addEventListener\(\s*"click",\s*toggleVoiceRecording/s, "Voice-note recording must be bound regardless of browser SpeechRecognition support.");
   assert.match(app, /async function transcribeAudioFile\(/, "Voice notes must use the existing transcription flow.");
   assert.doesNotMatch(voice, /getElementById\(["']voiceButton["']\)/, "The live voice module must not register a duplicate voice-note handler.");
   assert.match(server, /app\.post\([\s\S]{0,80}["']\/api\/voice\/realtime["'][\s\S]{0,100}authenticateToken/, "Realtime voice session creation must be authenticated.");
