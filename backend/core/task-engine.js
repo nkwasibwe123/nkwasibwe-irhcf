@@ -93,7 +93,6 @@ function isUsableTaskResult(result) {
   if (typeof result !== "object" || Array.isArray(result)) return false;
   if (result.success === false) return false;
   if (result.agent?.responseQuality?.verified === false) return false;
-  if (result.taskAction?.required && !Array.isArray(result.taskAction.artifacts?.filter(item => item?.verified === true && typeof item?.content === "string" && item.content.trim()))) return false;
   if (result.taskAction?.required && !result.taskAction.artifacts.some(item => item?.verified === true && typeof item?.content === "string" && item.content.trim())) return false;
 
   const contentCandidates = [
