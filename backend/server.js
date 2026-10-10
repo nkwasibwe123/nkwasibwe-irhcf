@@ -14297,15 +14297,38 @@ app.post(
         }
       );
 
-      const result =
-        await executeNkwasibweAgent({
-          userId:
-            req.user.id,
+      let result;
 
+      try {
+        result = await executeNkwasibweAgent({
+          userId: req.user.id,
           task,
-
           sessionId
         });
+      } catch (agentError) {
+        // A saved browser session can outlive its database conversation
+        // (for example after a restore, account migration, or deleted chat).
+        // Recover by starting a fresh conversation instead of failing the
+        // user's task with CONVERSATION_NOT_FOUND.
+        if (
+          sessionId &&
+          (agentError?.code === "CONVERSATION_NOT_FOUND" ||
+            /conversation not found/i.test(String(agentError?.message || "")))
+        ) {
+          console.warn("[AGENT] Saved conversation missing; retrying in a new conversation.", {
+            requestId,
+            userId: req.user?.id || null,
+            staleSessionId: sessionId
+          });
+          result = await executeNkwasibweAgent({
+            userId: req.user.id,
+            task,
+            sessionId: null
+          });
+        } else {
+          throw agentError;
+        }
+      }
 
       // --------------------------------------------------------
       // 6. BUILD AGENT RESPONSE
