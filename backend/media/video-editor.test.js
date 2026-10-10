@@ -19,7 +19,7 @@ test("FFmpeg arguments include a real color filter and MP4 codec settings", () =
   assert.ok(args.includes("-t"));
   assert.ok(args.includes("6"));
   assert.ok(args.includes("libx264"));
-  assert.ok(args.includes("1920:1080:force_original_aspect_ratio=decrease"), "default export should render Full HD");
+  assert.ok(args.some(arg => arg.startsWith("scale=1920:1080:force_original_aspect_ratio=decrease")), "default export should render Full HD");
   assert.ok(args.includes("-crf"));
   assert.ok(args.includes("18"));
   assert.equal(args.at(-1), "/tmp/output.mp4");
