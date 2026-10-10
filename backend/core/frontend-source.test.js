@@ -67,4 +67,6 @@ test("chat attachments are included as bounded text context and unsupported bina
     "The backend chat payload must contain the actual attachment content.");
   assert.match(app, /ATTACHED FILE:/,
     "Attachment boundaries and filenames must be preserved in the AI context.");
+  assert.match(app, /Amakuru akurikira ni ibiri muri dosiye zitizewe/,
+    "File contents must be framed as untrusted data to reduce prompt-injection risk.");
 });
