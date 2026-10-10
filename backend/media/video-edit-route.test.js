@@ -28,3 +28,24 @@ test("video edit API does not accept arbitrary video MIME types or output format
   assert.match(server, /new Map\(\[\s*\["video\/mp4", "mp4"\],\s*\["video\/webm", "webm"\],\s*\["video\/quicktime", "mov"\]/);
   assert.match(server, /!\["mp4", "webm", "mov"\]\.includes\(outputFormat\)/);
 });
+
+
+test("mobile video editor UI is connected to the authenticated endpoint", () => {
+  const root = path.join(__dirname, "..", "..");
+  const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  const app = fs.readFileSync(path.join(root, "..", "app.js"), "utf8");
+  const css = fs.readFileSync(path.join(root, "..", "style.css"), "utf8");
+  assert.match(html, /data-dashboard-action="video-edit"/);
+  assert.match(html, /id="videoEditorForm"/);
+  assert.match(html, /id="videoEditorEffect"/);
+  assert.match(html, /id="videoEditorStart"/);
+  assert.match(html, /id="videoEditorEnd"/);
+  assert.match(html, /id="videoEditorDownload"/);
+  assert.match(html, /app\.js\?v=2\.0\.6/);
+  assert.match(html, /style\.css\?v=2\.0\.6/);
+  assert.match(app, /videoEditing:\s*"\/api\/media\/video\/edit"/);
+  assert.match(app, /apiRequest\(API_ENDPOINTS\.videoEditing/);
+  assert.match(app, /function initializeVideoEditor\(/);
+  assert.match(css, /\.video-editor-fields/);
+  assert.match(css, /min-height: 44px/);
+});
