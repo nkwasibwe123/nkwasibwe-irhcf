@@ -3674,10 +3674,17 @@ app.post("/api/media/image", authenticateToken, async (req, res) => {
     });
 
     const status = Number(error?.status);
+    const providerCode = String(error?.code || "").toLowerCase();
+    const providerMessage = String(error?.message || "").toLowerCase();
+    const creditsExhausted = providerCode.includes("credit_balance_exhausted") ||
+      providerCode.includes("insufficient_quota") || providerMessage.includes("credit balance") ||
+      providerMessage.includes("insufficient quota") || providerMessage.includes("no credits remaining");
     return res.status(status >= 400 && status < 600 ? status : 502).json({
       success: false,
-      error: "Image generation failed. Check provider availability and account access.",
-      code: error?.code || "IMAGE_GENERATION_FAILED"
+      error: creditsExhausted
+        ? "The image provider's API credit balance is exhausted. Add API credits or configure a provider account with available quota; no image was generated."
+        : "Image generation failed. Check provider availability and account access.",
+      code: creditsExhausted ? "PROVIDER_CREDITS_EXHAUSTED" : (error?.code || "IMAGE_GENERATION_FAILED")
     });
   }
 });
@@ -3772,10 +3779,17 @@ app.post("/api/media/image/edit", authenticateToken, async (req, res) => {
       message: String(error?.message || "Image editing failed").slice(0, 500)
     });
     const status = Number(error?.status);
+    const providerCode = String(error?.code || "").toLowerCase();
+    const providerMessage = String(error?.message || "").toLowerCase();
+    const creditsExhausted = providerCode.includes("credit_balance_exhausted") ||
+      providerCode.includes("insufficient_quota") || providerMessage.includes("credit balance") ||
+      providerMessage.includes("insufficient quota") || providerMessage.includes("no credits remaining");
     return res.status(status >= 400 && status < 600 ? status : 502).json({
       success: false,
-      error: "Image editing failed. Check provider availability, model access, and account quota.",
-      code: error?.code || "IMAGE_EDIT_FAILED"
+      error: creditsExhausted
+        ? "The image provider's API credit balance is exhausted. Add API credits or configure a provider account with available quota; the original photo was not changed."
+        : "Image editing failed. Check provider availability, model access, and account quota.",
+      code: creditsExhausted ? "PROVIDER_CREDITS_EXHAUSTED" : (error?.code || "IMAGE_EDIT_FAILED")
     });
   }
 });
@@ -4491,10 +4505,17 @@ app.post("/api/media/speech", authenticateToken, async (req, res) => {
       message: String(error?.message || "Speech generation failed").slice(0, 500)
     });
     const status = Number(error?.status);
+    const providerCode = String(error?.code || "").toLowerCase();
+    const providerMessage = String(error?.message || "").toLowerCase();
+    const creditsExhausted = providerCode.includes("credit_balance_exhausted") ||
+      providerCode.includes("insufficient_quota") || providerMessage.includes("credit balance") ||
+      providerMessage.includes("insufficient quota") || providerMessage.includes("no credits remaining");
     return res.status(status >= 400 && status < 600 ? status : 502).json({
       success: false,
-      error: "Speech generation failed. Check provider availability and account access.",
-      code: error?.code || "SPEECH_GENERATION_FAILED"
+      error: creditsExhausted
+        ? "The speech provider's API credit balance is exhausted. Add API credits or configure a provider account with available quota; no audio was generated."
+        : "Speech generation failed. Check provider availability and account access.",
+      code: creditsExhausted ? "PROVIDER_CREDITS_EXHAUSTED" : (error?.code || "SPEECH_GENERATION_FAILED")
     });
   }
 });
