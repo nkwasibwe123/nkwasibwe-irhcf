@@ -89,6 +89,9 @@ const API_ENDPOINTS = Object.freeze({
   imageGeneration:
     "/api/media/image",
 
+  imageEditing:
+    "/api/media/image/edit",
+
   speechGeneration:
     "/api/media/speech",
 
@@ -6368,6 +6371,89 @@ function updateVoiceButton() {
 
 }
 
+// Edit an attached photo through the real authenticated image-editing API.
+async function editAttachedImage(prompt, file) {
+  if (!file || !/^image\/(png|jpeg|webp)$/i.test(String(file.type || ""))) {
+    showToast("Hitamo ifoto ya PNG, JPG/JPEG cyangwa WebP.", "warning");
+    return;
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    showToast("Ifoto igomba kuba iri munsi ya 5 MB.", "warning");
+    return;
+  }
+  if (!authToken) {
+    showAuthenticationDialog();
+    return;
+  }
+
+  updateSendingState(true);
+  setSendingState(true);
+  const userRow = addMessage(prompt, "user");
+  setStatus("IRHCF iri guhindura background y'ifoto. Tegereza...", "loading");
+  try {
+    const imageDataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(new Error("Ntibyashobotse gusoma ifoto."));
+      reader.readAsDataURL(file);
+    });
+    const result = await apiRequest(API_ENDPOINTS.imageEditing, {
+      method: "POST",
+      body: JSON.stringify({
+        prompt: prompt.slice(0, 4000),
+        imageDataUrl
+      })
+    });
+    const source = String(result?.image || "");
+    const safeSource = source.startsWith("data:image/png;base64,") ||
+      (source.startsWith("https://") && source.length < 4096)
+        ? source
+        : "";
+    if (!result?.success || !safeSource) {
+      throw new Error(result?.error || "Serivisi ntiyagaruye ifoto yahinduwe.");
+    }
+
+    const row = addMessage("Ifoto yahinduwe neza. Kanda Download kugira ngo uyibike.", "ai");
+    const wrapper = row?.querySelector(".message-content-wrapper");
+    if (!wrapper) throw new Error("Ntibyashobotse kwerekana ifoto yahinduwe.");
+    const image = document.createElement("img");
+    image.src = safeSource;
+    image.alt = "Edited image";
+    image.loading = "lazy";
+    image.decoding = "async";
+    image.style.display = "block";
+    image.style.maxWidth = "100%";
+    image.style.maxHeight = "640px";
+    image.style.objectFit = "contain";
+    image.style.borderRadius = "12px";
+    image.style.marginTop = "10px";
+    wrapper.appendChild(image);
+
+    const download = document.createElement("a");
+    download.href = safeSource;
+    download.download = "nkwasibwe-irhcf-edited-image.png";
+    download.textContent = "Download image";
+    download.className = "message-link";
+    download.style.display = "inline-block";
+    download.style.marginTop = "10px";
+    download.style.padding = "8px 12px";
+    wrapper.appendChild(download);
+
+    composerState.attachments = [];
+    renderAttachmentPreview();
+    if (fileInput) fileInput.value = "";
+    updateBackendState(true);
+    setStatus("Ifoto yahinduwe kandi iriteguye kubikwa.", "normal");
+  } catch (error) {
+    console.error("[IRHCF IMAGE EDIT]", error);
+    setStatus("Ntibyashobotse guhindura ifoto: " +
+      String(error?.message || "serivisi ntiboneka").slice(0, 180), "normal");
+  } finally {
+    updateSendingState(false);
+    setSendingState(false);
+  }
+}
+
 // ============================================================
 // SEND MESSAGE
 // ============================================================
@@ -6448,6 +6534,19 @@ async function sendMessage() {
         "application/xml", "text/xml", "text/html", "text/css",
         "text/javascript"].includes(String(file.type || "").toLowerCase());
   });
+
+  const imageEditIntent = /background|back\\s*ground|remove\\s+background|change\\s+background|edit\\s+(the\\s+)?photo|edit\\s+(the\\s+)?image|replace\\s+(the\\s+)?background|hindura|guhindura|inyuma|kuraho/i.test(text);
+  const imageAttachments = selectedAttachments.filter(file =>
+    /^image\\/(png|jpeg|webp)$/i.test(String(file.type || ""))
+  );
+  if (imageEditIntent && imageAttachments.length === 1 && selectedAttachments.length === 1) {
+    const prompt = /background|back\\s*ground|inyuma/i.test(text)
+      ? "Edit this photo by changing/removing its background as requested: " + text +
+        ". Preserve the main subject's identity, appearance, proportions, and edges; blend the new background naturally and keep the result photorealistic unless the user asks for another style."
+      : text;
+    await editAttachedImage(prompt, imageAttachments[0]);
+    return;
+  }
 
   if (unsupportedAttachments.length) {
     showToast(
