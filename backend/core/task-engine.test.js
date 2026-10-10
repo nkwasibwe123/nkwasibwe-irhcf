@@ -3,6 +3,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { TaskEngine, TASK_STATES, isUsableTaskResult } = require("./task-engine");
+const { requestedArtifact, buildTaskArtifact } = require("./task-artifacts");
 
 test("cancelled task is not verified, completed, or requeued after executor returns", async () => {
   let executorCalls = 0;
@@ -108,4 +109,44 @@ test("autonomous task verification rejects empty, failed, and quality-invalid ou
   }), false);
   assert.equal(isUsableTaskResult({ success: true, response: { content: "Verified result." } }), true);
   assert.equal(isUsableTaskResult("   "), false);
+});
+
+
+test("task response string is usable output", () => {
+  assert.equal(isUsableTaskResult({ success: true, response: "The task produced a real result." }), true);
+});
+
+test("file-producing task creates a syntax-verified downloadable artifact", () => {
+  const task = "Create a JavaScript file named hello.js that prints hello";
+  const request = requestedArtifact(task);
+  assert.equal(request.name, "hello.js");
+  const action = buildTaskArtifact({
+    task,
+    taskId: 42,
+    result: { success: true, response: "```javascript\\nconsole.log('hello');\\n```" }
+  });
+  assert.equal(action.required, true);
+  assert.equal(action.artifacts.length, 1);
+  assert.equal(action.artifacts[0].verified, true);
+  assert.match(action.artifacts[0].downloadUrl, /\\/api\\/tasks\\/42\\/artifacts\\/hello.js/);
+  assert.equal(isUsableTaskResult({ success: true, response: "ok", taskAction: action }), true);
+});
+
+test("file task cannot complete if generated JavaScript fails syntax verification", () => {
+  const task = "Create a JavaScript file named broken.js";
+  const action = buildTaskArtifact({
+    task,
+    taskId: 7,
+    result: { success: true, response: "```javascript\\nconst = ;\\n```" }
+  });
+  assert.equal(action.artifacts.length, 0);
+  assert.match(action.error, /syntax verification/i);
+  assert.equal(isUsableTaskResult({ success: true, response: "Here is the file", taskAction: action }), false);
+});
+
+test("ordinary advice request does not fabricate a file artifact", () => {
+  assert.deepEqual(buildTaskArtifact({
+    task: "Explain how JavaScript closures work",
+    result: { success: true, response: "A closure captures lexical scope." }
+  }), { required: false, artifacts: [] });
 });
