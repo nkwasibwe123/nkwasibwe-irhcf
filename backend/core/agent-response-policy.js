@@ -125,7 +125,7 @@ function buildResponseQualityInstruction(language = "en", task = "") {
     `- Respond in ${requestedLanguage}, unless the user explicitly requests another language.`,
     "- Do not claim to have browsed, tested, deployed, uploaded, sent, or changed anything unless that action actually occurred.",
     "- Do not invent facts, sources, tool results, or capabilities. State uncertainty and limitations clearly.",
-    "- For current or externally changing facts, rely only on verified research evidence. If evidence is unavailable, say so rather than guessing.",
+    "- For current or externally changing facts, rely only on research evidence actually supplied to this run. If evidence is unavailable, say so rather than guessing. A source URL is provenance, not proof that every claim is true. Never invent citations.",
     "- If the request is ambiguous, ask one concise clarifying question instead of making a risky assumption.",
     "- Preserve user data and prioritize safe, reversible actions.",
     `CURRENT TASK: ${String(task ?? "").replace(/\s+/g, " ").trim().slice(0, 1200)}`
@@ -136,19 +136,18 @@ function buildResponseQualityInstruction(language = "en", task = "") {
  * Apply a minimal, deterministic response-quality gate before verification.
  * The AI response must be non-empty plain text; never leak provider objects.
  */
-function verifyAgentResponse(task, answer, language = "en") {
+function verifyAgentResponse(task, answer, language = "en", evidenceOptions = {}) {
   const normalizedAnswer = typeof answer === "string" ? answer.trim() : "";
-  const issues = [];
-
-  if (!normalizedAnswer) {
-    issues.push("EMPTY_RESPONSE");
-  }
+  const { verifyEvidence } = require("./evidence-verifier");
+  const evidence = verifyEvidence(normalizedAnswer, evidenceOptions);
+  const issues = [...evidence.issues];
 
   return {
     valid: issues.length === 0,
     task: String(task ?? "").trim(),
     language: ["rw", "fr", "en"].includes(language) ? language : "en",
-    issues
+    issues,
+    evidence
   };
 }
 
@@ -181,3 +180,37 @@ module.exports = {
   applyResponseQuality,
   verifyAgentResponse
 };
+
+test("response verifier reports insufficient evidence for current facts", () => {
+  const result = verifyAgentResponse(
+    "What is the latest exchange rate?",
+    "The rate is 1,400 RWF per USD.",
+    "en",
+    { researchRequired: true, researchPerformed: false, sources: [] }
+  );
+  assert.equal(result.valid, false);
+  assert.ok(result.issues.includes("RESEARCH_EVIDENCE_UNAVAILABLE"));
+  assert.equal(result.evidence.status, "insufficient_evidence");
+});
+
+test("response verifier rejects citations outside the supplied source set", () => {
+  const result = verifyAgentResponse(
+    "Summarize this",
+    "The report says so: https://not-provided.example/article",
+    "en",
+    { researchRequired: true, researchPerformed: true, sources: [{ title: "Allowed", url: "https://allowed.example/" }] }
+  );
+  assert.equal(result.valid, false);
+  assert.ok(result.issues.includes("UNSUPPORTED_CITATION"));
+});
+
+test("response verifier explains that source provenance is not factual proof", () => {
+  const result = verifyAgentResponse(
+    "Explain the finding",
+    "The finding is described here.",
+    "en",
+    { researchRequired: true, researchPerformed: true, sources: [{ title: "Report", url: "https://report.example/" }] }
+  );
+  assert.equal(result.valid, true);
+  assert.match(result.evidence.disclaimer, /does not prove/);
+});
