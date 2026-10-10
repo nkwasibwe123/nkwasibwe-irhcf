@@ -18,6 +18,8 @@ test("prompt asks for atomic claims and distinguishes contradiction from missing
   assert.equal(prompt.language, "rw");
   assert.match(prompt.instruction, /atomic/);
   assert.match(prompt.instruction, /absence of evidence is not contradiction/);
+  assert.match(prompt.instruction, /Assess EACH source separately/);
+  assert.match(prompt.instruction, /sourceAssessments/);
   assert.equal(prompt.sources.length, 2);
 });
 
@@ -29,6 +31,8 @@ test("validates supported claims only when they reference a supplied source", ()
     ]
   }, sources);
   assert.equal(result.claims[0].status, "supported");
+  assert.equal(result.claims[0].sourceAssessments[0].title, "Official report");
+  assert.equal(result.claims[0].sourceAssessments[0].url, "https://example.org/report");
   assert.equal(result.claims[1].status, "insufficient_evidence");
   assert.ok(result.issues.includes("SUPPORTED_WITHOUT_VALID_SOURCE"));
 });
@@ -36,12 +40,13 @@ test("validates supported claims only when they reference a supplied source", ()
 test("distinguishes contradictory claims from claims with insufficient evidence", () => {
   const result = validateClaimAssessments({
     claims: [
-      { claim: "Start year is 2024.", status: "contradicted", sourceIds: [2], reason: "Excerpt says 2025." },
+      { claim: "Start year is 2024.", status: "contradicted", sourceAssessments: [{ sourceId: 2, relationship: "contradicts", reason: "Excerpt says 2025." }], reason: "Excerpt says 2025." },
       { claim: "Budget is 2 million.", status: "insufficient_evidence", sourceIds: [], reason: "No excerpt addresses budget." }
     ]
   }, sources);
   assert.equal(result.overall, "contradicted_claims_found");
   assert.equal(result.counts.contradicted, 1);
+  assert.equal(result.claims[0].sourceAssessments[0].relationship, "contradicts");
   assert.equal(result.counts.insufficient_evidence, 1);
 });
 
@@ -60,6 +65,8 @@ test("correction instructions require transparent uncertainty and no invented ci
   const prompt = buildCorrectionInstruction(result, "rw");
   assert.match(prompt, /Kinyarwanda/);
   assert.match(prompt, /instead of guessing/);
+  assert.match(prompt, /which source supports each key claim/);
+  assert.match(prompt, /Where sources disagree/);
   assert.match(prompt, /validated source IDs/);
 });
 
