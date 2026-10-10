@@ -13170,7 +13170,7 @@ if (researchRequired) {
                 "Include dates for time-sensitive claims.",
                 "Do not fabricate citations, URLs, quotations, or search results.",
                 languageInstruction
-              ].join("\\n")
+              ].join("\n")
             },
             {
               role: "user",
