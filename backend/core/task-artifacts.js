@@ -65,6 +65,9 @@ function buildTaskArtifact({ task, result, taskId } = {}) {
   }
   const responseText = getResponseText(result);
   const content = extractDeliverable(responseText, request.extension);
+  if (Buffer.byteLength(content, "utf8") > 12000) {
+    return { required: true, artifacts: [], error: "Generated artifact exceeds the 12 KB task-result limit; ask for a smaller file." };
+  }
   if (!content.trim()) {
     return {
       required: true,
