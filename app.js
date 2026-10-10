@@ -5541,6 +5541,55 @@ async function prepareMessageEdit(row, messageId, messageText) {
   }
 }
 
+// Render assistant/user text with safe, clickable web links.
+// Only http(s) URLs are allowed; javascript:, data:, and other schemes stay text.
+function renderMessageContent(container, value) {
+  if (!container) return;
+  const text = String(value ?? "");
+  const linkPattern = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s<>"']+)/gi;
+  let cursor = 0;
+  let match;
+
+  while ((match = linkPattern.exec(text)) !== null) {
+    if (match.index > cursor) {
+      container.appendChild(document.createTextNode(text.slice(cursor, match.index)));
+    }
+
+    const markdownLabel = match[1];
+    const rawUrl = match[2] || match[3];
+    // Keep common sentence punctuation outside the clickable URL.
+    const trailing = /[.,!?;:]+$/.exec(rawUrl)?.[0] || "";
+    const href = trailing ? rawUrl.slice(0, -trailing.length) : rawUrl;
+    if (!/^https?:\/\//i.test(href)) {
+      container.appendChild(document.createTextNode(match[0]));
+    } else {
+      try {
+        const parsed = new URL(href);
+        if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+          container.appendChild(document.createTextNode(match[0]));
+        } else {
+          const anchor = document.createElement("a");
+          anchor.href = parsed.href;
+          anchor.textContent = markdownLabel || href;
+          anchor.target = "_blank";
+          anchor.rel = "noopener noreferrer";
+          anchor.referrerPolicy = "no-referrer";
+          anchor.className = "message-link";
+          container.appendChild(anchor);
+          if (trailing) container.appendChild(document.createTextNode(trailing));
+        }
+      } catch (_) {
+        container.appendChild(document.createTextNode(match[0]));
+      }
+    }
+    cursor = linkPattern.lastIndex;
+  }
+
+  if (cursor < text.length) {
+    container.appendChild(document.createTextNode(text.slice(cursor)));
+  }
+}
+
 // ============================================================
 // ADD CHAT MESSAGE
 // ============================================================
@@ -5608,8 +5657,10 @@ function addMessage(
   message.className =
     `message ${role}`;
 
-  message.textContent =
-    text;
+  // Render plain text safely while turning valid HTTP(S) URLs and
+  // Markdown links into real, tappable links. Never inject model output
+  // as HTML: all non-link content remains a text node.
+  renderMessageContent(message, text);
 
   const meta =
     document.createElement("div");
