@@ -3,8 +3,39 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { createWebSearchProviders } = require("./web-search-providers");
 
-test("Brave provider is absent without server-side API key", () => {
+test("no paid provider is configured when no search environment variables exist", () => {
   assert.deepEqual(createWebSearchProviders({ env: {}, fetchImpl: async () => {} }), []);
+});
+
+test("self-hosted SearXNG provider normalizes results without an API key", async () => {
+  let requestedUrl;
+  const [provider] = createWebSearchProviders({
+    env: { SEARXNG_BASE_URL: "https://search.example.test/" },
+    fetchImpl: async url => {
+      requestedUrl = new URL(url);
+      return {
+        ok: true,
+        json: async () => ({ results: [
+          { title: "IRHCF result", url: "https://example.com/page", content: "A useful snippet" },
+          { title: "Unsafe scheme", url: "javascript:alert(1)", content: "Must be discarded" }
+        ] })
+      };
+    }
+  });
+  assert.equal(provider.name, "Self-hosted SearXNG");
+  const result = await provider.search({ query: "IRHCF", limit: 5, language: "en" });
+  assert.equal(requestedUrl.pathname, "/search");
+  assert.equal(requestedUrl.searchParams.get("q"), "IRHCF");
+  assert.equal(requestedUrl.searchParams.get("format"), "json");
+  assert.equal(result.results.length, 1);
+  assert.equal(result.results[0].snippet, "A useful snippet");
+});
+
+test("invalid self-hosted search URL is rejected", () => {
+  assert.throws(
+    () => createWebSearchProviders({ env: { SEARXNG_BASE_URL: "file:///tmp/search" } }),
+    /valid HTTP\(S\) URL/
+  );
 });
 
 test("default Brave LLM Context mode normalizes grounding snippets for AI", async () => {
