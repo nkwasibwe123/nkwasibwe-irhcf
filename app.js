@@ -5364,7 +5364,18 @@ function getFriendlyErrorMessage(
 
   const lowerError =
     originalMessage.toLowerCase();
+  const providerCode = String(error?.response?.code || error?.code || "").toLowerCase();
+  const providerStatus = Number(error?.status || error?.response?.status || 0);
 
+  if (providerCode.includes("credit_balance_exhausted") || providerCode.includes("insufficient_quota") || providerCode.includes("provider_credits_exhausted")) {
+    return "Konti ya API y'um provider nta credits zisigaye. Iyi feature ntishobora gukora kugeza hongerwemo credits cyangwa hagashyizweho provider ifite balance; Nkwasibwe ntizigomba kubeshya ko yakoze dosiye.";
+  }
+  if (providerCode.includes("music_api_not_available") || lowerError.includes("music api is not available for free users")) {
+    return "Music API iri kuri gahunda yishyurwa gusa kuri provider uriho. Nta ndirimbo yakozwe; koresha konti ifite Music API access cyangwa uhuze provider yemerewe.";
+  }
+  if (providerStatus === 429) {
+    return "Provider yanze request kubera quota cyangwa rate limit. Tegereza igihe provider yatanze cyangwa ukosore billing/quota; kongera kohereza request kenshi ntibizakemura credits zashize.";
+  }
 
   // ----------------------------------------------------------
   // NETWORK
@@ -6585,6 +6596,47 @@ async function editAttachedImage(prompt, file) {
 }
 
 // ============================================================
+// LOCAL TIME ANSWERS + REAL BUILD-TASK ROUTING
+// Answer clock questions from the device clock, and send explicit
+// build requests to the persistent task executor instead of chat-only advice.
+// ============================================================
+
+function getLocalClockAnswer(question) {
+  const value = String(question || "").trim().toLowerCase();
+  const asksTime = /\b(what time is it|current time|time now|what's the time|tell me the time)\b/.test(value) ||
+    /(?:ubu|nonese).{0,24}(?:saa|isaha|igihe|time)/.test(value) ||
+    /(?:ni|ubu ni).{0,18}(?:morning|afternoon|evening|night|mu gitondo|nimugoroba|nijoro)/.test(value) ||
+    /(?:is it|are we in).{0,18}(?:morning|afternoon|evening|night)/.test(value);
+  if (!asksTime) return null;
+
+  const now = new Date();
+  if (!Number.isFinite(now.getTime())) return null;
+  const locale = getPreferredResponseLanguage() || navigator.language || "en";
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "local device time";
+  const time = new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit", hour12: true }).format(now);
+  const hour = Number(new Intl.DateTimeFormat("en", { hour: "2-digit", hourCycle: "h23" }).format(now));
+  const period = hour >= 5 && hour < 12 ? "mu gitondo (morning)" :
+    hour >= 12 && hour < 17 ? "ku manywa (afternoon)" :
+    hour >= 17 && hour < 22 ? "nimugoroba (evening)" : "nijoro (night)";
+  const asksPeriod = /morning|afternoon|evening|night|gitondo|manywa|nimugoroba|nijoro/.test(value);
+  return asksPeriod
+    ? `Ubu ni saa ${time} (${timeZone}); ni ${period}. Nkoresheje isaha ya telefoni yawe.`
+    : `Ubu ni saa ${time} (${timeZone}), nkurikije isaha ya telefoni yawe.`;
+}
+
+function isExplicitBuildTask(text) {
+  const value = String(text || "").trim();
+  if (!value) return false;
+  // Questions asking for instructions stay in chat; only direct creation
+  // commands should create an execution task.
+  if (/^(?:how\s+to|how\s+(?:do|can|should)\s+i|what\s+is\s+the\s+way|nigute|uko\s+n(?:a|i)kora|mbwira\s+uko)\b/i.test(value)) return false;
+  const target = "(?:website|web\\s*site|urubuga|application|app|software|program|code|script|html|javascript|dosiye|file|spreadsheet|report)";
+  return new RegExp("\\b(?:create|build|make|write|generate|develop|implement|produce)\\b.{0,100}\\b" + target + "\\b", "i").test(value) ||
+    new RegExp("\\b(?:nkorera|nkore|mukorere|kora)\\b.{0,100}\\b" + target + "\\b", "i").test(value) ||
+    new RegExp("\\b" + target + "\\b.{0,80}\\b(?:for me|wowe ubwawe|ubwayo|yaryo)\\b", "i").test(value);
+}
+
+// ============================================================
 // SEND MESSAGE
 // ============================================================
 
@@ -6646,6 +6698,22 @@ async function sendMessage() {
   if (!text && selectedAttachments.length === 0) {
     userInput.focus();
     return;
+  }
+
+  // Clock questions must use the actual device clock, never a guessed
+  // language-model answer. This path makes no network/provider request.
+  if (selectedAttachments.length === 0) {
+    const clockAnswer = getLocalClockAnswer(text);
+    if (clockAnswer) {
+      updateCurrentConversationTitle(text);
+      addMessage(text, "user");
+      addMessage(clockAnswer, "ai");
+      userInput.value = "";
+      autoResizeInput();
+      saveCurrentConversation();
+      setStatus("Igihe cyagenzuwe ku isaha ya telefoni.", "online");
+      return;
+    }
   }
 
   // The chat API currently accepts text tasks, not binary uploads.
@@ -6830,6 +6898,40 @@ async function sendMessage() {
     // --------------------------------------------------------
     // SEND TO BACKEND
     // --------------------------------------------------------
+
+    // Explicit creation requests must enter the persistent task queue so
+    // the agent builds and verifies deliverables rather than only describing steps.
+    if (isExplicitBuildTask(taskText)) {
+      const executableTask = [
+        "Build and generate the actual requested deliverable; do not respond with instructions or a plan only.",
+        "Create complete file contents, verify the result, and attach downloadable verified artifacts.",
+        "Use the current conversation context for any project, school, name, design, or requirements already discussed.",
+        "User's requested work:",
+        taskText
+      ].join("\\n\\n");
+      const queued = await apiRequest(API_ENDPOINTS.tasks, {
+        method: "POST",
+        body: JSON.stringify({
+          task: executableTask,
+          sessionId: activeSessionId,
+          metadata: { source: "irhcf_chat_build_request", deliverableRequired: true }
+        }),
+        timeoutMs: 30000
+      });
+      await workflowPromise;
+      removeTypingIndicator(typingIndicator);
+      if (!queued?.success || !queued.task) {
+        throw new Error(queued?.error || "Ntibyashobotse gushyira igikorwa muri task queue.");
+      }
+      addMessage(
+        `Natangiye kubaka ibyo wasabye. Task #${queued.task.id} yashyizwe ku murongo; izakora build, verification, hanyuma yerekane dosiye yo gukuramo iyo irangiye. Reba Task Manager kugira ngo ukurikirane progress.`,
+        "ai"
+      );
+      saveCurrentConversation();
+      setStatus("Build task yashyizwe ku murongo.", "online");
+      openTaskManager();
+      return;
+    }
 
     const data =
       await apiRequest(

@@ -91,8 +91,8 @@ test("attached-photo background editing calls the authenticated real image-edit 
 
   assert.ok(app.includes('"/api/media/image/edit"'));
   const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
-  assert.match(html, /src="app\.js\?v=2\.0\.7"/, "Deploying a new frontend version must bypass stale cached app.js.");
-  assert.match(html, /href="style\.css\?v=2\.0\.7"/, "Deploying a new frontend version must refresh the related stylesheet.");
+  assert.match(html, /src="app\.js\?v=2\.0\.8"/, "Deploying a new frontend version must bypass stale cached app.js.");
+  assert.match(html, /href="style\.css\?v=2\.0\.8"/, "Deploying a new frontend version must refresh the related stylesheet.");
   assert.ok(app.includes("async function editAttachedImage(prompt, file)"));
   assert.ok(app.includes('[IRHCF IMAGE EDIT ROUTING v2.0.5]'), "The deployed frontend must expose a routing diagnostic so stale frontend code can be distinguished from a failed image-edit API.");
   assert.ok(app.includes("pendingImageEditPrompt"), "A background-edit request made before choosing a photo must be remembered.");
@@ -174,8 +174,8 @@ test("selected image attachments show thumbnails in the composer and refresh fro
   assert.match(app, /attachment-thumbnail/);
   assert.match(app, /Photo preview: /);
   assert.match(app, /URL\.createObjectURL\(file\)/);
-  assert.match(html, /src="app\.js\?v=2\.0\.7"/);
-  assert.match(html, /href="style\.css\?v=2\.0\.7"/);
+  assert.match(html, /src="app\.js\?v=2\.0\.8"/);
+  assert.match(html, /href="style\.css\?v=2\.0\.8"/);
 });
 
 
@@ -186,8 +186,8 @@ test("camera capture is available in the chat composer and refreshes frontend as
   assert.match(html, /id="cameraButton"/);
   assert.match(app, /getElementById\(\s*"cameraButton"/);
   assert.match(app, /setAttribute\("capture",\s*"environment"\)/);
-  assert.match(html, /src="app\.js\?v=2\.0\.7"/);
-  assert.match(html, /href="style\.css\?v=2\.0\.7"/);
+  assert.match(html, /src="app\.js\?v=2\.0\.8"/);
+  assert.match(html, /href="style\.css\?v=2\.0\.8"/);
 });
 
 
@@ -201,4 +201,34 @@ test("task manager exposes authenticated downloads for verified task artifacts",
   assert.match(app, /link\.download = artifact\.name/);
   assert.match(engine, /router\.get\("\/:id\/artifacts\/:filename"/);
   assert.match(engine, /verified === true/);
+});
+
+
+test("chat routes explicit build requests to the persistent task executor and answers local time from the device clock", () => {
+  const root = path.join(__dirname, "..", "..");
+  const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
+  const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
+
+  assert.match(app, /function getLocalClockAnswer\(question\)/);
+  assert.match(app, /Intl\.DateTimeFormat\(\)\.resolvedOptions\(\)\.timeZone/,
+    "Local time answers must use the device timezone.");
+  assert.match(app, /function isExplicitBuildTask\(text\)/);
+  assert.match(app, /isExplicitBuildTask\(taskText\)/,
+    "Explicit creation requests must be routed away from chat-only advice.");
+  assert.match(app, /API_ENDPOINTS\.tasks/);
+  assert.match(app, /deliverableRequired: true/);
+  assert.match(app, /Build and generate the actual requested deliverable/);
+  assert.match(html, /src="app\.js\?v=2\.0\.8"/);
+  assert.match(html, /href="style\.css\?v=2\.0\.8"/);
+});
+
+
+test("media endpoints distinguish exhausted API credits from generic provider failures", () => {
+  const root = path.join(__dirname, "..", "..");
+  const server = fs.readFileSync(path.join(root, "backend", "server.js"), "utf8");
+
+  assert.match(server, /PROVIDER_CREDITS_EXHAUSTED/);
+  assert.match(server, /API credit balance is exhausted/);
+  assert.match(server, /the original photo was not changed/);
+  assert.match(server, /no audio was generated/);
 });
