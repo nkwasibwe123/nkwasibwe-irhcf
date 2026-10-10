@@ -6587,7 +6587,19 @@ async function sendMessage() {
   const imageAttachments = selectedAttachments.filter(file =>
     /^image\/(png|jpeg|webp)$/i.test(String(file.type || ""))
   );
-  if (imageEditIntent && imageAttachments.length === 1 && selectedAttachments.length === 1) {
+  if (imageEditIntent) {
+    if (imageAttachments.length !== 1 || selectedAttachments.length !== 1) {
+      showToast(
+        "Kugira ngo mpindure ifoto, shyiraho ifoto imwe (PNG/JPG/WebP) hanyuma wohereze amabwiriza yo kuyihindura hamwe na yo.",
+        "warning"
+      );
+      setStatus(
+        "Ongeraho ifoto muri ubu butumwa, urugero: “Change the background to a white studio background”, hanyuma wongere wohereze.",
+        "normal"
+      );
+      return;
+    }
+
     const prompt = /background|back\\s*ground|inyuma/i.test(text)
       ? "Edit this photo by changing/removing its background as requested: " + text +
         ". Preserve the main subject's identity, appearance, proportions, and edges; blend the new background naturally and keep the result photorealistic unless the user asks for another style."
