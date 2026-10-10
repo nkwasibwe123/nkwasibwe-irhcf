@@ -2,7 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { TaskEngine, TASK_STATES } = require("./task-engine");
+const { TaskEngine, TASK_STATES, isUsableTaskResult } = require("./task-engine");
 
 test("cancelled task is not verified, completed, or requeued after executor returns", async () => {
   let executorCalls = 0;
@@ -96,4 +96,16 @@ test("retry is not reported as a successful repair without a confirmed fix", asy
   assert.equal(updates.length, 2);
   assert.match(updates[1].params[3], /not yet confirmed fixed/i);
   assert.equal(JSON.parse(updates[1].params[2]).repair.repaired, false);
+});
+
+test("autonomous task verification rejects empty, failed, and quality-invalid output", () => {
+  assert.equal(isUsableTaskResult(null), false);
+  assert.equal(isUsableTaskResult({ success: false, answer: "No provider credits" }), false);
+  assert.equal(isUsableTaskResult({
+    success: true,
+    response: { content: "A response exists." },
+    agent: { responseQuality: { verified: false } }
+  }), false);
+  assert.equal(isUsableTaskResult({ success: true, response: { content: "Verified result." } }), true);
+  assert.equal(isUsableTaskResult("   "), false);
 });
