@@ -138,9 +138,7 @@ function evaluateExpansionReadiness(plan, results = {}) {
     "regression"
   ];
 
-  if (plan.risk === "critical") {
-    required.push("explicit_promotion");
-  }
+  required.push("explicit_promotion");
 
   const missing = required.filter(
     (key) => results[key] !== true
