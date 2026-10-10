@@ -16,6 +16,10 @@ const OpenAI = require("openai");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
+const fs = require("node:fs/promises");
+const os = require("node:os");
+const path = require("node:path");
+const { editVideoFile } = require("./media/video-editor");
 const { toFile } = require("openai/uploads");
 
 // ============================================================
@@ -3780,6 +3784,107 @@ app.post("/api/media/image/edit", authenticateToken, async (req, res) => {
 // Jobs are persisted per user; status and content endpoints enforce
 // ownership before consulting or downloading provider assets.
 // ============================================================
+
+// ============================================================
+// AUTHENTICATED LOCAL VIDEO EDITING (FFmpeg)
+// Accepts bounded base64 video input, renders in an isolated temp
+// directory, returns a downloadable base64 output, then cleans up.
+// ============================================================
+
+app.post("/api/media/video/edit", authenticateToken, async (req, res) => {
+  let tempDir;
+  try {
+    const mimeType = String(req.body?.mimeType || "").toLowerCase();
+    const videoBase64 = String(req.body?.videoBase64 || "");
+    const acceptedTypes = new Map([
+      ["video/mp4", "mp4"],
+      ["video/webm", "webm"],
+      ["video/quicktime", "mov"]
+    ]);
+    if (!acceptedTypes.has(mimeType) ||
+        !videoBase64 ||
+        videoBase64.length > 8_500_000 ||
+        !/^[A-Za-z0-9+/]+={0,2}$/.test(videoBase64)) {
+      return res.status(400).json({
+        success: false,
+        error: "Choose an MP4, WebM or MOV video no larger than 6 MB.",
+        code: "VIDEO_EDIT_INPUT_INVALID"
+      });
+    }
+
+    const inputBuffer = Buffer.from(videoBase64, "base64");
+    if (!inputBuffer.length || inputBuffer.length > 6 * 1024 * 1024) {
+      return res.status(413).json({
+        success: false,
+        error: "Video input exceeds the 6 MB limit.",
+        code: "VIDEO_EDIT_INPUT_TOO_LARGE"
+      });
+    }
+    if (req.body?.subtitles) {
+      return res.status(501).json({
+        success: false,
+        error: "Subtitle burn-in is not yet implemented. Remove subtitles and retry.",
+        code: "VIDEO_SUBTITLES_NOT_IMPLEMENTED"
+      });
+    }
+
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "irhcf-video-"));
+    const inputPath = path.join(tempDir, "input." + acceptedTypes.get(mimeType));
+    const outputFormat = String(req.body?.outputFormat || "mp4").toLowerCase();
+    if (!["mp4", "webm", "mov"].includes(outputFormat)) {
+      return res.status(400).json({
+        success: false,
+        error: "Output format must be MP4, WebM or MOV.",
+        code: "VIDEO_FORMAT_UNSUPPORTED"
+      });
+    }
+    const outputPath = path.join(tempDir, "edited." + outputFormat);
+    await fs.writeFile(inputPath, inputBuffer, { flag: "wx", mode: 0o600 });
+
+    const result = await editVideoFile({
+      inputPath,
+      outputPath,
+      request: {
+        effect: req.body?.effect,
+        startSeconds: req.body?.startSeconds,
+        endSeconds: req.body?.endSeconds,
+        outputFormat
+      },
+      timeoutMs: 180000
+    });
+    const output = await fs.readFile(result.outputPath);
+    return res.status(200).json({
+      success: true,
+      mediaType: "video",
+      mimeType: outputFormat === "webm" ? "video/webm" : outputFormat === "mov" ? "video/quicktime" : "video/mp4",
+      filename: "nkwasibwe-edited." + outputFormat,
+      videoBase64: output.toString("base64"),
+      effect: result.effect,
+      outputFormat: result.outputFormat,
+      sizeBytes: output.length
+    });
+  } catch (error) {
+    const code = String(error?.code || "VIDEO_EDIT_FAILED");
+    const status = code === "VIDEO_INPUT_NOT_FOUND" ? 400
+      : code === "VIDEO_EFFECT_UNSUPPORTED" || code === "VIDEO_TRIM_INVALID" ||
+        code === "VIDEO_FORMAT_UNSUPPORTED" || code === "VIDEO_OUTPUT_EXTENSION_MISMATCH" ? 400
+      : code === "FFMPEG_UNAVAILABLE" ? 503
+      : code === "VIDEO_RENDER_TIMEOUT" ? 504 : 422;
+    console.error("[MEDIA_VIDEO_EDIT] Render failed:", {
+      code,
+      message: String(error?.message || "Video editing failed").slice(0, 300)
+    });
+    return res.status(status).json({
+      success: false,
+      error: code === "FFMPEG_UNAVAILABLE"
+        ? "Video editing is unavailable because FFmpeg is not installed on this server."
+        : String(error?.message || "Video editing failed").slice(0, 300),
+      code
+    });
+  } finally {
+    if (tempDir) await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+  }
+});
 
 app.post("/api/media/video", authenticateToken, async (req, res) => {
   try {

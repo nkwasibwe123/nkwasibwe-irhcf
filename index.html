@@ -20,7 +20,7 @@
 
   <link
     rel="stylesheet"
-    href="style.css?v=2.0.5"
+    href="style.css?v=2.0.6"
   >
 
 </head>
@@ -303,6 +303,7 @@
             <button class="dashboard-card" type="button" data-dashboard-action="audio"><span class="dashboard-card-icon">🎧</span><strong>Add Audio</strong><span>Voice, music and audio processing.</span></button>
             <button class="dashboard-card" type="button" data-dashboard-action="audio-transcribe"><span class="dashboard-card-icon">📝</span><strong>Transcribe Audio</strong><span>Convert an audio file into editable text in supported languages.</span></button>
             <button class="dashboard-card" type="button" data-dashboard-action="image-create"><span class="dashboard-card-icon">✨</span><strong>Create Image</strong><span>Describe an image to create.</span></button>
+            <button class="dashboard-card" type="button" data-dashboard-action="video-edit"><span class="dashboard-card-icon">🎞️</span><strong>Video Editor</strong><span>Trim a short video and apply real FFmpeg effects.</span></button>
             <button class="dashboard-card" type="button" data-dashboard-action="video-create"><span class="dashboard-card-icon">🎥</span><strong>Create HD Video</strong><span>Generate 720p video clips with Sora; API access and credits required.</span></button>
             <button class="dashboard-card" type="button" data-dashboard-action="video-from-photo"><span class="dashboard-card-icon">🖼️🎬</span><strong>Animate a Photo</strong><span>Use a photo as a reference for a Sora video clip.</span></button>
             <button class="dashboard-card" type="button" data-dashboard-action="music-create"><span class="dashboard-card-icon">🎵</span><strong>Create Song</strong><span>Generate an MP3 song with ElevenLabs Music; API key and credits required.</span></button>
@@ -315,6 +316,39 @@
             <button class="dashboard-card" type="button" data-dashboard-action="capabilities"><span class="dashboard-card-icon">🧩</span><strong>Capabilities</strong><span>Abilities and controlled capability expansion.</span></button>
             <button class="dashboard-card" type="button" data-dashboard-action="economy"><span class="dashboard-card-icon">💰</span><strong>Economic Autopilot</strong><span>Research lawful revenue opportunities and build safe proposals.</span></button>
           </div>
+          <section id="videoEditorPanel" class="video-editor-panel" hidden aria-labelledby="videoEditorTitle">
+            <div class="task-manager-header">
+              <div><h3 id="videoEditorTitle">Video Editor</h3><p>MP4, WebM or MOV up to 6 MB. Rendering requires FFmpeg on the server.</p></div>
+              <button id="videoEditorClose" class="task-secondary-button" type="button">Close editor</button>
+            </div>
+            <form id="videoEditorForm" class="video-editor-form">
+              <label for="videoEditorFile">Choose source video</label>
+              <input id="videoEditorFile" type="file" accept="video/mp4,video/webm,video/quicktime" required>
+              <video id="videoEditorPreview" controls playsinline hidden></video>
+              <div class="video-editor-fields">
+                <label for="videoEditorEffect">Effect
+                  <select id="videoEditorEffect">
+                    <option value="none">Original</option><option value="cinematic">Cinematic</option>
+                    <option value="vintage">Vintage</option><option value="monochrome">Black and white</option>
+                    <option value="warm">Warm</option><option value="cool">Cool</option>
+                    <option value="vivid">Vivid</option><option value="blur">Blur</option>
+                    <option value="sharpen">Sharpen</option><option value="fade-in">Fade in</option>
+                    <option value="fade-out">Fade out</option>
+                  </select>
+                </label>
+                <label for="videoEditorStart">Trim start (seconds)<input id="videoEditorStart" type="number" min="0" max="86400" step="0.1" value="0"></label>
+                <label for="videoEditorEnd">Trim end (seconds; optional)<input id="videoEditorEnd" type="number" min="0" max="86400" step="0.1" placeholder="End of video"></label>
+                <label for="videoEditorFormat">Output format
+                  <select id="videoEditorFormat"><option value="mp4">MP4</option><option value="webm">WebM</option><option value="mov">MOV</option></select>
+                </label>
+                <label for="videoEditorSubtitles">Subtitles (not available yet)<textarea id="videoEditorSubtitles" rows="2" maxlength="20000" disabled placeholder="Subtitle burn-in will be added in a follow-up."></textarea></label>
+              </div>
+              <button id="videoEditorSubmit" class="task-primary-button" type="submit">Render video</button>
+              <p id="videoEditorStatus" role="status" aria-live="polite"></p>
+              <video id="videoEditorOutput" controls playsinline hidden></video>
+              <a id="videoEditorDownload" hidden download="nkwasibwe-edited.mp4">Download edited video</a>
+            </form>
+          </section>
           <section id="taskManager" class="task-manager" hidden aria-labelledby="taskManagerTitle">
             <div class="task-manager-header">
               <div>
@@ -809,7 +843,7 @@ STATUS BAR
        ================================================ -->
 
   <script
-    src="app.js?v=2.0.5"
+    src="app.js?v=2.0.6"
   ></script>
   <script
     src="voice-client.js"

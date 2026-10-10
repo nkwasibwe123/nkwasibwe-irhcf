@@ -146,6 +146,9 @@ const API_ENDPOINTS = Object.freeze({
   videoGeneration:
     "/api/media/video",
 
+  videoEditing:
+    "/api/media/video/edit",
+
   musicGeneration:
     "/api/media/music",
 
@@ -506,7 +509,7 @@ const STORAGE_KEYS = Object.freeze({
 // ============================================================
 
 const APP_VERSION =
-  "2.0.3";
+  "2.0.6";
 
 
 
@@ -8129,6 +8132,96 @@ async function createLongRunningTask(event) {
   } finally {
     if (taskCreateButton) taskCreateButton.disabled = false;
   }
+}
+
+function initializeVideoEditor() {
+  const panel = document.getElementById("videoEditorPanel");
+  const form = document.getElementById("videoEditorForm");
+  const fileInput = document.getElementById("videoEditorFile");
+  const preview = document.getElementById("videoEditorPreview");
+  const output = document.getElementById("videoEditorOutput");
+  const download = document.getElementById("videoEditorDownload");
+  const status = document.getElementById("videoEditorStatus");
+  const submit = document.getElementById("videoEditorSubmit");
+  const close = document.getElementById("videoEditorClose");
+  if (!panel || !form || !fileInput || form.dataset.initialized === "true") return;
+  form.dataset.initialized = "true";
+
+  fileInput.addEventListener("change", () => {
+    const file = fileInput.files?.[0];
+    if (!file) return;
+    if (file.size > 6 * 1024 * 1024) {
+      fileInput.value = "";
+      status.textContent = "Video irenze 6 MB. Hitamo ntoya.";
+      return;
+    }
+    if (!["video/mp4", "video/webm", "video/quicktime"].includes(file.type)) {
+      fileInput.value = "";
+      status.textContent = "Hitamo MP4, WebM cyangwa MOV.";
+      return;
+    }
+    preview.src = URL.createObjectURL(file);
+    preview.hidden = false;
+    output.hidden = true;
+    download.hidden = true;
+    status.textContent = "Video yatoranyijwe: " + file.name;
+  });
+
+  close?.addEventListener("click", () => { panel.hidden = true; });
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const file = fileInput.files?.[0];
+    if (!file) { status.textContent = "Banza uhitemo video."; return; }
+    if (!authToken) { status.textContent = "Injira muri konti yawe mbere yo guhindura video."; return; }
+    const startSeconds = Number(document.getElementById("videoEditorStart").value || 0);
+    const endValue = document.getElementById("videoEditorEnd").value.trim();
+    const endSeconds = endValue ? Number(endValue) : null;
+    if (!Number.isFinite(startSeconds) || startSeconds < 0 ||
+        (endSeconds !== null && (!Number.isFinite(endSeconds) || endSeconds <= startSeconds))) {
+      status.textContent = "Igihe cyo gutangira no kurangira nticyemewe.";
+      return;
+    }
+    submit.disabled = true;
+    status.textContent = "Video irimo guhindurwa. Tegereza...";
+    output.hidden = true;
+    download.hidden = true;
+    try {
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error("Ntibyashobotse gusoma video."));
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.readAsDataURL(file);
+      });
+      const encoded = dataUrl.slice(dataUrl.indexOf(",") + 1);
+      const result = await apiRequest(API_ENDPOINTS.videoEditing, {
+        method: "POST",
+        timeoutMs: 240000,
+        body: JSON.stringify({
+          mimeType: file.type,
+          videoBase64: encoded,
+          effect: document.getElementById("videoEditorEffect").value,
+          startSeconds,
+          endSeconds,
+          outputFormat: document.getElementById("videoEditorFormat").value
+        })
+      });
+      if (!result?.success || !result.videoBase64) throw new Error(result?.error || "Server ntiyagaruye video yahinduwe.");
+      const bytes = Uint8Array.from(atob(result.videoBase64), char => char.charCodeAt(0));
+      const blob = new Blob([bytes], { type: result.mimeType || "video/mp4" });
+      output.src = URL.createObjectURL(blob);
+      output.hidden = false;
+      download.href = output.src;
+      download.download = result.filename || "nkwasibwe-edited.mp4";
+      download.hidden = false;
+      status.textContent = "Byarangiye: " + Math.round(blob.size / 1024) + " KB. Reba video cyangwa uyikuremo.";
+    } catch (error) {
+      status.textContent = String(error?.message || "Guhindura video byanze.") +
+        " Niba FFmpeg itari kuri server, iyi serivisi ntishobora gukora.";
+    } finally {
+      submit.disabled = false;
+    }
+  });
 }
 
 async function dashboardAction(action) {
