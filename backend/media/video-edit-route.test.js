@@ -33,8 +33,8 @@ test("video edit API does not accept arbitrary video MIME types or output format
 test("mobile video editor UI is connected to the authenticated endpoint", () => {
   const root = path.join(__dirname, "..", "..");
   const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
-  const app = fs.readFileSync(path.join(root, "..", "app.js"), "utf8");
-  const css = fs.readFileSync(path.join(root, "..", "style.css"), "utf8");
+  const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
+  const css = fs.readFileSync(path.join(root, "style.css"), "utf8");
   assert.match(html, /data-dashboard-action="video-edit"/);
   assert.match(html, /id="videoEditorForm"/);
   assert.match(html, /id="videoEditorEffect"/);
