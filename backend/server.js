@@ -32197,7 +32197,11 @@ const persistentTaskEngine =
         return {
           ...result,
           taskAction,
-          specialistTeam
+          specialistTeam: {
+            selectedSpecialists: specialistTeam.selectedSpecialists,
+            completed: specialistTeam.completed,
+            failed: specialistTeam.failed
+          }
         };
       },
 
