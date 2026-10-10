@@ -13,11 +13,22 @@ function clean(value, limit) {
 function buildSearchContext(result = {}) {
   const rawResults = Array.isArray(result.results) ? result.results : [];
   const sources = rawResults.slice(0, MAX_SOURCES).map((item, index) => {
-    const url = clean(item?.url, MAX_URL_LENGTH);
+    const rawUrl = clean(item?.url, MAX_URL_LENGTH);
+    let safeUrl = null;
+    try {
+      const parsed = new URL(rawUrl);
+      if ((parsed.protocol === "http:" || parsed.protocol === "https:") &&
+          parsed.hostname && !parsed.username && !parsed.password) {
+        parsed.hash = "";
+        safeUrl = parsed.toString();
+      }
+    } catch {
+      safeUrl = null;
+    }
     return {
       id: index + 1,
       title: clean(item?.title, MAX_TITLE_LENGTH) || "Untitled source",
-      url: /^https?:\/\//i.test(url) ? url : null,
+      url: safeUrl,
       provider: clean(item?.source, 80) || "unknown",
       snippet: clean(item?.snippet, MAX_SNIPPET_LENGTH)
     };
