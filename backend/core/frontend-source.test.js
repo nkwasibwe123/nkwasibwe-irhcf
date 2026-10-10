@@ -90,6 +90,9 @@ test("attached-photo background editing calls the authenticated real image-edit 
   const server = fs.readFileSync(path.join(root, "backend", "server.js"), "utf8");
 
   assert.ok(app.includes('"/api/media/image/edit"'));
+  const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  assert.match(html, /src="app\.js\?v=2\.0\.1"/, "Deploying a new frontend version must bypass stale cached app.js.");
+  assert.match(html, /href="style\.css\?v=2\.0\.1"/, "Deploying a new frontend version must refresh the related stylesheet.");
   assert.ok(app.includes("async function editAttachedImage(prompt, file)"));
   assert.ok(app.includes("pendingImageEditPrompt"), "A background-edit request made before choosing a photo must be remembered.");
   assert.match(app, /fileInput\.click\(\)/, "The app must open the photo picker when an edit request has no attached photo.");
