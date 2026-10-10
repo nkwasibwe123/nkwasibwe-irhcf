@@ -4066,8 +4066,8 @@ app.post(
       }
 
       const form = new FormData();
-      form.set("sdp", sdp);
-      form.set("session", JSON.stringify({
+      form.set("sdp", new Blob([sdp], { type: "application/sdp" }));
+      form.set("session", new Blob([JSON.stringify({
         type: "realtime",
         model: process.env.OPENAI_REALTIME_MODEL || "gpt-realtime-2.1",
         instructions: [
@@ -4080,7 +4080,7 @@ app.post(
         audio: {
           output: { voice: "marin" }
         }
-      }));
+      })], { type: "application/json" }));
 
       const upstream = await fetch("https://api.openai.com/v1/realtime/calls", {
         method: "POST",
