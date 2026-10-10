@@ -34,7 +34,7 @@ test("voice note and live voice controls use the existing authenticated IRHCF AP
 
   assert.match(html, /id="voiceButton"/, "Voice-note recording control must exist.");
   assert.match(html, /id="liveVoiceButton"/, "Live voice control must exist.");
-  assert.match(voice, /\/api\/media\/transcribe/, "Voice notes must use the existing transcription endpoint.");
+  assert.match(app, /API_ENDPOINTS\.audioTranscription/, "Voice notes must use the existing transcription endpoint.");
   assert.match(voice, /\/api\/voice\/realtime/, "Live voice must use the authenticated server-side SDP endpoint.");
   assert.match(voice, /nkwasibwe_auth_token/, "Live voice must use the existing authentication token.");
   assert.match(app, /async function toggleVoiceRecording\(/, "The existing composer must own voice-note recording.");
