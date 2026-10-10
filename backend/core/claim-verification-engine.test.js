@@ -34,7 +34,7 @@ test("validates supported claims only when they reference a supplied source", ()
   assert.equal(result.claims[0].sourceAssessments[0].title, "Official report");
   assert.equal(result.claims[0].sourceAssessments[0].url, "https://example.org/report");
   assert.equal(result.claims[1].status, "insufficient_evidence");
-  assert.ok(result.issues.includes("SUPPORTED_WITHOUT_VALID_SOURCE"));
+  assert.ok(result.issues.includes("SUPPORTED_WITHOUT_SOURCE_SUPPORT"));
 });
 
 test("distinguishes contradictory claims from claims with insufficient evidence", () => {
