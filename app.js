@@ -6634,7 +6634,7 @@ async function sendMessage() {
         "text/javascript"].includes(String(file.type || "").toLowerCase());
   });
 
-  const imageEditIntent = /background|back\\s*ground|remove\\s+background|change\\s+background|edit\\s+(the\\s+)?photo|edit\\s+(the\\s+)?image|replace\\s+(the\\s+)?background|hindura|guhindura|inyuma|kuraho/i.test(text);
+  const imageEditIntent = /background|back\s*ground|remove\s+background|change\s+background|edit\s+(the\s+)?photo|edit\s+(the\s+)?image|replace\s+(the\s+)?background|hindura|guhindura|inyuma|kuraho/i.test(text);
   const imageAttachments = selectedAttachments.filter(file =>
     /^image\/(png|jpeg|webp)$/i.test(String(file.type || ""))
   );
@@ -6663,9 +6663,8 @@ async function sendMessage() {
       return;
     }
 
-    const prompt = /background|back\\s*ground|inyuma/i.test(text)
-      ? "Edit this photo by changing/removing its background as requested: " + text +
-        ". Preserve the main subject's identity, appearance, proportions, and edges; blend the new background naturally and keep the result photorealistic unless the user asks for another style."
+    const prompt = /background|back\s*ground|inyuma/i.test(text)
+      ? "Change the photo background to pure solid white (#FFFFFF). Keep the person exactly recognizable: do not alter the face, skin tone, hair, expression, body shape, pose, or clothing. Preserve fine edges around hair and clothes, use natural lighting, and do not add objects. User instructions: " + text
       : text;
     await editAttachedImage(prompt, imageAttachments[0]);
     return;

@@ -150,3 +150,17 @@ test("uploaded images are rendered with their user's chat message", () => {
   assert.match(source, /addMessage\(prompt, "user", \{ attachments: \[file\] \}\)/, "Image-edit requests must show the source photo in the user's message.");
   assert.match(source, /fileInput\.accept = "image\/\*,video\/\*/, "The file picker must restore its normal accepted types after image-edit selection.");
 });
+
+
+test("image edit intent handles spaced background wording and white-background instructions", () => {
+  const source = fs.readFileSync(path.join(__dirname, "..", "..", "app.js"), "utf8");
+  assert.match(source, /background\|back\\s\*ground\|remove\\s\+background/);
+  assert.match(source, /pure solid white \(#FFFFFF\)/);
+  assert.match(source, /do not alter the face, skin tone, hair, expression, body shape, pose, or clothing/);
+});
+
+test("chat role styles match the classes emitted by addMessage", () => {
+  const source = fs.readFileSync(path.join(__dirname, "..", "..", "style.css"), "utf8");
+  assert.match(source, /\.message\.user\s*\{/);
+  assert.match(source, /\.message\.ai\s*\{/);
+});
