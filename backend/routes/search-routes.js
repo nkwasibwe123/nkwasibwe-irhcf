@@ -118,6 +118,16 @@ function registerSearchRoutes(app, authenticateToken) {
         }
         indexed.push({ id, title, text, url, language: clean(document.language || "und", 20) });
       }
+      // Reject batches that exceed capacity before making any database or memory changes.
+      const newIds = new Set(indexed.map(document => document.id)
+        .filter(id => !engine.documents.has(id)));
+      if (engine.documents.size + newIds.size > engine.maxDocuments) {
+        return res.status(413).json({
+          success: false,
+          error: "The local search index has reached its configured capacity.",
+          code: "SEARCH_INDEX_FULL"
+        });
+      }
       // Persist first so a failed database write never reports a durable success.
       if (store.enabled) {
         for (const document of indexed) await store.upsert(document);
