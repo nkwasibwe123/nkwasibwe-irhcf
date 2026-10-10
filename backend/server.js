@@ -3668,6 +3668,104 @@ app.post("/api/media/image", authenticateToken, async (req, res) => {
 });
 
 // ============================================================
+// AUTHENTICATED IMAGE EDITING
+// Accept one bounded base64 image and return the edited image.
+// ============================================================
+
+app.post("/api/media/image/edit", authenticateToken, async (req, res) => {
+  try {
+    if (!openai) {
+      return res.status(503).json({
+        success: false,
+        error: "Image editing is unavailable because the OpenAI provider is not configured.",
+        code: "MEDIA_PROVIDER_UNAVAILABLE"
+      });
+    }
+
+    const prompt = String(req.body?.prompt || "").trim().slice(0, 4000);
+    const dataUrl = String(req.body?.imageDataUrl || "");
+    const match = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
+    if (!prompt) {
+      return res.status(400).json({
+        success: false,
+        error: "Describe how the image should be edited.",
+        code: "IMAGE_EDIT_PROMPT_REQUIRED"
+      });
+    }
+    if (!match) {
+      return res.status(400).json({
+        success: false,
+        error: "Choose a PNG, JPEG, or WebP image to edit.",
+        code: "IMAGE_EDIT_INPUT_INVALID"
+      });
+    }
+
+    const mimeType = match[1];
+    const base64 = match[2];
+    if (base64.length > 7 * 1024 * 1024) {
+      return res.status(413).json({
+        success: false,
+        error: "Image is too large. Please choose an image under 5 MB.",
+        code: "IMAGE_EDIT_INPUT_TOO_LARGE"
+      });
+    }
+
+    const imageBuffer = Buffer.from(base64, "base64");
+    if (!imageBuffer.length || imageBuffer.length > 5 * 1024 * 1024) {
+      return res.status(413).json({
+        success: false,
+        error: "Image is too large. Please choose an image under 5 MB.",
+        code: "IMAGE_EDIT_INPUT_TOO_LARGE"
+      });
+    }
+
+    const extension = mimeType === "image/jpeg" ? "jpg" : mimeType.split("/")[1];
+    const inputFile = await toFile(imageBuffer, `irhcf-input.${extension}`, { type: mimeType });
+    const edited = await openai.images.edit({
+      model: "gpt-image-1",
+      image: inputFile,
+      prompt,
+      n: 1,
+      size: "1024x1024"
+    });
+
+    const result = edited?.data?.[0];
+    if (!result?.b64_json && !result?.url) {
+      return res.status(502).json({
+        success: false,
+        error: "The image provider returned no edited image.",
+        code: "IMAGE_EDIT_RESULT_EMPTY"
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      mediaType: "image",
+      mimeType: "image/png",
+      image: result.b64_json
+        ? `data:image/png;base64,${result.b64_json}`
+        : result.url,
+      format: result.b64_json ? "data_url" : "url",
+      provider: "openai",
+      operation: "edit",
+      generatedAt: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error("[MEDIA_IMAGE_EDIT] Editing failed:", {
+      code: error?.code || null,
+      status: error?.status || null,
+      message: String(error?.message || "Image editing failed").slice(0, 500)
+    });
+    const status = Number(error?.status);
+    return res.status(status >= 400 && status < 600 ? status : 502).json({
+      success: false,
+      error: "Image editing failed. Check provider availability, model access, and account quota.",
+      code: error?.code || "IMAGE_EDIT_FAILED"
+    });
+  }
+});
+
+// ============================================================
 // AUTHENTICATED HD VIDEO GENERATION (SORA)
 // Jobs are persisted per user; status and content endpoints enforce
 // ownership before consulting or downloading provider assets.
