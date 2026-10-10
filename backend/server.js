@@ -13666,10 +13666,13 @@ let claimVerification = {
 
 if (researchRequired) {
   const evidenceSources = [];
-  const addEvidenceSource = (source, fallbackExcerpt = "") => {
+  const addEvidenceSource = (source) => {
     if (!source || typeof source !== "object") return;
     const url = String(source.url || "").trim();
-    const excerpt = String(source.snippet || source.excerpt || fallbackExcerpt || "").trim();
+    // A source URL plus a general research summary is not a
+    // source-specific excerpt. Never attribute the same summary
+    // to every URL: that would create misleading claim assessments.
+    const excerpt = String(source.snippet || source.excerpt || "").trim();
     if (!url || !excerpt) return;
     evidenceSources.push({
       title: String(source.title || "Research source").slice(0, 200),
@@ -13678,18 +13681,15 @@ if (researchRequired) {
     });
   };
 
-  // IRHCF search records include source-specific excerpts.
+  // Only source-specific excerpts can be assessed claim by claim.
+  // Gemini grounding metadata currently provides URLs without
+  // page excerpts, so those URLs remain research provenance but
+  // are not misrepresented as individually reviewed evidence.
   for (const source of (Array.isArray(irhcfSearchContext?.sources) ? irhcfSearchContext.sources : [])) {
     addEvidenceSource(source);
   }
-  // Gemini grounding currently supplies source URLs but not
-  // per-source excerpts, so label its generated research summary
-  // explicitly as a summary rather than a page-specific quote.
   for (const source of (Array.isArray(liveResearch?.sources) ? liveResearch.sources : [])) {
-    addEvidenceSource({
-      ...source,
-      title: source.title ? `${source.title} (grounded research summary)` : "Grounded research summary"
-    }, liveResearch.answer || "");
+    addEvidenceSource(source);
   }
 
   if (evidenceSources.length) {
