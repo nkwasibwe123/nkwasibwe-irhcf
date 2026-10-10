@@ -1751,3 +1751,25 @@ body {
   .language-control { gap: 2px; padding: 0 4px; }
   .language-control select { max-width: 82px; font-size: 11px; }
 }
+
+
+.dashboard-language-settings {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel-light);
+}
+.dashboard-language-settings h3 { margin: 0 0 6px; font-size: 15px; }
+.dashboard-language-settings p { margin: 0; max-width: 650px; color: var(--text-muted); font-size: 12px; line-height: 1.55; }
+.dashboard-language-control { flex: 0 0 auto; min-height: 42px; }
+.dashboard-language-control select { max-width: 180px; }
+@media (max-width: 560px) {
+  .dashboard-language-settings { align-items: stretch; flex-direction: column; padding: 12px; }
+  .dashboard-language-control { align-self: flex-start; }
+  .dashboard-language-control select { max-width: 220px; }
+}
