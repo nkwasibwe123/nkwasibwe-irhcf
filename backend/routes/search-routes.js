@@ -1,9 +1,11 @@
 "use strict";
 
 const { IRHCFSearchEngine, normalizeUrl } = require("../core/search-engine");
+const { createWebSearchProviders } = require("../core/web-search-providers");
 
 const engine = new IRHCFSearchEngine({
-  maxDocuments: Number(process.env.IRHCF_SEARCH_MAX_DOCUMENTS) || 50000
+  maxDocuments: Number(process.env.IRHCF_SEARCH_MAX_DOCUMENTS) || 50000,
+  providers: createWebSearchProviders()
 });
 
 const MAX_INDEX_TEXT = 100000;
