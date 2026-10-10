@@ -189,3 +189,16 @@ test("camera capture is available in the chat composer and refreshes frontend as
   assert.match(html, /src="app\.js\?v=2\.0\.6"/);
   assert.match(html, /href="style\.css\?v=2\.0\.6"/);
 });
+
+
+test("task manager exposes authenticated downloads for verified task artifacts", () => {
+  const root = path.join(__dirname, "..", "..");
+  const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
+  const engine = fs.readFileSync(path.join(root, "backend", "core", "task-engine.js"), "utf8");
+  assert.match(app, /taskAction\?\.artifacts/);
+  assert.match(app, /Authorization: `Bearer \\${authToken\\`}/);
+  assert.match(app, /URL\.createObjectURL\(blob\)/);
+  assert.match(app, /link\.download = artifact\.name/);
+  assert.match(engine, /router\.get\("\/:id\/artifacts\/:filename"/);
+  assert.match(engine, /artifact\.verified === true/);
+});
