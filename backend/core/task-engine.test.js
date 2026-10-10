@@ -67,3 +67,33 @@ test("cancelled task is not verified, completed, or requeued after executor retu
   assert.equal(result.status, TASK_STATES.FAILED);
   assert.equal(result.metadata.cancelled, true);
 });
+
+test("retry is not reported as a successful repair without a confirmed fix", async () => {
+  const updates = [];
+  const task = {
+    id: "task-retry",
+    user_id: "user-test",
+    attempts: 1,
+    max_attempts: 3
+  };
+  const engine = new TaskEngine({
+    pool: {
+      async query(sql, params) {
+        updates.push({ sql, params });
+        return { rows: [] };
+      }
+    },
+    repairer: async () => ({
+      repaired: false,
+      strategy: "contextual_reexecution",
+      nextStep: "Retry and verify."
+    })
+  });
+  engine.getTask = async () => ({ ...task, status: TASK_STATES.PLANNED });
+
+  await engine.handleTaskFailure(task, "provider timed out");
+
+  assert.equal(updates.length, 2);
+  assert.match(updates[1].params[3], /not yet confirmed fixed/i);
+  assert.equal(JSON.parse(updates[1].params[2]).repair.repaired, false);
+});
