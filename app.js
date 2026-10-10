@@ -6683,7 +6683,7 @@ async function sendMessage() {
   });
 
   const imageEditIntent = /background|back\s*ground|remove\s+background|change\s+background|edit\s+(the\s+)?photo|edit\s+(the\s+)?image|replace\s+(the\s+)?background|hindura|guhindura|inyuma|kuraho/i.test(text);
-  const videoEditIntent = /\\b(edit|improve|enhance|make|fix|trim|cut|polish)\\b.{0,60}\\b(video|clip|footage)\\b|\\b(video|clip|footage)\\b.{0,60}\\b(edit|improve|enhance|look good|beautiful|cinematic|trim|cut)\\b|\\b(nkorera neza|itunganye|video ibe isa neza|hindura video|gukata video)\\b/i.test(text);
+  const videoEditIntent = /\b(edit|improve|enhance|make|fix|trim|cut|polish)\b.{0,60}\b(video|clip|footage)\b|\b(video|clip|footage)\b.{0,60}\b(edit|improve|enhance|look good|beautiful|cinematic|trim|cut)\b|\b(nkorera neza|itunganye|video ibe isa neza|hindura video|gukata video)\b/i.test(text);
   const videoAttachments = selectedAttachments.filter(file =>
     ["video/mp4", "video/webm", "video/quicktime"].includes(String(file.type || "").toLowerCase())
   );
