@@ -94,6 +94,8 @@ test("attached-photo background editing calls the authenticated real image-edit 
   assert.ok(app.includes("pendingImageEditPrompt"), "A background-edit request made before choosing a photo must be remembered.");
   assert.match(app, /fileInput\.click\(\)/, "The app must open the photo picker when an edit request has no attached photo.");
   assert.ok(app.includes("void editAttachedImage(prompt, selectedImage)"), "Selecting a photo must resume the real image-edit workflow.");
+  assert.match(app, /fileInput\.accept = "image\/\*,video\/\*,audio\/\*,application\/pdf,text\/\*[,\s\S]*?spreadsheetml\.sheet"/,
+    "The normal attachment picker types must be restored after the one-off photo selection.");
   assert.ok(app.includes("imageDataUrl"));
   assert.ok(app.includes('download.download = "nkwasibwe-irhcf-edited-image.png"'));
   assert.ok(server.includes('app.post("/api/media/image/edit", authenticateToken'));

@@ -5950,6 +5950,8 @@ function handleFileSelection(
       /^image\/(png|jpeg|webp)$/i.test(String(file.type || ""))
     );
     event.target.value = "";
+    // Restore the normal attachment types after the one-off image picker.
+    fileInput.accept = "image/*,video/*,audio/*,application/pdf,text/*,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
     if (!selectedImage) {
       showToast("Hitamo ifoto ya PNG, JPG/JPEG cyangwa WebP.", "warning");
       setStatus("Nta foto yatoranyijwe. Ongera wohereze amabwiriza hanyuma uhitemo ifoto.", "normal");
