@@ -6537,7 +6537,7 @@ async function sendMessage() {
 
   const imageEditIntent = /background|back\\s*ground|remove\\s+background|change\\s+background|edit\\s+(the\\s+)?photo|edit\\s+(the\\s+)?image|replace\\s+(the\\s+)?background|hindura|guhindura|inyuma|kuraho/i.test(text);
   const imageAttachments = selectedAttachments.filter(file =>
-    /^image\\/(png|jpeg|webp)$/i.test(String(file.type || ""))
+    /^image\/(png|jpeg|webp)$/i.test(String(file.type || ""))
   );
   if (imageEditIntent && imageAttachments.length === 1 && selectedAttachments.length === 1) {
     const prompt = /background|back\\s*ground|inyuma/i.test(text)
