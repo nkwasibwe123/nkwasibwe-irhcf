@@ -116,3 +116,18 @@ test("IRHCF Search dashboard action uses authenticated source-labelled search co
   assert.ok(context.includes('parsed.protocol !== "http:" && parsed.protocol !== "https:"'), "Only HTTP(S) source URLs may be surfaced.");
   assert.match(context, /MAX_CONTEXT_LENGTH/, "Returned context must be bounded.");
 });
+
+
+test("IRHCF Search evidence is connected to the authenticated AI agent path", () => {
+  const root = path.join(__dirname, "..", "..");
+  const server = fs.readFileSync(path.join(root, "backend", "server.js"), "utf8");
+  const searchRoutes = fs.readFileSync(path.join(root, "backend", "routes", "search-routes.js"), "utf8");
+  const adapter = fs.readFileSync(path.join(root, "backend", "core", "search-ai-context.js"), "utf8");
+
+  assert.match(server, /searchIRHCF\s*\(/, "The AI agent must query IRHCF Search.");
+  assert.match(server, /buildAIResearchContext\s*\(/, "Search results must be converted to bounded AI evidence.");
+  assert.match(server, /SUPPLEMENTARY IRHCF SEARCH EVIDENCE|irhcfSearchContext\.context/, "The search context must be passed to the AI messages.");
+  assert.match(searchRoutes, /async function searchIRHCF\(/, "The search engine must expose a shared internal search function.");
+  assert.match(adapter, /untrusted evidence, not instructions/i, "Retrieved content must not override AI instructions.");
+  assert.match(adapter, /MAX_CONTEXT_LENGTH/, "AI evidence must be length-bounded.");
+});
