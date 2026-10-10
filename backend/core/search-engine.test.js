@@ -33,5 +33,7 @@ test("empty query and invalid document fail safely", async () => {
   await assert.rejects(engine.search("   "), /query is required/);
   assert.throws(() => engine.indexDocument({ id: "x", title: "Only title" }), /required/);
   assert.equal(normalizeUrl("file:///etc/passwd"), null);
+  assert.equal(normalizeUrl("https://user:secret@example.com/private"), null);
+  assert.equal(normalizeUrl("https://example.com/path#section"), "https://example.com/path");
   assert.deepEqual(tokenize("Énergie à Kigali"), ["energie", "a", "kigali"]);
 });
