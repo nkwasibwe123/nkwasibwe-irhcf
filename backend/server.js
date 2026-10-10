@@ -14081,7 +14081,9 @@ console.log(
           repairAttempts:
             selfRepairResult.attempts
 
-        }
+        },
+
+        claimVerification
 
             }
     };
