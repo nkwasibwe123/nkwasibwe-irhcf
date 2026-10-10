@@ -39,6 +39,15 @@ async function ensureIndexLoaded() {
   return loadingPromise;
 }
 
+async function searchIRHCF(query, options = {}) {
+  await ensureIndexLoaded();
+  return engine.search(clean(query, 1000), {
+    limit: Math.max(1, Math.min(Number(options.limit) || 5, 10)),
+    web: options.web !== false,
+    language: clean(options.language || "auto", 10)
+  });
+}
+
 function registerSearchRoutes(app, authenticateToken) {
   app.get("/api/search", authenticateToken, async (req, res) => {
     try {
@@ -169,4 +178,4 @@ function registerSearchRoutes(app, authenticateToken) {
   });
 }
 
-module.exports = { registerSearchRoutes, searchEngine: engine, searchStore: store };
+module.exports = { registerSearchRoutes, searchEngine: engine, searchStore: store, searchIRHCF };
