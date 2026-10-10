@@ -5980,6 +5980,10 @@ function handleFileSelection(
   // continue that exact request as soon as they choose an image.
   if (composerState.pendingImageEditPrompt) {
     const prompt = composerState.pendingImageEditPrompt;
+    console.info("[IRHCF IMAGE EDIT PICKER v2.0.5] Image picker returned for pending edit prompt.", {
+      fileCount: Array.from(event.target.files || []).length,
+      promptPreview: prompt.slice(0, 120)
+    });
     composerState.pendingImageEditPrompt = "";
     const selectedImage = Array.from(event.target.files || []).find(file =>
       /^image\/(png|jpeg|webp)$/i.test(String(file.type || ""))
@@ -6663,7 +6667,7 @@ async function sendMessage() {
     /^image\/(png|jpeg|webp)$/i.test(String(file.type || ""))
   );
   // Diagnostic marker lets us prove which frontend code is serving the request.
-  console.info("[IRHCF IMAGE EDIT ROUTING v2.0.4]", {
+  console.info("[IRHCF IMAGE EDIT ROUTING v2.0.5]", {
     imageEditIntent,
     attachmentCount: selectedAttachments.length,
     imageAttachmentCount: imageAttachments.length,
