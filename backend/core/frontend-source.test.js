@@ -176,3 +176,15 @@ test("selected image attachments show thumbnails in the composer and refresh fro
   assert.match(html, /src="app\.js\?v=2\.0\.2"/);
   assert.match(html, /href="style\.css\?v=2\.0\.2"/);
 });
+
+
+test("camera capture is available in the chat composer and refreshes frontend assets", () => {
+  const root = path.join(__dirname, "..", "..");
+  const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
+  const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  assert.match(html, /id="cameraButton"/);
+  assert.match(app, /getElementById\(\s*"cameraButton"/);
+  assert.match(app, /setAttribute\("capture",\s*"environment"\)/);
+  assert.match(html, /src="app\.js\?v=2\.0\.3"/);
+  assert.match(html, /href="style\.css\?v=2\.0\.3"/);
+});
