@@ -60,14 +60,15 @@ const IRHCF_LANGUAGE_NAMES = Object.freeze({
   it: "Italian", ru: "Russian", tr: "Turkish", nl: "Dutch", pl: "Polish"
 });
 function getDeviceLanguage() {
-  const raw = String(navigator.languages?.[0] || navigator.language || "en").toLowerCase();
-  const base = raw.split("-")[0];
-  return IRHCF_LANGUAGE_NAMES[base] ? base : "en";
+  // Keep the actual device locale, including languages not listed in the menu.
+  // The model can respond in any language; the menu is only a convenience.
+  const raw = String(navigator.languages?.[0] || navigator.language || "en").trim().toLowerCase();
+  return raw || "en";
 }
 function getPreferredResponseLanguage() {
   try {
     const saved = localStorage.getItem(IRHCF_LANGUAGE_STORAGE_KEY);
-    if (saved && saved !== "auto" && IRHCF_LANGUAGE_NAMES[saved]) return saved;
+    if (saved && saved !== "auto" && (IRHCF_LANGUAGE_NAMES[saved] || /^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/i.test(saved))) return saved;
   } catch (_) {}
   return getDeviceLanguage();
 }
@@ -6719,7 +6720,7 @@ async function sendMessage() {
             JSON.stringify({
               message:
                 taskText + "\\n\\n[Response language preference: " +
-                  (IRHCF_LANGUAGE_NAMES[getPreferredResponseLanguage()] || "the same language as the user") +
+                  (IRHCF_LANGUAGE_NAMES[getPreferredResponseLanguage().split("-")[0]] || ("the user's language (locale " + getPreferredResponseLanguage() + ")")) +
                   ". Understand and follow the user's request in any language; do not translate or change the task itself unless asked.]",
 
               sessionId:
