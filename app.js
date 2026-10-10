@@ -5713,6 +5713,36 @@ function addMessage(
   // as HTML: all non-link content remains a text node.
   renderMessageContent(message, text);
 
+  // Keep uploaded media visible inside the original user's chat bubble.
+  const attachments = Array.isArray(options.attachments) ? options.attachments : [];
+  if (attachments.length) {
+    const attachmentList = document.createElement("div");
+    attachmentList.className = "message-attachments";
+    attachments.forEach((file) => {
+      if (!file || typeof file.name !== "string") return;
+      const item = document.createElement("div");
+      item.className = "message-attachment";
+      if (/^image\/(png|jpeg|webp|gif|avif)$/i.test(String(file.type || ""))) {
+        const preview = document.createElement("img");
+        preview.className = "message-attachment-image";
+        preview.alt = file.name;
+        preview.loading = "lazy";
+        preview.decoding = "async";
+        const objectUrl = URL.createObjectURL(file);
+        preview.src = objectUrl;
+        preview.addEventListener("load", () => URL.revokeObjectURL(objectUrl), { once: true });
+        preview.addEventListener("error", () => URL.revokeObjectURL(objectUrl), { once: true });
+        item.appendChild(preview);
+      }
+      const label = document.createElement("span");
+      label.className = "message-attachment-name";
+      label.textContent = file.name;
+      item.appendChild(label);
+      attachmentList.appendChild(item);
+    });
+    if (attachmentList.childElementCount) message.appendChild(attachmentList);
+  }
+
   const meta =
     document.createElement("div");
 
@@ -6457,7 +6487,7 @@ async function editAttachedImage(prompt, file) {
 
   updateSendingState(true);
   setSendingState(true);
-  const userRow = addMessage(prompt, "user");
+  const userRow = addMessage(prompt, "user", { attachments: [file] });
   setStatus("IRHCF iri guhindura background y'ifoto. Tegereza...", "loading");
   try {
     const imageDataUrl = await new Promise((resolve, reject) => {
@@ -6717,7 +6747,8 @@ async function sendMessage() {
 
   const userMessageRow = addMessage(
     displayedUserText,
-    "user"
+    "user",
+    { attachments: selectedAttachments }
   );
 
 
