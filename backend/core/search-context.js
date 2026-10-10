@@ -7,7 +7,7 @@ const MAX_SNIPPET_LENGTH = 2000;
 const MAX_URL_LENGTH = 2048;
 
 function clean(value, limit) {
-  return String(value ?? "").replace(/\\s+/g, " ").trim().slice(0, limit);
+  return String(value ?? "").replace(/\s+/g, " ").trim().slice(0, limit);
 }
 
 function buildSearchContext(result = {}) {
@@ -17,16 +17,16 @@ function buildSearchContext(result = {}) {
     return {
       id: index + 1,
       title: clean(item?.title, MAX_TITLE_LENGTH) || "Untitled source",
-      url: /^https?:\\/\\//i.test(url) ? url : null,
+      url: /^https?:\/\//i.test(url) ? url : null,
       provider: clean(item?.source, 80) || "unknown",
       snippet: clean(item?.snippet, MAX_SNIPPET_LENGTH)
     };
   });
   const context = sources.map(source =>
     "[Source " + source.id + "] " + source.title +
-    (source.url ? "\\nURL: " + source.url : "") +
-    (source.snippet ? "\\nEvidence: " + source.snippet : "")
-  ).join("\\n\\n").slice(0, MAX_CONTEXT_LENGTH);
+    (source.url ? "\nURL: " + source.url : "") +
+    (source.snippet ? "\nEvidence: " + source.snippet : "")
+  ).join("\n\n").slice(0, MAX_CONTEXT_LENGTH);
 
   return {
     query: clean(result.query, 1000),
