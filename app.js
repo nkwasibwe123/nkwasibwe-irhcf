@@ -6718,7 +6718,9 @@ async function sendMessage() {
           body:
             JSON.stringify({
               message:
-                taskText,
+                taskText + "\\n\\n[Response language preference: " +
+                  (IRHCF_LANGUAGE_NAMES[getPreferredResponseLanguage()] || "the same language as the user") +
+                  ". Understand and follow the user's request in any language; do not translate or change the task itself unless asked.]",
 
               sessionId:
                 activeSessionId,
