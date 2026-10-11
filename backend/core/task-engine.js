@@ -991,18 +991,63 @@ class TaskEngine {
          progress_message = 'Recovered stale worker lease; queued for retry.',
          next_run_at = CURRENT_TIMESTAMP,
          updated_at = CURRENT_TIMESTAMP
-       WHERE status = $2
+       WHERE status IN ($2, $4)
          AND locked_at IS NOT NULL
          AND locked_at < CURRENT_TIMESTAMP - ($3 * INTERVAL '1 millisecond')
        RETURNING id`,
       [
         TASK_STATES.PLANNED,
         TASK_STATES.RUNNING,
-        this.lockTimeoutMs
+        this.lockTimeoutMs,
+        TASK_STATES.VERIFYING
       ]
     );
 
-    return result.rowCount;
+    const recoveredIds = (result.rows || [])
+      .map(row => Number(row.id))
+      .filter(id => Number.isInteger(id) && id > 0);
+
+    // A worker can die after creating run records but before closing them.
+    // Mark those records as interrupted so dashboards do not show phantom
+    // active agents while the task itself is queued for a controlled retry.
+    if (recoveredIds.length) {
+      const ids = recoveredIds;
+      const reason = "Worker lease expired; task queued for retry.";
+
+      await this.pool.query(
+        `UPDATE task_runs
+         SET status = 'failed',
+             error = $2,
+             completed_at = CURRENT_TIMESTAMP
+         WHERE task_id = ANY($1::int[])
+           AND status = 'started'`,
+        [ids, reason]
+      );
+
+      await this.pool.query(
+        `UPDATE agent_steps
+         SET status = 'failed',
+             error = $2,
+             completed_at = CURRENT_TIMESTAMP
+         WHERE status = 'running'
+           AND agent_run_id IN (
+             SELECT id FROM agent_runs WHERE task_id = ANY($1::int[])
+           )`,
+        [ids, reason]
+      );
+
+      await this.pool.query(
+        `UPDATE agent_runs
+         SET status = 'failed',
+             error = $2,
+             completed_at = CURRENT_TIMESTAMP
+         WHERE task_id = ANY($1::int[])
+           AND status IN ('planning', 'executing', 'testing', 'repairing', 'verifying')`,
+        [ids, reason]
+      );
+    }
+
+    return Number(result.rowCount ?? recoveredIds.length);
   }
 
   async tick() {
