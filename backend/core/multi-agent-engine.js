@@ -28,7 +28,7 @@ function selectSpecialists(team, maxSpecialists = 6, task = "") {
   let taskSpecific = ["verification", "architecture", "research", "backend", "frontend", "user_care"];
 
   if (/video|film|movie|clip|reel/.test(taskText)) {
-    taskSpecific = ["video_generation", "editing", "audio_processing", "render", "research", "user_care"];
+    taskSpecific = ["video_generation", "editing", "audio_processing", "render", "media", "research", "user_care"];
   } else if (/music|song|audio|voice|sound|podcast/.test(taskText)) {
     taskSpecific = ["composition", "audio_processing", "mixing", "mastering", "voice", "research"];
   } else if (/image|photo|picture|logo|poster|thumbnail/.test(taskText)) {
