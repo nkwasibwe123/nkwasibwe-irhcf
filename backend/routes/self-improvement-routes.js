@@ -18,7 +18,7 @@ function createSelfImprovementRouter({ pool, authenticateToken, taskEngine, self
         tasks:{counts:Object.fromEntries(counts.rows.map(r=>[r.status,r.count])),recent:recent.rows},
         selfImprovement:{
           enabled:true,mode:"guarded_failure_analysis_and_proposals",
-          automaticFailureScanning:true,automaticProductionCodeChanges:false,
+          automaticFailureScanning:Boolean(selfImprovementWorker?.running),automaticProductionCodeChanges:false,
           automaticProductionDeployment:false,requiresReviewedPatchAndPassingCI:true,worker:selfImprovementWorker?.getRuntimeState?.() || {running:false},
           proposalCounts:Object.fromEntries(proposals.rows.map(r=>[r.status,r.count]))
         }
