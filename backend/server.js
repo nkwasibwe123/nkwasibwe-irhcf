@@ -20,6 +20,7 @@ const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
 const { editVideoFile } = require("./media/video-editor");
+const { editAudioFile } = require("./media/audio-editor");
 const { toFile } = require("openai/uploads");
 
 // ============================================================
@@ -3896,6 +3897,77 @@ app.post("/api/media/video/edit", authenticateToken, async (req, res) => {
       error: code === "FFMPEG_UNAVAILABLE"
         ? "Video editing is unavailable because FFmpeg is not installed on this server."
         : String(error?.message || "Video editing failed").slice(0, 300),
+      code
+    });
+  } finally {
+    if (tempDir) await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+  }
+});
+
+app.post("/api/media/audio/edit", authenticateToken, async (req, res) => {
+  let tempDir;
+  try {
+    const mimeType = String(req.body?.mimeType || "").toLowerCase().split(";")[0].trim();
+    const audioBase64 = String(req.body?.audioBase64 || "");
+    const acceptedTypes = new Map([
+      ["audio/mpeg", "mp3"], ["audio/mp3", "mp3"], ["audio/wav", "wav"],
+      ["audio/x-wav", "wav"], ["audio/mp4", "m4a"], ["audio/x-m4a", "m4a"],
+      ["audio/ogg", "ogg"], ["audio/flac", "flac"], ["audio/webm", "webm"]
+    ]);
+    if (!acceptedTypes.has(mimeType) || !audioBase64 ||
+        audioBase64.length > 8_500_000 ||
+        !/^[A-Za-z0-9+/]+={0,2}$/.test(audioBase64)) {
+      return res.status(400).json({
+        success: false,
+        error: "Choose MP3, WAV, M4A, OGG, FLAC or WebM audio no larger than 6 MB.",
+        code: "AUDIO_EDIT_INPUT_INVALID"
+      });
+    }
+    const inputBuffer = Buffer.from(audioBase64, "base64");
+    if (!inputBuffer.length || inputBuffer.length > 6 * 1024 * 1024) {
+      return res.status(413).json({ success: false, error: "Audio input exceeds the 6 MB limit.", code: "AUDIO_EDIT_INPUT_TOO_LARGE" });
+    }
+    const outputFormat = String(req.body?.outputFormat || "mp3").toLowerCase();
+    if (!["mp3", "wav", "ogg", "m4a"].includes(outputFormat)) {
+      return res.status(400).json({ success: false, error: "Output format must be MP3, WAV, OGG or M4A.", code: "AUDIO_FORMAT_INVALID" });
+    }
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "irhcf-audio-"));
+    const inputPath = path.join(tempDir, "input." + acceptedTypes.get(mimeType));
+    const outputPath = path.join(tempDir, "processed." + outputFormat);
+    await fs.writeFile(inputPath, inputBuffer, { flag: "wx", mode: 0o600 });
+    const result = await editAudioFile({
+      inputPath, outputPath,
+      request: {
+        effect: req.body?.effect,
+        startSeconds: req.body?.startSeconds,
+        endSeconds: req.body?.endSeconds,
+        outputFormat
+      },
+      timeoutMs: 120000
+    });
+    const output = await fs.readFile(result.outputPath);
+    return res.status(200).json({
+      success: true,
+      mediaType: "audio",
+      mimeType: outputFormat === "wav" ? "audio/wav" : outputFormat === "ogg" ? "audio/ogg" : outputFormat === "m4a" ? "audio/mp4" : "audio/mpeg",
+      filename: "nkwasibwe-studio." + outputFormat,
+      audioBase64: output.toString("base64"),
+      effect: result.effect,
+      outputFormat: result.outputFormat,
+      sizeBytes: output.length
+    });
+  } catch (error) {
+    const code = String(error?.code || "AUDIO_EDIT_FAILED");
+    const status = code === "AUDIO_INPUT_NOT_FOUND" || code.startsWith("AUDIO_EFFECT_") ||
+      code.startsWith("AUDIO_FORMAT_") || code.startsWith("AUDIO_TRIM_") ||
+      code === "AUDIO_OUTPUT_EXTENSION_MISMATCH" ? 400
+      : code === "AUDIO_PROCESS_TIMEOUT" ? 504 : 422;
+    console.error("[MEDIA_AUDIO_EDIT] Processing failed:", {
+      code, message: String(error?.message || "Audio editing failed").slice(0, 300)
+    });
+    return res.status(status).json({
+      success: false,
+      error: String(error?.message || "Audio editing failed").slice(0, 300),
       code
     });
   } finally {
