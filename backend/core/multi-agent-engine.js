@@ -18,23 +18,31 @@ function clean(value, max = 8000) {
     .slice(0, max);
 }
 
-function selectSpecialists(team, maxSpecialists = 4, task = "") {
+function selectSpecialists(team, maxSpecialists = 6, task = "") {
   const specialists = Array.isArray(team?.specialists)
     ? team.specialists
     : [];
   const taskText = clean(task, 4000).toLowerCase();
 
   const qualityFirst = ["requirements", "security", "testing"];
-  let taskSpecific = ["verification", "architecture", "research", "backend", "frontend", "media"];
+  let taskSpecific = ["verification", "architecture", "research", "backend", "frontend", "user_care"];
 
-  if (/video|music|song|audio|image|film|voice|sound|media/.test(taskText)) {
-    taskSpecific = ["media", "research", "architecture", "backend", "frontend"];
+  if (/video|film|movie|clip|reel/.test(taskText)) {
+    taskSpecific = ["video_generation", "editing", "audio_processing", "render", "media", "research", "user_care"];
+  } else if (/music|song|audio|voice|sound|podcast/.test(taskText)) {
+    taskSpecific = ["composition", "audio_processing", "mixing", "mastering", "voice", "research"];
+  } else if (/image|photo|picture|logo|poster|thumbnail/.test(taskText)) {
+    taskSpecific = ["image_direction", "visual_direction", "research", "quality_verification", "user_care"];
+  } else if (/file|document|pdf|spreadsheet|upload|download/.test(taskText)) {
+    taskSpecific = ["file_operations", "document_analysis", "document_generation", "format_validation", "research"];
+  } else if (/link|url|web research|find sources|source/.test(taskText)) {
+    taskSpecific = ["links", "research", "source_evaluation", "fact_checking", "synthesis"];
   } else if (/website|web app|frontend|interface|ui|design/.test(taskText)) {
     taskSpecific = ["frontend", "architecture", "backend", "research", "media"];
   } else if (/api|backend|database|server|authentication|security|code|software|application/.test(taskText)) {
     taskSpecific = ["architecture", "backend", "frontend", "research", "media"];
   } else if (/research|compare|evidence|sources|investigate/.test(taskText)) {
-    taskSpecific = ["research", "architecture", "backend", "frontend", "media"];
+    taskSpecific = ["research", "source_evaluation", "fact_checking", "synthesis", "verification"];
   }
 
   const preferred = [...new Set([...qualityFirst, ...taskSpecific, "verification"])];
@@ -44,7 +52,9 @@ function selectSpecialists(team, maxSpecialists = 4, task = "") {
     return (ai < 0 ? 999 : ai) - (bi < 0 ? 999 : bi);
   });
 
-  return ranked.slice(0, Math.max(1, Math.min(6, Number(maxSpecialists) || 4)));
+  // A larger pool improves complex-task coverage, while the hard cap prevents
+  // runaway provider calls and keeps latency/cost bounded.
+  return ranked.slice(0, Math.max(1, Math.min(8, Number(maxSpecialists) || 6)));
 }
 
 function buildSpecialistMessages(task, specialist, sharedContext = "") {
@@ -85,7 +95,7 @@ async function runSpecialistTeam({
   taskId = null,
   taskRunId = null,
   sharedContext = "",
-  maxSpecialists = 4
+  maxSpecialists = 6
 } = {}) {
   if (!executionEngine || typeof executionEngine.execute !== "function") {
     throw new Error("Multi-agent execution requires the central execution engine.");

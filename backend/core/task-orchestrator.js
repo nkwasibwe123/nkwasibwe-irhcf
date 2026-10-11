@@ -187,27 +187,67 @@ function classifyTask(task) {
     };
   }
 
-  if (
-    containsAny(text, [
-      "image",
-      "photo",
-      "picture",
-      "logo",
-      "design",
-      "poster",
-      "thumbnail",
-      "video",
-      "music",
-      "song",
-      "audio",
-      "voice"
-    ])
-  ) {
+  if (containsAny(text, [
+    "video", "film", "movie", "clip", "reel", "shorts", "videwo", "amashusho"
+  ])) {
+    return {
+      type: "video",
+      confidence: 0.94,
+      reason: "The request requires video creation, editing, or production."
+    };
+  }
+
+  if (containsAny(text, [
+    "image", "photo", "picture", "logo", "poster", "thumbnail", "illustration",
+    "ifoto", "ishusho"
+  ])) {
+    return {
+      type: "image",
+      confidence: 0.93,
+      reason: "The request requires image creation or image editing."
+    };
+  }
+
+  if (containsAny(text, [
+    "music", "song", "audio", "voice", "sound", "podcast", "indirimbo", "amajwi"
+  ])) {
+    return {
+      type: "audio",
+      confidence: 0.92,
+      reason: "The request requires music, audio, or voice processing."
+    };
+  }
+
+  if (containsAny(text, [
+    "find links", "check this link", "verify link", "links to", "url", "link",
+    "shakisha link", "reba iyi link"
+  ])) {
+    return {
+      type: "link_research",
+      confidence: 0.90,
+      reason: "The request requires finding or validating web links."
+    };
+  }
+
+  if (containsAny(text, [
+    "file", "document", "pdf", "spreadsheet", "upload file", "download file",
+    "dosiye", "inyandiko"
+  ])) {
+    return {
+      type: "file_operations",
+      confidence: 0.89,
+      reason: "The request requires document or file operations."
+    };
+  }
+
+  if (containsAny(text, [
+    "image editing", "edit image", "edit photo", "edit video", "video editing",
+    "audio editing", "music production"
+  ])) {
     return {
       type: "media",
       confidence: 0.90,
-      reason:
-        "The request appears to involve media creation or transformation."
+      reason: "The request appears to involve media creation or transformation."
     };
   }
 
@@ -387,8 +427,31 @@ function detectCapabilities(task, classification) {
       break;
 
     case "media":
+    case "image":
+    case "video":
+    case "audio":
       add("media_generation");
       add("media_processing");
+      add("quality_review");
+      if (classification.type === "image") add("image_generation");
+      if (classification.type === "video") add("video_generation");
+      if (classification.type === "audio") {
+        add("audio_generation");
+        add("music_generation");
+      }
+      break;
+
+    case "link_research":
+      add("web_research");
+      add("source_evaluation");
+      add("browser_or_web_access");
+      add("link_validation");
+      break;
+
+    case "file_operations":
+      add("file_operations");
+      add("document_generation");
+      add("document_analysis");
       add("quality_review");
       break;
 

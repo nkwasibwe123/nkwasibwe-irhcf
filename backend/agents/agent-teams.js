@@ -42,6 +42,7 @@ const TEAMS = Object.freeze({
   media: {
     supervisor: "media_supervisor",
     agents: [
+      "image_direction",
       "lyrics",
       "composition",
       "language",
@@ -52,6 +53,16 @@ const TEAMS = Object.freeze({
       "visual_direction",
       "quality_verification"
     ]
+  },
+
+  files: {
+    supervisor: "file_supervisor",
+    agents: ["file_operations", "document_analysis", "document_generation", "format_validation", "verification"]
+  },
+
+  links: {
+    supervisor: "web_evidence_supervisor",
+    agents: ["links", "research", "source_evaluation", "fact_checking", "verification"]
   },
 
   video: {
@@ -89,6 +100,7 @@ const TEAMS = Object.freeze({
     supervisor: "general_supervisor",
     agents: [
       "planner",
+      "user_care",
       "research",
       "reasoning",
       "execution",
@@ -99,6 +111,13 @@ const TEAMS = Object.freeze({
 
 const AGENT_DESCRIPTIONS = Object.freeze({
   requirements: "Convert natural-language goals into explicit acceptance criteria.",
+  user_care: "Keep the user informed, clarify blockers, and ensure delivery matches the request.",
+  image_direction: "Plan image prompts, composition, aspect ratio, and image-quality checks.",
+  links: "Find, normalize, and validate relevant web links without inventing destinations.",
+  file_operations: "Create, inspect, and organize files using available secure tools.",
+  document_analysis: "Extract and summarize content from supported document formats.",
+  document_generation: "Prepare requested documents in the appropriate output format.",
+  format_validation: "Verify generated files are non-empty and use the requested format.",
   architecture: "Design safe, modular system architecture.",
   frontend: "Build user interfaces and client-side behavior.",
   backend: "Build server-side services and APIs.",
@@ -174,6 +193,23 @@ function inferTeamTypes({
     caps.has("source_evaluation")
   ) {
     types.add("research");
+  }
+
+  if (
+    type.includes("link") ||
+    caps.has("link_validation") ||
+    caps.has("browser_or_web_access")
+  ) {
+    types.add("links");
+  }
+
+  if (
+    type.includes("file") ||
+    caps.has("file_operations") ||
+    caps.has("document_generation") ||
+    caps.has("document_analysis")
+  ) {
+    types.add("files");
   }
 
   if (
