@@ -9,7 +9,7 @@ function buildImprovementProposal({ target, reason, changes = [], evidence = [],
   const fingerprint = crypto.createHash("sha256").update((cleanTarget + "\n" + cleanText(fingerprintKey || cleanReason, 2000)).toLowerCase()).digest("hex");
   return {
     id: crypto.randomUUID(), fingerprint, target: cleanTarget, reason: cleanReason,
-    changes: list(changes).map(v => cleanText(v, 1000)).filter(Boolean),
+    changes: list(changes).filter(v => typeof v === "string").map(v => cleanText(v, 1000)).filter(Boolean),
     evidence: list(evidence).map(v => v && typeof v === "object" ? JSON.parse(JSON.stringify(v)) : { detail: cleanText(v, 1000) }),
     status: "PROPOSED", createdAt: new Date().toISOString()
   };
