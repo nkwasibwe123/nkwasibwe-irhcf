@@ -82,6 +82,8 @@ test("response quality instruction includes language and truthfulness rules", ()
   const instruction = buildResponseQualityInstruction("rw", "Mfasha");
   assert.match(instruction, /Kinyarwanda/);
   assert.match(instruction, /Do not invent facts/);
+  assert.match(instruction, /substantive answer to that question/);
+  assert.match(instruction, /Do not refuse harmless everyday requests/);
   assert.match(instruction, /CURRENT TASK: Mfasha/);
 });
 
