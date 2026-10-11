@@ -57,7 +57,7 @@ function buildFailureImprovementProposal(failures = []) {
   return [...groups.values()].map(group => buildImprovementProposal({
     target: group.target,
     reason: "Observed " + group.rows.length + " failed task(s) with a similar recorded failure: " + group.error,
-    fingerprintKey: group.target + ":" + group.error.toLowerCase().replace(/\\b\\d+\\b/g, "#").replace(/\\s+/g, " ").slice(0, 240),
+    fingerprintKey: group.target + ":" + group.error.toLowerCase().replace(/\b\d+\b/g, "#").replace(/\s+/g, " ").slice(0, 240),
     changes: [
       "Reproduce this failure in a focused automated regression test before changing production behavior.",
       "Inspect the responsible execution path and implement a bounded fix in a reviewed branch.",
