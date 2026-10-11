@@ -33,7 +33,7 @@ jobs:
         shell: bash
         run: |
           health_url="https://nkwasibwe-irhcf.onrender.com/api/health"
-          changed_files="$(git diff-tree --no-commit-id --name-only -r "$GITHUB_SHA" | sort)"
+          changed_files="$(node -e 'const e=JSON.parse(require("fs").readFileSync(process.env.GITHUB_EVENT_PATH,"utf8")); const c=e.head_commit||{}; console.log([...new Set([...(c.added||[]),...(c.modified||[]),...(c.removed||[])])].sort().join("\\n"));' )"
           expected_commit="$GITHUB_SHA"
           if [[ "$changed_files" == ".github/workflows/irhcf-validation.yml" ]]; then
             expected_commit=""
