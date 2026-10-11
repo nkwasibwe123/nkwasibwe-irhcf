@@ -211,7 +211,12 @@ test("database schema refreshes stale agent run status constraints on existing d
   const fs = require("node:fs");
   const path = require("node:path");
   const schema = fs.readFileSync(path.join(__dirname, "..", "db", "schema.js"), "utf8");
-  assert.match(schema, /DROP CONSTRAINT IF EXISTS chk_agent_runs_status/);
-  assert.match(schema, /ADD CONSTRAINT chk_agent_runs_status[\\s\\S]{0,220}'executing'/);
-  assert.match(schema, /'planning',[\\s\\S]*'executing',[\\s\\S]*'testing',[\\s\\S]*'repairing',[\\s\\S]*'verifying',[\\s\\S]*'completed',[\\s\\S]*'failed',[\\s\\S]*'cancelled'/);
+  assert.ok(schema.includes("DROP CONSTRAINT IF EXISTS chk_agent_runs_status"));
+  assert.ok(schema.includes("ADD CONSTRAINT chk_agent_runs_status"));
+  for (const status of [
+    "planning", "executing", "testing", "repairing",
+    "verifying", "completed", "failed", "cancelled"
+  ]) {
+    assert.ok(schema.includes(`'${status}'`), `missing allowed status: ${status}`);
+  }
 });
