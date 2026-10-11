@@ -190,3 +190,12 @@ test("video edit passes normalized effect settings to a configured provider", as
   assert.equal(received.effectPreset.filter, "vintage");
   assert.equal(result.jobId, "edit-123");
 });
+
+test("specialist selection supports up to eight bounded agents for complex tasks", () => {
+  const team = { specialists: [
+    "requirements", "security", "testing", "verification",
+    "research", "backend", "frontend", "media", "file_operations", "user_care"
+  ].map(id => ({ id })) };
+  assert.equal(selectSpecialists(team, 99, "Build a website").length, 8);
+  assert.equal(selectSpecialists(team, 3, "Build a website").length, 3);
+});
