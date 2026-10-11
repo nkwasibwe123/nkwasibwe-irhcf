@@ -5864,49 +5864,113 @@ function scrollToBottom() {
 // TYPING INDICATOR
 // ============================================================
 
-function addTypingIndicator() {
+let activeTypingIndicator = null;
 
-  if (!messages) {
-    return null;
+function setAgentTypingState(indicator, state, label) {
+  if (!indicator) return;
+  const safeState = /^(thinking|typing|planning|executing|testing|repairing|verifying|delivering|waiting|complete|error)$/.test(state)
+    ? state : "thinking";
+  indicator.dataset.agentState = safeState;
+  const status = indicator.querySelector(".typing-agent-status");
+  if (status && label) status.textContent = label;
+  const bubble = indicator.querySelector(".typing-agent-thought");
+  if (bubble) {
+    const thoughtLabels = {
+      thinking: "🤔", typing: "⌨️", planning: "🗺️", executing: "⚙️",
+      testing: "🧪", repairing: "🛠️", verifying: "🔎", delivering: "📦",
+      waiting: "⏳", complete: "✓", error: "!"
+    };
+    bubble.textContent = thoughtLabels[safeState] || "🤔";
+    bubble.setAttribute("aria-label", label || safeState);
   }
-
-  const indicator =
-    document.createElement("div");
-
-  indicator.className =
-    "message ai typing-indicator";
-
-  indicator.innerHTML =
-    `
-      <div class="typing-agent-avatar" aria-hidden="true">N</div>
-      <div class="typing-agent-content">
-        <strong class="typing-agent-title">Nkwasibwe <span class="typing-thinking-dots" aria-hidden="true"><i></i><i></i><i></i></span></strong>
-        <span class="typing-agent-status">Thinking…</span>
-      </div>
-    `;
-  const thinkingStatuses = [
-    "Thinking…",
-    "Iri gusobanukirwa ibyo wasabye…",
-    "Iri gutegura intambwe ikurikira…",
-    "Iri kugenzura uko yakora task…"
-  ];
-  let thinkingIndex = 0;
-  const thinkingLabel = indicator.querySelector(".typing-agent-status");
-  indicator._thinkingTimer = window.setInterval(() => {
-    thinkingIndex = (thinkingIndex + 1) % thinkingStatuses.length;
-    if (thinkingLabel && indicator.isConnected) thinkingLabel.textContent = thinkingStatuses[thinkingIndex];
-  }, 1800);
-
-  messages.appendChild(
-    indicator
-  );
-
-  scrollToBottom();
-
-  return indicator;
 }
 
+function setAgentActivityFromTask(task) {
+  if (!activeTypingIndicator || !task) return;
+  const status = String(task.status || "").toUpperCase();
+  const stage = taskStageIndex(task, Number(task.progress) || 0);
+  const stateMap = {
+    PLANNED: ["planning", "Iri gutegura gahunda y’igikorwa…"],
+    QUEUED: ["waiting", "Iri ku murongo wo gutangira…"],
+    PENDING: ["waiting", "Itegereje gutangira…"],
+    RUNNING: [stage >= 5 ? "verifying" : stage >= 4 ? "testing" : stage >= 3 ? "executing" : "planning", String(task.progress_message || "Iri gukora igikorwa wasabye…")],
+    EXECUTING: ["executing", String(task.progress_message || "Iri gukora igikorwa wasabye…")],
+    IN_PROGRESS: ["executing", String(task.progress_message || "Iri gukora igikorwa wasabye…")],
+    TESTING: ["testing", String(task.progress_message || "Iri kugerageza ibyo yakoze…")],
+    VERIFYING: ["verifying", String(task.progress_message || "Iri kugenzura ibisubizo…")],
+    WAITING_FOR_USER: ["waiting", "Itegereje igisubizo cyawe…"],
+    WAITING_FOR_TOOL: ["waiting", "Itegereje igikoresho gikenewe…"],
+    PAUSED: ["waiting", "Igikorwa gihagaritswe by’agateganyo…"],
+    COMPLETED: ["complete", "Igikorwa cyarangiye; ibisubizo byagenzuwe."],
+    FAILED: ["error", String(task.error || task.progress_message || "Habaye ikibazo mu gikorwa.")],
+    CANCELLED: ["error", "Igikorwa cyahagaritswe."],
+    CANCELED: ["error", "Igikorwa cyahagaritswe."]
+  };
+  const mapped = stateMap[status];
+  if (mapped) setAgentTypingState(activeTypingIndicator, mapped[0], mapped[1]);
+}
 
+function addTypingIndicator() {
+  if (!messages) return null;
+  const indicator = document.createElement("div");
+  indicator.className = "message ai typing-indicator";
+  indicator.dataset.agentState = "thinking";
+  indicator.setAttribute("role", "status");
+  indicator.setAttribute("aria-live", "polite");
+  indicator.innerHTML = `
+    <div class="typing-agent-mascot" aria-hidden="true">
+      <span class="typing-agent-thought">🤔</span>
+      <svg class="typing-agent-scene" viewBox="0 0 180 112" role="img" aria-label="Nkwasibwe IRHCF iri kuri mudasobwa">
+        <defs>
+          <linearGradient id="irhcfScreenGlow" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#243d78"/><stop offset="1" stop-color="#101a35"/>
+          </linearGradient>
+        </defs>
+        <ellipse cx="89" cy="103" rx="72" ry="5" fill="#07101f" opacity=".5"/>
+        <path class="mascot-body" d="M35 90 Q39 63 60 59 L82 60 Q98 67 102 89Z" fill="#657cf6"/>
+        <path d="M49 87 L50 99 M86 87 L89 99" stroke="#c7d2fe" stroke-width="7" stroke-linecap="round"/>
+        <path d="M45 99 H61 M82 99 H100" stroke="#8b9cff" stroke-width="5" stroke-linecap="round"/>
+        <g class="mascot-head">
+          <ellipse cx="60" cy="37" rx="20" ry="22" fill="#b87550"/>
+          <path d="M40 36 Q35 13 56 12 Q76 10 81 31 L77 39 Q72 25 60 25 Q49 28 40 36Z" fill="#25233a"/>
+          <path d="M51 40 Q55 43 59 40 M66 40 Q70 43 73 40" fill="none" stroke="#2d1d24" stroke-width="2" stroke-linecap="round"/>
+          <path d="M58 49 Q64 53 70 48" fill="none" stroke="#6b3440" stroke-width="2" stroke-linecap="round"/>
+        </g>
+        <g class="mascot-thinking-arm">
+          <path d="M48 66 Q38 54 48 47" fill="none" stroke="#b87550" stroke-width="8" stroke-linecap="round"/>
+          <circle cx="49" cy="46" r="5" fill="#d99b72"/>
+        </g>
+        <g class="mascot-typing-arms">
+          <path d="M53 68 Q72 74 88 82" fill="none" stroke="#b87550" stroke-width="8" stroke-linecap="round"/>
+          <path d="M75 67 Q92 70 103 81" fill="none" stroke="#b87550" stroke-width="8" stroke-linecap="round"/>
+        </g>
+        <g class="mascot-monitor">
+          <rect x="95" y="24" width="72" height="49" rx="5" fill="#dce5ff" stroke="#8198ff" stroke-width="2"/>
+          <rect x="100" y="29" width="62" height="39" rx="2" fill="url(#irhcfScreenGlow)"/>
+          <circle cx="131" cy="33" r="1.5" fill="#a5f3fc"/>
+          <text x="131" y="45" text-anchor="middle" font-size="5.5" font-weight="800" fill="#e7edff">NKWASIBWE</text>
+          <text x="131" y="53" text-anchor="middle" font-size="6.5" font-weight="900" fill="#93c5fd">IRHCF</text>
+          <path d="M116 59 H146" stroke="#5eead4" stroke-width="1.5" stroke-linecap="round"/>
+          <path d="M127 73 V79 M137 73 V79 M119 80 H145" stroke="#9aabdd" stroke-width="3" stroke-linecap="round"/>
+        </g>
+        <path d="M23 89 H169 L159 98 H33Z" fill="#a7b6e8" stroke="#8295d5" stroke-width="1.5"/>
+        <g class="mascot-keyboard">
+          <path d="M65 90 H121 L128 95 H59Z" fill="#28375e"/>
+          <path d="M70 91 H74 M78 91 H82 M86 91 H90 M94 91 H98 M102 91 H106 M110 91 H114" stroke="#a7c1ff" stroke-width="1.5"/>
+        </g>
+      </svg>
+    </div>
+    <div class="typing-agent-content">
+      <strong class="typing-agent-title">Nkwasibwe IRHCF <span class="typing-thinking-dots" aria-hidden="true"><i></i><i></i><i></i></span></strong>
+      <span class="typing-agent-status">Iri gusobanukirwa ibyo wasabye…</span>
+      <span class="typing-agent-caption">Ibyo iri gukora bizagaragazwa uko biboneka.</span>
+    </div>
+  `;
+  messages.appendChild(indicator);
+  activeTypingIndicator = indicator;
+  scrollToBottom();
+  return indicator;
+}
 // ============================================================
 // REMOVE TYPING INDICATOR
 // ============================================================
@@ -5920,7 +5984,7 @@ function removeTypingIndicator(
     indicator.parentNode
   ) {
 
-    if (indicator._thinkingTimer) window.clearInterval(indicator._thinkingTimer);
+    if (activeTypingIndicator === indicator) activeTypingIndicator = null;
     indicator.parentNode.removeChild(
       indicator
     );
@@ -6932,6 +6996,7 @@ async function sendMessage() {
 
   const typingIndicator =
     addTypingIndicator();
+  setAgentTypingState(typingIndicator, "thinking", "Iri gusobanukirwa ibyo usabye no gutegura igisubizo…");
 
 
   try {
@@ -8394,6 +8459,7 @@ function renderTaskProgress(task) {
   const message = String(task.progress_message || task.error ||
     (status === "PLANNED" ? "Task iri gutegereza gutangira." : "Nkwasibwe iri gukora intambwe ikurikira."));
   taskProgressPanel.hidden = false;
+  setAgentActivityFromTask(task);
   if (taskProgressTitle) taskProgressTitle.textContent = `Task #${task.id}: ${String(task.task || "Igikorwa").slice(0, 110)}`;
   if (taskProgressSubtitle) {
     taskProgressSubtitle.textContent = completed
