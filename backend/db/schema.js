@@ -1642,35 +1642,28 @@ await pool.query(`
     $$;
   `);
 
+  // Recreate this constraint on every schema check so databases created by
+  // older releases cannot keep a stale status allow-list. In particular, the
+  // task worker writes 'executing'; an old constraint that only permits
+  // 'running' causes every claimed task to fail before its work begins.
   await pool.query(`
-    DO $$
-    BEGIN
+    ALTER TABLE agent_runs
+    DROP CONSTRAINT IF EXISTS chk_agent_runs_status;
 
-      IF NOT EXISTS (
-        SELECT 1
-        FROM pg_constraint
-        WHERE conname = 'chk_agent_runs_status'
-      ) THEN
-
-        ALTER TABLE agent_runs
-        ADD CONSTRAINT chk_agent_runs_status
-        CHECK (
-          status IN (
-            'planning',
-            'executing',
-            'testing',
-            'repairing',
-            'verifying',
-            'completed',
-            'failed',
-            'cancelled'
-          )
-        );
-
-      END IF;
-
-    END
-    $$;
+    ALTER TABLE agent_runs
+    ADD CONSTRAINT chk_agent_runs_status
+    CHECK (
+      status IN (
+        'planning',
+        'executing',
+        'testing',
+        'repairing',
+        'verifying',
+        'completed',
+        'failed',
+        'cancelled'
+      )
+    );
   `);
 
   await pool.query(`
