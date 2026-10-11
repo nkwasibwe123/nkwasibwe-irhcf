@@ -2112,3 +2112,113 @@ body {
 .irhcf-camera-danger { background:#b42318; color:#fff; }
 .irhcf-camera-close { background:transparent; color:inherit; font-size:1.5rem; }
 .irhcf-camera-switch { margin-left:auto; }
+
+
+/* =========================================================
+   LIGHT, CHAT-FIRST UI (2026-10)
+   Keep readable contrast and native form controls on mobile.
+   ========================================================= */
+:root {
+  color-scheme: light;
+  --bg: #f7f8fa;
+  --panel: #ffffff;
+  --panel-light: #f8fafc;
+  --panel-hover: #eef2f7;
+  --border: #d9e0e8;
+  --border-light: #c5cfdb;
+  --primary: #2459d3;
+  --primary-hover: #1947b5;
+  --text: #17202b;
+  --text-secondary: #465365;
+  --text-muted: #566273;
+  --success: #087f5b;
+  --warning: #8a5200;
+  --danger: #b42318;
+  --shadow: 0 8px 28px rgba(15, 23, 42, .08);
+}
+body {
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+}
+.app, .main-area { background: var(--panel); }
+.sidebar { background: #f8fafc; }
+.header {
+  background: rgba(255, 255, 255, .96);
+  color: var(--text);
+}
+.header h1, .welcome h2, .suggestion-title,
+.agent-info-title { color: var(--text); }
+.header p, .agent-info-status, .welcome p { color: var(--text-secondary); }
+.conversation-item { color: var(--text-secondary); }
+.conversation-item:hover { background: #e9eef5; color: #17202b; }
+.conversation-item.active { background: #e5edff; color: #173d91; }
+.icon-button {
+  color: #263445;
+  background: #f3f6fa;
+  border-color: var(--border);
+}
+.icon-button:hover { background: #e8edf4; }
+.workflow-step { background: #f8fafc; color: #465365; }
+.workflow-step.active { background: #e8efff; color: #173d91; }
+.workflow-step.completed { color: #087f5b; }
+.suggestion { background: #fff; color: var(--text); }
+.suggestion:hover { background: #f4f7fc; }
+.message.ai {
+  background: #f3f5f8;
+  color: #17202b;
+  border-color: #dce2e9;
+}
+.message.user {
+  background: #2459d3;
+  color: #fff;
+}
+.user-avatar { background: #e3eaf4; color: #263445; }
+.input-container {
+  background: linear-gradient(to top, #fff 78%, rgba(255,255,255,0));
+}
+.input-area {
+  background: #fff;
+  border-color: #cbd5e1;
+  box-shadow: 0 8px 28px rgba(15, 23, 42, .10);
+}
+input, textarea, select, button { font: inherit; }
+input, textarea, select {
+  color: #17202b;
+  background-color: #fff;
+}
+input::placeholder, textarea::placeholder { color: #647184; opacity: 1; }
+:where(button, input, textarea, select, a, [tabindex]):focus-visible {
+  outline: 3px solid #2459d3;
+  outline-offset: 2px;
+}
+.typing-indicator {
+  background: #f4f7fc;
+  border-color: #d4deef;
+  box-shadow: 0 6px 20px rgba(15, 23, 42, .08);
+}
+.typing-agent-title { color: #17202b; }
+.typing-agent-status { color: #34445b; }
+.typing-agent-caption { color: #53647b; }
+.typing-agent-thought { background: #e7edf8; color: #24354e; }
+@media (max-width: 760px) {
+  .app { min-height: 100dvh; }
+  .sidebar { background: #fff; }
+  .header { padding: 10px 12px; gap: 8px; }
+  .header-actions { gap: 5px; }
+  .chat { padding: 18px 12px 170px; }
+  .welcome { padding: 24px 10px; margin: 10px auto 24px; }
+  .welcome h2 { font-size: clamp(23px, 6vw, 30px); }
+  .agent-workflow { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .suggestions { grid-template-columns: 1fr; }
+  .message { max-width: 90%; font-size: 14px; }
+  .input-container { padding: 12px 10px 14px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}
