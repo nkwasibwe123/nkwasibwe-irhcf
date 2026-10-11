@@ -25,6 +25,20 @@ test("frontend source has no standalone async tokens before section comments", (
 });
 
 
+test("explicit build routing recognizes Kinyarwanda school website requests and short follow-ups", () => {
+  const vm = require("node:vm");
+  const source = fs.readFileSync(path.join(__dirname, "..", "..", "app.js"), "utf8");
+  const start = source.indexOf("function isExplicitBuildTask(text) {");
+  const end = source.indexOf("// ============================================================\\n// SEND MESSAGE", start);
+  assert.ok(start >= 0 && end > start, "Build-task router must exist.");
+  const routerSource = source.slice(start, end);
+  const isExplicitBuildTask = vm.runInNewContext("(" + routerSource.replace(/;?\\s*$/, "") + ")");
+  assert.equal(isExplicitBuildTask("Ncaka ko unkorera website yishuri rya Gs kitazigurwa ibe ikora neza Kandi hose"), true);
+  assert.equal(isExplicitBuildTask("Oya yinkorere wowe ubwawe"), false, "Follow-up with context words is handled by a separate safe route only when unambiguous.");
+  assert.equal(isExplicitBuildTask("Ngaho yinkorere"), true);
+  assert.equal(isExplicitBuildTask("How to build a website"), false);
+});
+
 test("voice note and live voice controls use the existing authenticated IRHCF API", () => {
   const root = path.join(__dirname, "..", "..");
   const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
