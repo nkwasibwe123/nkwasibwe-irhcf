@@ -30583,6 +30583,27 @@ app.get(
         components:
           health.components,
 
+        // Expose safe, non-user-specific self-improvement worker diagnostics.
+        // This is proposal-based learning; production code is never self-mutated.
+        selfImprovement: (() => {
+          const state = selfImprovementWorker.getRuntimeState();
+          return {
+            enabled: true,
+            mode: "guarded_failure_analysis_and_proposals",
+            automaticFailureScanning: Boolean(state.running),
+            automaticProductionCodeChanges: false,
+            automaticProductionDeployment: false,
+            worker: {
+              running: Boolean(state.running),
+              active: Boolean(state.active),
+              pollIntervalMs: state.pollIntervalMs,
+              lastRunAt: state.lastRunAt,
+              lastResult: state.lastResult,
+              hasError: Boolean(state.lastError)
+            }
+          };
+        })(),
+
         runtime: {
 
           uptimeSeconds:
