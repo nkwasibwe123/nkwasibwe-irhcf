@@ -500,7 +500,7 @@ class TaskEngine {
           $1,
           $2,
           $3,
-          'running',
+          'executing',
           '[]'::jsonb,
           $4::jsonb,
           CURRENT_TIMESTAMP

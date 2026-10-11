@@ -5,6 +5,30 @@ const assert = require("node:assert/strict");
 const { TaskEngine, TASK_STATES, isUsableTaskResult } = require("./task-engine");
 const { requestedArtifact, buildTaskArtifact } = require("./task-artifacts");
 
+test("createAgentRun uses a status accepted by chk_agent_runs_status", async () => {
+  let insertedSql = "";
+  let insertedParams;
+  const engine = new TaskEngine({
+    pool: {
+      async query(sql, params) {
+        insertedSql = sql;
+        insertedParams = params;
+        return { rows: [{ id: 7, status: "executing" }] };
+      }
+    },
+    workerId: "worker-test"
+  });
+  const run = await engine.createAgentRun(
+    { id: 22, user_id: 1, task: "Build school website" },
+    { id: 33 }
+  );
+  assert.match(insertedSql, /'executing'/);
+  assert.doesNotMatch(insertedSql, /'running'/);
+  assert.equal(run.status, "executing");
+  assert.equal(insertedParams[1], 22);
+});
+
+
 test("cancelled task is not verified, completed, or requeued after executor returns", async () => {
   let executorCalls = 0;
   let verifierCalls = 0;
