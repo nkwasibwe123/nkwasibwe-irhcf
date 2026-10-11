@@ -61,6 +61,7 @@ function validateRequest(request) {
       ? request.constraints.slice(0, 30).map(v => clean(v, 500)).filter(Boolean)
       : [],
     explicitDeploymentAuthorization: request?.explicitDeploymentAuthorization === true,
+    ownerUserId: Number.isSafeInteger(Number(request?.ownerUserId)) && Number(request?.ownerUserId) > 0 ? Number(request.ownerUserId) : null,
     metadata: request?.metadata && typeof request.metadata === "object" ? request.metadata : {}
   };
 }
@@ -83,6 +84,7 @@ async function runCapabilityLifecycle({
     capability: normalized.capability,
     goal: normalized.goal,
     reason: normalized.reason,
+    ownerUserId: normalized.ownerUserId,
     status: "running",
     stage: "research",
     createdAt: clock(),
