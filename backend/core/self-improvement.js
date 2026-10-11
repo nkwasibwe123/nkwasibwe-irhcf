@@ -3,10 +3,10 @@ const crypto = require("node:crypto");
 const cleanText = (v, max = 2000) => String(v ?? "").replace(/\u0000/g, "").trim().slice(0, max);
 const list = (v, max = 100) => Array.isArray(v) ? v.slice(0, max) : [];
 
-function buildImprovementProposal({ target, reason, changes = [], evidence = [] } = {}) {
+function buildImprovementProposal({ target, reason, changes = [], evidence = [], fingerprintKey = null } = {}) {
   const cleanTarget = cleanText(target || "unknown", 200);
   const cleanReason = cleanText(reason);
-  const fingerprint = crypto.createHash("sha256").update((cleanTarget + "\n" + cleanReason).toLowerCase()).digest("hex");
+  const fingerprint = crypto.createHash("sha256").update((cleanTarget + "\n" + cleanText(fingerprintKey || cleanReason, 2000)).toLowerCase()).digest("hex");
   return {
     id: crypto.randomUUID(), fingerprint, target: cleanTarget, reason: cleanReason,
     changes: list(changes).map(v => cleanText(v, 1000)).filter(Boolean),
@@ -57,6 +57,7 @@ function buildFailureImprovementProposal(failures = []) {
   return [...groups.values()].map(group => buildImprovementProposal({
     target: group.target,
     reason: "Observed " + group.rows.length + " failed task(s) with a similar recorded failure: " + group.error,
+    fingerprintKey: group.target + ":" + group.error.toLowerCase().replace(/\\b\\d+\\b/g, "#").replace(/\\s+/g, " ").slice(0, 240),
     changes: [
       "Reproduce this failure in a focused automated regression test before changing production behavior.",
       "Inspect the responsible execution path and implement a bounded fix in a reviewed branch.",
