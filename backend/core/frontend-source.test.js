@@ -253,6 +253,13 @@ test("persistent task progress is shown outside chat with a character-like think
   assert.match(app, /userExplicitlyApproved: true/);
   assert.match(app, /Do not buy a domain/);
   assert.match(css, /\.task-progress-panel/);
-  assert.match(css, /\.typing-agent-avatar/);
+  assert.match(app, /function setAgentActivityFromTask\(task\)/);
+  assert.match(app, /class="typing-agent-scene"/);
+  assert.match(app, /NKWASIBWE/);
+  assert.match(app, /setAgentTypingState\(typingIndicator, "thinking"/);
+  assert.doesNotMatch(app, /thinkingStatuses|_thinkingTimer/);
+  assert.match(css, /\.typing-agent-mascot/);
+  assert.match(css, /data-agent-state="typing"/);
+  assert.match(css, /prefers-reduced-motion/);
   assert.match(css, /\.task-progress-stages li\.is-current/);
 });
