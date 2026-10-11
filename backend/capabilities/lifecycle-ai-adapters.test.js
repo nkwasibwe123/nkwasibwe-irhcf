@@ -15,6 +15,6 @@ test("JSON adapter parses JSON and rejects prose", () => {
 });
 
 test("real provider callbacks are mandatory", () => {
-  assert.throws(() => createCapabilityLifecycleAdapters({}), /search callback/);
-  assert.throws(() => createCapabilityLifecycleAdapters({ search: async () => ({ results: [] }) }), /AI text callback/);
+  assert.throws(() => createCapabilityLifecycleAdapters({}), /search provider callback/);
+  assert.throws(() => createCapabilityLifecycleAdapters({ search: async () => ({ results: [] }) }), /AI text provider callback/);
 });
