@@ -9096,11 +9096,7 @@ if (
 
 if (cameraButton && fileInput) {
   cameraButton.addEventListener("click", () => {
-    fileInput.dataset.transcribeAudio = "false";
-    fileInput.dataset.videoReference = "false";
-    fileInput.accept = "image/*";
-    fileInput.setAttribute("capture", "environment");
-    fileInput.click();
+    window.dispatchEvent(new CustomEvent("irhcf:open-live-camera"));
   });
 }
 
