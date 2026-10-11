@@ -6395,6 +6395,27 @@ function clearComposerAttachments() {
 }
 
 
+// Read assistant replies aloud with the device's built-in speech engine.
+function speakAssistantResponse(text) {
+  const spokenText = String(text || "").trim();
+  if (!spokenText || !("speechSynthesis" in window) || typeof window.SpeechSynthesisUtterance !== "function") return false;
+  try {
+    window.speechSynthesis.cancel();
+    const utterance = new window.SpeechSynthesisUtterance(spokenText.slice(0, 12000));
+    const preferred = String(getPreferredResponseLanguage() || "en").toLowerCase();
+    utterance.lang = preferred === "rw" || preferred.startsWith("rw") ? "rw-RW"
+      : preferred.startsWith("fr") ? "fr-FR"
+      : preferred.startsWith("sw") ? "sw-KE"
+      : preferred.length >= 2 ? preferred : "en-US";
+    utterance.onerror = event => console.warn("[IRHCF SPEECH] Playback failed:", event?.error || "unknown");
+    window.speechSynthesis.speak(utterance);
+    return true;
+  } catch (error) {
+    console.warn("[IRHCF SPEECH] Unable to speak reply:", error?.message || error);
+    return false;
+  }
+}
+
 // ============================================================
 // VOICE RECORDING
 // ============================================================
@@ -7166,6 +7187,9 @@ async function sendMessage() {
       aiResponse,
       "ai"
     );
+
+    // Speak the real assistant answer without requiring a paid TTS API.
+    speakAssistantResponse(aiResponse);
 
 
     // --------------------------------------------------------

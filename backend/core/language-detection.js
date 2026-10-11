@@ -9,7 +9,13 @@
  * backend/server.js: rw (Kinyarwanda), fr (French), and en (English/default).
  */
 function detectAgentLanguage(input) {
-  const text = String(input ?? "")
+  // UI language instructions are metadata, not evidence of the language
+  // used in the user's actual question.
+  const userText = String(input ?? "").replace(
+    /\s*\[Response language preference:[\s\S]*?\]\s*/gi,
+    " "
+  );
+  const text = userText
     .normalize("NFKC")
     .toLowerCase()
     .replace(/[^\p{L}\p{N}\s']/gu, " ")
@@ -26,7 +32,7 @@ function detectAgentLanguage(input) {
       " ese ", " nkeneye ", " nshaka ", " ndifuza ", " kinyarwanda ",
       " ikinyarwanda ", " gukora ", " ikibazo ", " igisubizo ",
       " urubuga ", " konti ", " amafaranga ", " ndabinginze ", " byagenda ",
-      " tubikore ", " birakora ", " birakunze ", " heza ", " ndi "
+      " tubikore ", " birakora ", " birakunze ", " heza ", " ndi ", " ndabaza ", " nsubiza ", " subiza ", " unsobanurire ", " unkorere ", " yinkorere ", " urukundo ", " umutima ", " umukobwa ", " umusore ", " ishuri ", " ikora neza ", " mbese ", " wagira ute ", " nyereka ", " ndagusaba "
     ],
     fr: [
       " bonjour ", " salut ", " merci ", " s'il vous plaît ", " svp ",
