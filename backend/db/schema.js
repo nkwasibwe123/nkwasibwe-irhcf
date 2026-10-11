@@ -2137,6 +2137,21 @@ await pool.query(`
     DO NOTHING;
   `);
 
+  // ------------------------------------------------------------
+  // GUARDED SELF-IMPROVEMENT PROPOSALS
+  // ------------------------------------------------------------
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS self_improvement_proposals (
+      id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, fingerprint TEXT NOT NULL,
+      target TEXT NOT NULL, reason TEXT NOT NULL,
+      changes JSONB NOT NULL DEFAULT '[]'::jsonb, evidence JSONB NOT NULL DEFAULT '[]'::jsonb,
+      status TEXT NOT NULL DEFAULT 'PROPOSED', baseline JSONB, candidate JSONB, evaluation JSONB,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (user_id, fingerprint)
+    );
+    CREATE INDEX IF NOT EXISTS idx_self_improvement_user_updated ON self_improvement_proposals (user_id, updated_at DESC);
+  `);
+
   // ============================================================
   // SCHEMA VERIFICATION
   // ============================================================
@@ -2158,7 +2173,8 @@ await pool.query(`
     "capability_requests",
     "system_settings",
     "schema_migrations",
-    "system_logs"
+    "system_logs",
+    "self_improvement_proposals"
   ];
 
   for (const tableName of requiredTables) {
