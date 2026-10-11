@@ -193,15 +193,24 @@ test("selected image attachments show thumbnails in the composer and refresh fro
 });
 
 
-test("camera capture is available in the chat composer and refreshes frontend assets", () => {
+test("live camera capture provides preview, still photo, and bounded video recording", () => {
   const root = path.join(__dirname, "..", "..");
   const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
   const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  const camera = fs.readFileSync(path.join(root, "camera-client.js"), "utf8");
+  const css = fs.readFileSync(path.join(root, "style.css"), "utf8");
   assert.match(html, /id="cameraButton"/);
-  assert.match(app, /getElementById\(\s*"cameraButton"/);
-  assert.match(app, /setAttribute\("capture",\s*"environment"\)/);
-  assert.match(html, /src="app\.js\?v=2\.0\.12"/);
-  assert.match(html, /href="style\.css\?v=2\.0\.12"/);
+  assert.match(html, /src="camera-client\.js\?v=1\.0\.0"/);
+  assert.match(app, /irhcf:open-live-camera/);
+  assert.match(camera, /getUserMedia/);
+  assert.match(camera, /Take photo/);
+  assert.match(camera, /MediaRecorder/);
+  assert.match(camera, /60000/);
+  assert.match(camera, /irhcf-photo-/);
+  assert.match(camera, /irhcf-video-/);
+  assert.match(css, /irhcf-camera-modal/);
+  assert.match(html, /src="app\.js\?v=2\.0\.13"/);
+  assert.match(html, /href="style\.css\?v=2\.0\.13"/);
 });
 
 
