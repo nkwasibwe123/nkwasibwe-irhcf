@@ -92,7 +92,7 @@ const {
   resumeSchedule
 } = require("./core/schedule-service");
 const { ScheduleWorker } = require("./core/schedule-worker");
-const { requestedArtifact, buildTaskArtifact } = require("./core/task-artifacts");
+const { requestedArtifact, requestedArtifacts, buildTaskArtifacts } = require("./core/task-artifacts");
 const { buildProjectPlan, shouldBecomeLongRunning } = require("./core/project-autopilot");
 const {
   buildCapabilityExpansionPlan
@@ -32157,15 +32157,18 @@ const persistentTaskEngine =
             specialistTeam
           );
 
-        const artifactRequest = requestedArtifact(executionTask);
-        const artifactInstruction = artifactRequest
+        const artifactRequests = requestedArtifacts(executionTask);
+        const artifactRequest = artifactRequests[0] || null;
+        const artifactInstruction = artifactRequests.length
           ? [
               "",
               "REQUIRED REAL FILE DELIVERABLE:",
-              "The user asked for a file. Create the actual file content, not instructions about how the user could create it.",
-              "Return the complete file content inside one fenced code block suitable for the requested filename " + artifactRequest.name + ".",
-              "For source code, return only the source in the code fence; do not put explanations inside the file.",
-              "Do not claim the file was tested or deployed unless the task runner reports that check."
+              "Create actual downloadable file content, not instructions about how the user could create it.",
+              artifactRequests.length > 1
+                ? "This is a complete website request. Return EVERY required file, each in its own fenced code block with this exact header format: ```html filename=\"index.html\" (then content, then closing fence). Required files: " + artifactRequests.map(file => file.name).join(", ") + ". Use language labels html, css, javascript, and markdown respectively. Do not omit any file.",
+                : "Return the complete file content inside one fenced code block using the requested filename " + artifactRequest.name + ".",
+              "For source files, put only file contents inside each code block; do not include explanations inside files.",
+              "Do not claim a file was tested or deployed unless the task runner reports that check."
             ].join("\n")
           : "";
 
@@ -32189,11 +32192,11 @@ const persistentTaskEngine =
             sessionId
           });
 
-        const taskAction = artifactRequest
-          ? buildTaskArtifact({ task: executionTask, result, taskId })
+        const taskAction = artifactRequests.length
+          ? buildTaskArtifacts({ task: executionTask, result, taskId })
           : { required: false, artifacts: [] };
 
-        if (artifactRequest && !taskAction.artifacts.length) {
+        if (artifactRequests.length && taskAction.verified !== true) {
           const error = new Error(taskAction.error || "Required task artifact was not produced or verified.");
           error.code = "TASK_ARTIFACT_VERIFICATION_FAILED";
           error.taskAction = taskAction;
