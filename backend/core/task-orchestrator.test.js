@@ -27,3 +27,31 @@ test("a website error is classified as engineering rather than a new project", (
     "software_engineering"
   );
 });
+
+test("video, image, and audio tasks receive distinct specialist routes", () => {
+  const { analyzeTask } = require("./task-orchestrator");
+  const video = analyzeTask("Create a short video with music");
+  const image = analyzeTask("Create a logo image");
+  const audio = analyzeTask("Generate a music song");
+  assert.equal(video.classification.type, "video");
+  assert.ok(video.routing.agents.some(agent => agent.role === "video"));
+  assert.ok(video.agentTeam.teamTypes.includes("video"));
+  assert.equal(image.classification.type, "image");
+  assert.ok(image.routing.agents.some(agent => agent.role === "image"));
+  assert.ok(image.capabilities.includes("image_generation"));
+  assert.equal(audio.classification.type, "audio");
+  assert.ok(audio.routing.agents.some(agent => agent.role === "audio"));
+  assert.ok(audio.capabilities.includes("music_generation"));
+});
+
+test("file and link requests get dedicated specialist teams", () => {
+  const { analyzeTask } = require("./task-orchestrator");
+  const files = analyzeTask("Analyze this PDF document file");
+  const links = analyzeTask("Find links to official documentation");
+  assert.equal(files.classification.type, "file_operations");
+  assert.ok(files.agentTeam.teamTypes.includes("files"));
+  assert.ok(files.routing.agents.some(agent => agent.role === "files"));
+  assert.equal(links.classification.type, "link_research");
+  assert.ok(links.agentTeam.teamTypes.includes("links"));
+  assert.ok(links.routing.agents.some(agent => agent.role === "links"));
+});
