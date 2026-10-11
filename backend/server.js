@@ -227,6 +227,7 @@ const LIMITS = Object.freeze({
 // ============================================================
 
 const { registerSearchRoutes, searchIRHCF } = require("./routes/search-routes");
+const { createCapabilityLifecycleRouter } = require("./routes/capability-lifecycle-routes");
 const { buildAIResearchContext } = require("./core/search-ai-context");
 const {
   buildClaimVerificationPrompt,
@@ -338,6 +339,17 @@ app.use(
 // ============================================================
 
 registerSearchRoutes(app, authenticateToken);
+
+// Capability lifecycle: authenticated, persisted, and fail-closed when the isolated runner is not configured.
+app.use("/api/capabilities/lifecycle", createCapabilityLifecycleRouter({
+  pool,
+  search: searchIRHCF,
+  generateText: (messages, options = {}) => callOpenAIWithTimeout(messages, {
+    temperature: typeof options.temperature === "number" ? options.temperature : 0.1,
+    maxTokens: options.maxTokens || 3500
+  }),
+  authenticateToken
+}));
 
 // Request context is initialized by the canonical
 // security/request-context middleware in Part 2.

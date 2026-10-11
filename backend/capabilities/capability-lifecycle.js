@@ -61,6 +61,7 @@ function validateRequest(request) {
       ? request.constraints.slice(0, 30).map(v => clean(v, 500)).filter(Boolean)
       : [],
     explicitDeploymentAuthorization: request?.explicitDeploymentAuthorization === true,
+    ownerUserId: Number.isSafeInteger(Number(request?.ownerUserId)) && Number(request?.ownerUserId) > 0 ? Number(request.ownerUserId) : null,
     metadata: request?.metadata && typeof request.metadata === "object" ? request.metadata : {}
   };
 }
@@ -70,7 +71,8 @@ async function runCapabilityLifecycle({
   adapters = {},
   store,
   maxRepairs = MAX_REPAIRS,
-  clock = () => new Date().toISOString()
+  clock = () => new Date().toISOString(),
+  onCreated = null
 } = {}) {
   const normalized = validateRequest(request);
   if (!store || typeof store.create !== "function" || typeof store.update !== "function") {
@@ -83,6 +85,7 @@ async function runCapabilityLifecycle({
     capability: normalized.capability,
     goal: normalized.goal,
     reason: normalized.reason,
+    ownerUserId: normalized.ownerUserId,
     status: "running",
     stage: "research",
     createdAt: clock(),
@@ -131,6 +134,7 @@ async function runCapabilityLifecycle({
   };
 
   await store.create(structuredClone(record));
+  if (typeof onCreated === "function") await onCreated(structuredClone(record));
   try {
     const research = await stage("research", requireAdapter(adapters, "research"), { request: normalized });
     if (research?.passed !== true || !Array.isArray(research.sources) || research.sources.length === 0) {

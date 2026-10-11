@@ -14,6 +14,31 @@ function createCapabilityLifecycleRuntime({ pool, adapters, maxRepairs } = {}) {
     store,
     run(request) {
       return runCapabilityLifecycle({ request, adapters: adapters || {}, store, maxRepairs });
+    },
+    async start(request) {
+      let resolveCreated;
+      let rejectCreated;
+      let created = false;
+      const started = new Promise((resolve, reject) => {
+        resolveCreated = record => {
+          created = true;
+          resolve(record);
+        };
+        rejectCreated = reject;
+      });
+      const completion = runCapabilityLifecycle({
+        request,
+        adapters: adapters || {},
+        store,
+        maxRepairs,
+        onCreated: record => resolveCreated(record)
+      });
+      // Keep the background promise observed even if the HTTP client disconnects.
+      completion.catch(error => {
+        if (!created) rejectCreated(error);
+      });
+      const record = await started;
+      return { record, completion };
     }
   };
 }
