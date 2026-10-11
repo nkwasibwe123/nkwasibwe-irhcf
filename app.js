@@ -6727,18 +6727,24 @@ function getLocalClockAnswer(question) {
 function isExplicitBuildTask(text) {
   const value = String(text || "").trim();
   if (!value) return false;
-  // Short Kinyarwanda follow-ups such as "Ngaho yinkorere" mean
-  // "go ahead and make it". Route them to the executor so the agent can
-  // resume the concrete deliverable already discussed in this session.
-  if (/^(?:ngaho\\s+)?(?:yi)?nkorere(?:\\s+ubwo)?[.!\\s]*$/i.test(value) ||
-      /^(?:ngaho\\s+)?(?:bikore|kora\\s+ubwo|tangira\\s+kubikora)[.!\\s]*$/i.test(value)) return true;
-  // Questions asking for instructions stay in chat; only direct creation
-  // commands should create an execution task.
-  if (/^(?:how\\s+to|how\\s+(?:do|can|should)\\s+i|what\\s+is\\s+the\\s+way|nigute|uko\\s+n(?:a|i)kora|mbwira\\s+uko)\\b/i.test(value)) return false;
-  const target = "(?:website|web\\s*site|urubuga|application|app|software|program|code|script|html|javascript|dosiye|file|spreadsheet|report)";
-  return new RegExp("\\b(?:create|build|make|write|generate|develop|implement|produce)\\b.{0,100}\\b" + target + "\\b", "i").test(value) ||
-    new RegExp("\\b(?:nkorera|nkore|mukorere|kora)\\b.{0,100}\\b" + target + "\\b", "i").test(value) ||
-    new RegExp("\\b" + target + "\\b.{0,80}\\b(?:for me|wowe ubwawe|ubwayo|yaryo)\\b", "i").test(value);
+
+  // Short Kinyarwanda follow-ups refer to the concrete deliverable already
+  // discussed in this session and must enter the task executor.
+  if (/^(?:(?:oya|ngaho)\s+)*(?:yi)?nkorere(?:\s+ubwo)?(?:\s+wowe\s+ubwawe)?[.!?\s]*$/i.test(value) ||
+      /^(?:ngaho\s+)?(?:bikore|kora\s+ubwo|tangira\s+kubikora)[.!?\s]*$/i.test(value)) return true;
+
+  // Questions asking for instructions stay in chat.
+  if (/^(?:how\s+to|how\s+(?:do|can|should)\s+i|what\s+is\s+the\s+way|nigute|uko\s+n(?:a|i)kora|mbwira\s+uko)\b/i.test(value)) return false;
+
+  const target = "(?:website|web\\s*site|urubuga|site\\s+ya\\s+internet|application|app|software|program|code|script|html|javascript|dosiye|file|spreadsheet|report)";
+  const englishCreation = new RegExp("\\b(?:create|build|make|write|generate|develop|implement|produce)\\b.{0,120}\\b" + target + "\\b", "i");
+  const kinyarwandaCreation = /\b(?:nkorera|unkorera|unkorere|nkore|mukorere|kora|unyubakire|ubakire)\b.{0,120}\b(?:website|web\s*site|urubuga|site\s+ya\s+internet|application|app|software|program|code|script|html|dosiye|file)\b/i;
+  const kinyarwandaIntent = /\b(?:ndashaka|nshaka|ncaka|ndifuza)\b.{0,60}\b(?:ko\s+)?(?:unkorera|unkorere|nkorera|unyubakire|ubakire|ukora)\b.{0,100}\b(?:website|web\s*site|urubuga|site\s+ya\s+internet|application|app|software|program|code|script|html|dosiye|file)\b/i;
+  const targetForMe = new RegExp("\\b" + target + "\\b.{0,100}\\b(?:for me|wowe ubwawe|ubwayo|yaryo|yishuri)\\b", "i");
+  return englishCreation.test(value) ||
+    kinyarwandaCreation.test(value) ||
+    kinyarwandaIntent.test(value) ||
+    targetForMe.test(value);
 }
 
 // ============================================================

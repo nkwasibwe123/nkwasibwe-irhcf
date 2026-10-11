@@ -25,6 +25,20 @@ test("frontend source has no standalone async tokens before section comments", (
 });
 
 
+test("explicit build routing recognizes Kinyarwanda school website requests and short follow-ups", () => {
+  const vm = require("node:vm");
+  const source = fs.readFileSync(path.join(__dirname, "..", "..", "app.js"), "utf8");
+  const start = source.indexOf("function isExplicitBuildTask(text) {");
+  const end = source.indexOf("\n}\n\n// ============================================================\n// SEND MESSAGE", start) + 2;
+  assert.ok(start >= 0 && end > start, "Build-task router must exist.");
+  const routerSource = source.slice(start, end);
+  const isExplicitBuildTask = vm.runInNewContext("(" + routerSource + ")");
+  assert.equal(isExplicitBuildTask("Ncaka ko unkorera website yishuri rya Gs kitazigurwa ibe ikora neza Kandi hose"), true);
+  assert.equal(isExplicitBuildTask("Oya yinkorere wowe ubwawe"), true);
+  assert.equal(isExplicitBuildTask("Ngaho yinkorere"), true);
+  assert.equal(isExplicitBuildTask("How to build a website"), false);
+});
+
 test("voice note and live voice controls use the existing authenticated IRHCF API", () => {
   const root = path.join(__dirname, "..", "..");
   const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
@@ -91,8 +105,8 @@ test("attached-photo background editing calls the authenticated real image-edit 
 
   assert.ok(app.includes('"/api/media/image/edit"'));
   const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
-  assert.match(html, /src="app\.js\?v=2\.0\.11"/, "Deploying a new frontend version must bypass stale cached app.js.");
-  assert.match(html, /href="style\.css\?v=2\.0\.11"/, "Deploying a new frontend version must refresh the related stylesheet.");
+  assert.match(html, /src="app\.js\?v=2\.0\.12"/, "Deploying a new frontend version must bypass stale cached app.js.");
+  assert.match(html, /href="style\.css\?v=2\.0\.12"/, "Deploying a new frontend version must refresh the related stylesheet.");
   assert.ok(app.includes("async function editAttachedImage(prompt, file)"));
   assert.ok(app.includes('[IRHCF IMAGE EDIT ROUTING v2.0.5]'), "The deployed frontend must expose a routing diagnostic so stale frontend code can be distinguished from a failed image-edit API.");
   assert.ok(app.includes("pendingImageEditPrompt"), "A background-edit request made before choosing a photo must be remembered.");
@@ -174,8 +188,8 @@ test("selected image attachments show thumbnails in the composer and refresh fro
   assert.match(app, /attachment-thumbnail/);
   assert.match(app, /Photo preview: /);
   assert.match(app, /URL\.createObjectURL\(file\)/);
-  assert.match(html, /src="app\.js\?v=2\.0\.11"/);
-  assert.match(html, /href="style\.css\?v=2\.0\.11"/);
+  assert.match(html, /src="app\.js\?v=2\.0\.12"/);
+  assert.match(html, /href="style\.css\?v=2\.0\.12"/);
 });
 
 
@@ -186,8 +200,8 @@ test("camera capture is available in the chat composer and refreshes frontend as
   assert.match(html, /id="cameraButton"/);
   assert.match(app, /getElementById\(\s*"cameraButton"/);
   assert.match(app, /setAttribute\("capture",\s*"environment"\)/);
-  assert.match(html, /src="app\.js\?v=2\.0\.11"/);
-  assert.match(html, /href="style\.css\?v=2\.0\.11"/);
+  assert.match(html, /src="app\.js\?v=2\.0\.12"/);
+  assert.match(html, /href="style\.css\?v=2\.0\.12"/);
 });
 
 
@@ -213,7 +227,7 @@ test("chat routes explicit build requests to the persistent task executor and an
   assert.match(app, /Intl\.DateTimeFormat\(\)\.resolvedOptions\(\)\.timeZone/,
     "Local time answers must use the device timezone.");
   assert.match(app, /function isExplicitBuildTask\(text\)/);
-  assert.match(app, /Short Kinyarwanda follow-ups such as "Ngaho yinkorere"/,
+  assert.match(app, /Short Kinyarwanda follow-ups refer to the concrete deliverable already/,
     "Direct Kinyarwanda follow-ups must resume execution instead of returning instructions.");
   assert.match(app, /recover the most recent concrete deliverable request from this same authenticated session/,
     "Follow-up tasks must explicitly recover prior session context.");
@@ -222,8 +236,8 @@ test("chat routes explicit build requests to the persistent task executor and an
   assert.match(app, /API_ENDPOINTS\.tasks/);
   assert.match(app, /deliverableRequired: true/);
   assert.match(app, /Build and generate the actual requested deliverable/);
-  assert.match(html, /src="app\.js\?v=2\.0\.11"/);
-  assert.match(html, /href="style\.css\?v=2\.0\.11"/);
+  assert.match(html, /src="app\.js\?v=2\.0\.12"/);
+  assert.match(html, /href="style\.css\?v=2\.0\.12"/);
 });
 
 
