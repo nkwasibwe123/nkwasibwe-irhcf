@@ -220,3 +220,48 @@ test("database schema refreshes stale agent run status constraints on existing d
     assert.ok(schema.includes(`'${status}'`), `missing allowed status: ${status}`);
   }
 });
+
+test("stale recovery requeues verifying tasks and closes orphaned run records", async () => {
+  const calls = [];
+  const engine = new TaskEngine({
+    pool: {
+      async query(sql, params) {
+        calls.push({ sql, params });
+        if (calls.length === 1) {
+          assert.match(sql, /status IN \(\$2, \$4\)/);
+          assert.match(sql, /RETURNING id/);
+          assert.equal(params[1], TASK_STATES.RUNNING);
+          assert.equal(params[3], TASK_STATES.VERIFYING);
+          return { rows: [{ id: 41 }], rowCount: 1 };
+        }
+        return { rows: [], rowCount: 1 };
+      }
+    },
+    lockTimeoutMs: 12345
+  });
+
+  const recovered = await engine.recoverStaleTasks();
+  assert.equal(recovered, 1);
+  assert.equal(calls.length, 4);
+  assert.match(calls[1].sql, /UPDATE task_runs/);
+  assert.match(calls[2].sql, /UPDATE agent_steps/);
+  assert.match(calls[3].sql, /UPDATE agent_runs/);
+  for (const call of calls.slice(1)) {
+    assert.deepEqual(call.params[0], [41]);
+    assert.match(call.params[1], /Worker lease expired/);
+  }
+});
+
+test("stale recovery skips orphan cleanup when no tasks expired", async () => {
+  let calls = 0;
+  const engine = new TaskEngine({
+    pool: {
+      async query() {
+        calls++;
+        return { rows: [], rowCount: 0 };
+      }
+    }
+  });
+  assert.equal(await engine.recoverStaleTasks(), 0);
+  assert.equal(calls, 1);
+});
