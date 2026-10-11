@@ -29,7 +29,7 @@ test("explicit build routing recognizes Kinyarwanda school website requests and 
   const vm = require("node:vm");
   const source = fs.readFileSync(path.join(__dirname, "..", "..", "app.js"), "utf8");
   const start = source.indexOf("function isExplicitBuildTask(text) {");
-  const end = source.indexOf("\\n}\\n\\n// ============================================================\\n// SEND MESSAGE", start) + 2;
+  const end = source.indexOf("\n}\n\n// ============================================================\n// SEND MESSAGE", start) + 2;
   assert.ok(start >= 0 && end > start, "Build-task router must exist.");
   const routerSource = source.slice(start, end);
   const isExplicitBuildTask = vm.runInNewContext("(" + routerSource + ")");
