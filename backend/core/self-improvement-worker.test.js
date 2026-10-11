@@ -14,8 +14,8 @@ test("worker groups failed tasks per user and persists deduplicated proposals",a
  const result=await worker.tick();
  assert.deepEqual(result,{scannedFailures:3,usersScanned:2,proposalsUpdated:2});
  assert.equal(queries.filter(q=>q.sql.startsWith("INSERT INTO self_improvement_proposals")).length,2);
- assert.ok(queries.some(q=>q.params[1]===1));
- assert.ok(queries.some(q=>q.params[1]===2));
+ assert.ok(queries.some(q=>q.params?.[1]===1));
+ assert.ok(queries.some(q=>q.params?.[1]===2));
  assert.equal(worker.getRuntimeState().lastError,null);
 });
 test("worker prevents overlapping scans",async()=>{
