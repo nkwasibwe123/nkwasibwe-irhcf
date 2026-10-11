@@ -1860,6 +1860,7 @@ body {
 }
 .video-editor-fields { display: grid; grid-template-columns: minmax(0, 1fr); gap: .75rem; }
 .video-editor-panel video { display: block; width: 100%; max-height: 360px; margin: .5rem 0; background: #111; border-radius: .75rem; }
+.audio-studio-panel audio { display: block; width: 100%; margin: .5rem 0; }
 .video-editor-panel button, .video-editor-panel a { min-height: 44px; padding: .7rem 1rem; border-radius: .6rem; }
 .video-editor-panel a { display: inline-flex; align-items: center; justify-content: center; }
 #videoEditorStatus { overflow-wrap: anywhere; }
