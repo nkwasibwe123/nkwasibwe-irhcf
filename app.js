@@ -149,6 +149,9 @@ const API_ENDPOINTS = Object.freeze({
   videoEditing:
     "/api/media/video/edit",
 
+  audioEditing:
+    "/api/media/audio/edit",
+
   musicGeneration:
     "/api/media/music",
 
@@ -8919,6 +8922,97 @@ function initializeVideoEditor() {
   });
 }
 
+function initializeAudioStudio() {
+  const panel = document.getElementById("audioStudioPanel");
+  const form = document.getElementById("audioStudioForm");
+  const fileInput = document.getElementById("audioStudioFile");
+  const preview = document.getElementById("audioStudioPreview");
+  const output = document.getElementById("audioStudioOutput");
+  const download = document.getElementById("audioStudioDownload");
+  const status = document.getElementById("audioStudioStatus");
+  const submit = document.getElementById("audioStudioSubmit");
+  const close = document.getElementById("audioStudioClose");
+  if (!panel || !form || !fileInput || form.dataset.initialized === "true") return;
+  form.dataset.initialized = "true";
+
+  fileInput.addEventListener("change", () => {
+    const file = fileInput.files?.[0];
+    if (!file) return;
+    if (file.size > 6 * 1024 * 1024) {
+      fileInput.value = "";
+      status.textContent = "Audio irenze 6 MB. Hitamo dosiye ntoya.";
+      return;
+    }
+    if (!String(file.type || "").startsWith("audio/")) {
+      fileInput.value = "";
+      status.textContent = "Hitamo dosiye y'amajwi yemewe.";
+      return;
+    }
+    preview.src = URL.createObjectURL(file);
+    preview.hidden = false;
+    output.hidden = true;
+    download.hidden = true;
+    status.textContent = "Audio yatoranyijwe: " + file.name;
+  });
+
+  close?.addEventListener("click", () => { panel.hidden = true; });
+
+  form.addEventListener("submit", async event => {
+    event.preventDefault();
+    const file = fileInput.files?.[0];
+    if (!file) { status.textContent = "Banza uhitemo audio."; return; }
+    if (!authToken) { status.textContent = "Injira muri konti yawe mbere yo gukoresha Audio Studio."; return; }
+    const startSeconds = Number(document.getElementById("audioStudioStart").value || 0);
+    const endValue = document.getElementById("audioStudioEnd").value.trim();
+    const endSeconds = endValue ? Number(endValue) : null;
+    if (!Number.isFinite(startSeconds) || startSeconds < 0 ||
+        (endSeconds !== null && (!Number.isFinite(endSeconds) || endSeconds <= startSeconds))) {
+      status.textContent = "Igihe cyo gutangira no kurangira nticyemewe.";
+      return;
+    }
+    submit.disabled = true;
+    output.hidden = true;
+    download.hidden = true;
+    status.textContent = "Audio Studio iri gukoresha FFmpeg kuri server; tegereza...";
+    try {
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error("Ntibyashobotse gusoma audio."));
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.readAsDataURL(file);
+      });
+      const result = await apiRequest(API_ENDPOINTS.audioEditing, {
+        method: "POST",
+        timeoutMs: 150000,
+        body: JSON.stringify({
+          mimeType: file.type,
+          audioBase64: dataUrl.slice(dataUrl.indexOf(",") + 1),
+          effect: document.getElementById("audioStudioEffect").value,
+          startSeconds,
+          endSeconds,
+          outputFormat: document.getElementById("audioStudioFormat").value
+        })
+      });
+      if (!result?.success || !result.audioBase64) {
+        throw new Error(result?.error || "Server ntiyagaruye audio yatunganyijwe.");
+      }
+      const bytes = Uint8Array.from(atob(result.audioBase64), char => char.charCodeAt(0));
+      const blob = new Blob([bytes], { type: result.mimeType || "audio/mpeg" });
+      const url = URL.createObjectURL(blob);
+      output.src = url;
+      output.hidden = false;
+      download.href = url;
+      download.download = result.filename || "nkwasibwe-studio.mp3";
+      download.hidden = false;
+      status.textContent = "Byarangiye: " + Math.round(blob.size / 1024) + " KB. Umva cyangwa ukuremo audio yatunganyijwe.";
+    } catch (error) {
+      status.textContent = String(error?.message || "Gutunganya audio byanze.").slice(0, 300);
+    } finally {
+      submit.disabled = false;
+    }
+  });
+}
+
 async function dashboardAction(action) {
 
   const actions = {
@@ -8979,6 +9073,28 @@ async function dashboardAction(action) {
     economy:
       "Start a safe economic discovery cycle: research lawful revenue opportunities, compare evidence, score risk and feasibility, and prepare an MVP plan. Do not move money or launch external actions without my authorization."
   };
+
+  if (action === "video-edit") {
+    const panel = document.getElementById("videoEditorPanel");
+    if (panel) {
+      setDashboardOpen(false);
+      panel.hidden = false;
+      initializeVideoEditor();
+      setDashboardStatus("Video Editor yafunguwe. Hitamo video, effect n'igihe cyo kuyitunganya.");
+    }
+    return;
+  }
+
+  if (action === "audio-studio") {
+    const panel = document.getElementById("audioStudioPanel");
+    if (panel) {
+      setDashboardOpen(false);
+      panel.hidden = false;
+      initializeAudioStudio();
+      setDashboardStatus("Audio Studio yafunguwe. Hitamo audio, effect, trim n'ubwoko bwo kuyibika.");
+    }
+    return;
+  }
 
   if (action === "tasks") {
     openTaskManager();
@@ -9124,6 +9240,9 @@ async function dashboardAction(action) {
   }
 
 }
+
+initializeVideoEditor();
+initializeAudioStudio();
 
 if (dashboardButton) {
   dashboardButton.addEventListener(
