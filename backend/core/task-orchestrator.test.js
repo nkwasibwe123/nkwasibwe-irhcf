@@ -55,3 +55,16 @@ test("file and link requests get dedicated specialist teams", () => {
   assert.ok(links.agentTeam.teamTypes.includes("links"));
   assert.ok(links.routing.agents.some(agent => agent.role === "links"));
 });
+
+test("Kinyarwanda website creation requests route to the software build team", () => {
+  const { analyzeTask } = require("./task-orchestrator");
+  const result = analyzeTask("Nkorera website yuzuye ya GS Kitazigurwa ubundi uyimpe.");
+  assert.equal(result.classification.type, "software_build");
+  assert.ok(result.agentTeam.teamTypes.includes("software"));
+  assert.ok(result.routing.agents.some(agent => agent.role === "coding"));
+  assert.ok(result.capabilities.includes("code_generation"));
+});
+
+test("a general question about a website remains normal conversation", () => {
+  assert.equal(classifyTask("What is a website?").type, "general");
+});
