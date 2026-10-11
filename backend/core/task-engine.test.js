@@ -150,3 +150,35 @@ test("ordinary advice request does not fabricate a file artifact", () => {
     result: { success: true, response: "A closure captures lexical scope." }
   }), { required: false, artifacts: [] });
 });
+
+
+test("Kinyarwanda website request is recognized as a real file deliverable", () => {
+  const { requestedArtifacts } = require("./task-artifacts");
+  const files = requestedArtifacts("Nkorera website yuzuye ya GS Kitazigurwa ubundi uyimpe.");
+  assert.deepEqual(files.map(file => file.name), ["index.html", "style.css", "script.js", "README.md"]);
+});
+
+test("complete website requires every named file and verifies HTML, CSS, and JavaScript", () => {
+  const { buildTaskArtifacts } = require("./task-artifacts");
+  const task = "Nkorera website yuzuye ya GS Kitazigurwa";
+  const response = [
+    ' ```html filename="index.html"\n<!doctype html><html><head><title>School</title><link rel="stylesheet" href="style.css"></head><body><h1>GS Kitazigurwa</h1><script src="script.js"></script></body></html>\n```',
+    ' ```css filename="style.css"\nbody { margin: 0; }\n```',
+    ' ```javascript filename="script.js"\nconsole.log("ready");\n```',
+    ' ```markdown filename="README.md"\n# GS Kitazigurwa\n```'
+  ].join("\n");
+  const result = buildTaskArtifacts({ task, taskId: 17, result: { success: true, response } });
+  assert.equal(result.verified, true);
+  assert.deepEqual(result.artifacts.map(item => item.name), ["index.html", "style.css", "script.js", "README.md"]);
+  assert.ok(result.artifacts.every(item => item.verified && item.downloadUrl.includes("/api/tasks/17/artifacts/")));
+  assert.equal(isUsableTaskResult({ success: true, response: "built", taskAction: result }), true);
+});
+
+test("website cannot be marked complete when a required file is missing or invalid", () => {
+  const { buildTaskArtifacts } = require("./task-artifacts");
+  const task = "Build a complete website";
+  const result = buildTaskArtifacts({ task, taskId: 18, result: { success: true, response: '```html filename="index.html"\n<html><body>Incomplete</body></html>\n```' } });
+  assert.equal(result.verified, false);
+  assert.ok(result.error.includes("Missing required file"));
+  assert.equal(isUsableTaskResult({ success: true, response: "looks good", taskAction: result }), false);
+});

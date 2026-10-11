@@ -93,7 +93,7 @@ function isUsableTaskResult(result) {
   if (typeof result !== "object" || Array.isArray(result)) return false;
   if (result.success === false) return false;
   if (result.agent?.responseQuality?.verified === false) return false;
-  if (result.taskAction?.required && (!Array.isArray(result.taskAction.artifacts) || !result.taskAction.artifacts.some(item => item?.verified === true && typeof item?.content === "string" && item.content.trim()))) return false;
+  if (result.taskAction?.required) { const artifacts = Array.isArray(result.taskAction.artifacts) ? result.taskAction.artifacts : []; const verified = new Set(artifacts.filter(item => item?.verified === true && typeof item?.content === "string" && item.content.trim()).map(item => item.name)); const expected = Array.isArray(result.taskAction.expectedFiles) ? result.taskAction.expectedFiles : []; if (expected.length ? !expected.every(name => verified.has(name)) : !artifacts.some(item => item?.verified === true && typeof item?.content === "string" && item.content.trim())) return false; }
 
   const contentCandidates = [
     typeof result.response === "string" ? result.response : result.response?.content,
@@ -707,6 +707,8 @@ class TaskEngine {
             code: executionResult?.code || null,
             taskAction: executionResult?.taskAction ? {
               required: Boolean(executionResult.taskAction.required),
+              verified: executionResult.taskAction.verified === true,
+              expectedFiles: executionResult.taskAction.expectedFiles || [],
               artifacts: (executionResult.taskAction.artifacts || []).map(({ name, mimeType, bytes, verified, verification, downloadUrl }) => ({
                 name, mimeType, bytes, verified, verification, downloadUrl
               })),
