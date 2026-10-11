@@ -14544,8 +14544,15 @@ app.post(
           userId: req.user.id
         });
 
+      // Deterministic fallback: explicit file/website deliverable requests
+      // must enter the persistent executor even if the classifier misses
+      // a Kinyarwanda phrasing. Chat must not answer with another tutorial.
+      const hasRequiredFileDeliverable =
+        requestedArtifacts(task).length > 0;
+
       const longRunningRequested =
         Boolean(
+          hasRequiredFileDeliverable ||
           taskAnalysis?.classification?.type === "project_autopilot" ||
           taskAnalysis?.classification?.type === "software_build" ||
           shouldBecomeLongRunning(detectedProjectPlan)
