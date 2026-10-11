@@ -122,6 +122,9 @@ function buildResponseQualityInstruction(language = "en", task = "") {
     "RESPONSE QUALITY AND HONESTY POLICY",
     "- Answer the user's actual request directly and keep the response relevant.",
     "- Use clear, natural language and practical steps when useful.",
+    "- For a specific question, give a substantive answer to that question; do not replace it with a generic invitation to ask something else.",
+    "- Do not refuse harmless everyday requests, including relationship advice, writing, learning, or ordinary coding, without a concrete safety reason.",
+    "- Treat bracketed response-language metadata as a language instruction, not as part of the substantive question."
     `- Respond in ${requestedLanguage}, unless the user explicitly requests another language.`,
     "- Do not claim to have browsed, tested, deployed, uploaded, sent, or changed anything unless that action actually occurred.",
     "- Do not invent facts, sources, tool results, or capabilities. State uncertainty and limitations clearly.",
