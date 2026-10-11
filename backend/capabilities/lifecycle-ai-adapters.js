@@ -66,6 +66,16 @@ function createCapabilityLifecycleAdapters({ search, generateText, runner } = {}
   if (typeof search !== "function") throw new TypeError("A real search provider callback is required.");
   if (typeof generateText !== "function") throw new TypeError("A configured AI text provider callback is required.");
   const runTests = createIsolatedTestAdapter({ runner, command: "node --test", timeoutMs: 60000 });
+  const testBuild = async ({ build }) => {
+    const workspace = await require("node:fs/promises").mkdtemp(require("node:path").join(require("node:os").tmpdir(), "irhcf-lifecycle-test-"));
+    const fs = require("node:fs/promises");
+    const path = require("node:path");
+    try {
+      for (const file of build.files) await fs.writeFile(path.join(workspace, file.name), file.content, { flag: "wx", mode: 0o400 });
+      const result = await runTests({ root: workspace, files: build.files.map(file => file.name), entry: build.entry });
+      return { ...result, evidence: [{ code: "REMOTE_ISOLATED_FUNCTIONAL_TEST", passed: result.passed, runnerId: result.runner?.runnerId || null }] };
+    } finally { await fs.rm(workspace, { recursive: true, force: true }); }
+  };
 
   const askJson = async (system, prompt, maxTokens = 3500) => {
     const response = await generateText([
@@ -123,17 +133,7 @@ function createCapabilityLifecycleAdapters({ search, generateText, runner } = {}
       return { passed: true, files, entry: files.some(file => file.name === generated.entry) ? generated.entry : null, notes: String(generated.notes || "").slice(0, 2000), security, sourceDigest: crypto.createHash("sha256").update(files.map(f => f.name + "\0" + f.content).join("\0")).digest("hex"), evidence: [{ code: "CANDIDATE_GENERATED_AND_STATICALLY_SCREENED" }] };
     },
 
-    async test({ build }) {
-      const root = require("node:os").tmpdir();
-      const fs = require("node:fs/promises");
-      const path = require("node:path");
-      const workspace = await fs.mkdtemp(path.join(root, "irhcf-lifecycle-test-"));
-      try {
-        for (const file of build.files) await fs.writeFile(path.join(workspace, file.name), file.content, { flag: "wx", mode: 0o400 });
-        const result = await runTests({ root: workspace, files: build.files.map(file => file.name), entry: build.entry });
-        return { ...result, evidence: [{ code: "REMOTE_ISOLATED_FUNCTIONAL_TEST", passed: result.passed, runnerId: result.runner?.runnerId || null }] };
-      } finally { await fs.rm(workspace, { recursive: true, force: true }); }
-    },
+    test: testBuild,
 
     async securityReview({ build }) {
       const staticResult = deterministicSecurityCheck(build.files);
@@ -151,7 +151,7 @@ function createCapabilityLifecycleAdapters({ search, generateText, runner } = {}
       // Until a versioned baseline suite exists for a requested capability,
       // rerun all candidate-owned tests in the isolated runner rather than
       // falsely claiming historical regression coverage.
-      const result = await this.test({ build });
+      const result = await testBuild({ build });
       return { ...result, evidence: [{ code: "CANDIDATE_TESTS_RERUN_NO_HISTORICAL_BASELINE", passed: result.passed }] };
     },
 
