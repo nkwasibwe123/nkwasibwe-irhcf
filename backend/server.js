@@ -40,6 +40,7 @@ const {
   createTaskRouter,
   isUsableTaskResult
 } = require("./core/task-engine");
+const { createSelfImprovementRouter } = require("./routes/self-improvement-routes");
 
 const { AdapterRegistry } = require("./core/adapter-registry");
 const { ExecutionEngine } = require("./core/execution-engine");
@@ -32265,6 +32266,11 @@ const scheduleWorker =
     pool,
     taskEngine: persistentTaskEngine
   });
+
+app.use(
+  "/api/self-improvement",
+  createSelfImprovementRouter({ pool, authenticateToken, taskEngine: persistentTaskEngine })
+);
 
 app.use(
   "/api/tasks",
