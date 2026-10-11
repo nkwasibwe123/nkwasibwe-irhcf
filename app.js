@@ -6661,7 +6661,6 @@ function stopVoiceRecording() {
 
   if (composerState.speechRecognition) {
     const recognition = composerState.speechRecognition;
-    composerState.speechRecognition = null;
     try { recognition.stop(); } catch {}
     composerState.recording = false;
     if (composerState.recordingTimeout) {
