@@ -23,6 +23,11 @@ const ROUTES = Object.freeze({
   research: ["research", "verification"],
   content_creation: ["writing", "verification"],
   media: ["media", "verification"],
+  image: ["image", "media", "verification"],
+  video: ["video", "audio", "media", "verification"],
+  audio: ["audio", "media", "verification"],
+  file_operations: ["files", "writing", "verification"],
+  link_research: ["research", "links", "verification"],
   automation: ["automation", "verification"],
   account_automation: ["automation", "security", "verification"],
   meeting: ["voice", "automation", "verification"],
@@ -94,6 +99,30 @@ const AGENT_ROLES = Object.freeze({
       "monitoring",
       "deployment"
     ]
+  },
+  image: {
+    name: "Image Creation Agent",
+    domains: ["image_generation", "image_editing", "media_generation", "media_processing"]
+  },
+  video: {
+    name: "Video Production Agent",
+    domains: ["video_generation", "video_editing", "media_generation", "media_processing"]
+  },
+  audio: {
+    name: "Music and Audio Agent",
+    domains: ["audio_generation", "music_generation", "voice_processing", "media_generation", "media_processing"]
+  },
+  files: {
+    name: "File Operations Agent",
+    domains: ["file_operations", "document_generation", "document_analysis"]
+  },
+  links: {
+    name: "Links and Web Evidence Agent",
+    domains: ["browser_or_web_access", "web_research", "source_evaluation", "link_validation"]
+  },
+  user_care: {
+    name: "User Care Agent",
+    domains: ["response_generation", "content_generation", "quality_review"]
   },
   security: {
     name: "Security Agent",
