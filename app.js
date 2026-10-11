@@ -6730,7 +6730,7 @@ function isExplicitBuildTask(text) {
 
   // Short Kinyarwanda follow-ups refer to the concrete deliverable already
   // discussed in this session and must enter the task executor.
-  if (/^(?:ngaho\s+)?(?:yi)?nkorere(?:\s+ubwo)?[.!?\s]*$/i.test(value) ||
+  if (/^(?:(?:oya|ngaho)\s+)*(?:yi)?nkorere(?:\s+ubwo)?(?:\s+wowe\s+ubwawe)?[.!?\s]*$/i.test(value) ||
       /^(?:ngaho\s+)?(?:bikore|kora\s+ubwo|tangira\s+kubikora)[.!?\s]*$/i.test(value)) return true;
 
   // Questions asking for instructions stay in chat.
