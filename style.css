@@ -2095,3 +2095,19 @@ body {
   .task-progress-footer { align-items: stretch; }
   .task-progress-footer button { width: 100%; }
 }
+
+
+/* Live camera / video capture modal */
+.irhcf-camera-modal[hidden] { display: none !important; }
+.irhcf-camera-modal { position: fixed; inset: 0; z-index: 10000; display: grid; place-items: center; padding: 16px; background: rgba(7, 12, 25, .82); }
+.irhcf-camera-panel { width: min(100%, 620px); max-height: 92dvh; overflow: auto; border-radius: 18px; padding: 16px; background: var(--panel-bg, #fff); color: var(--text-color, #151923); box-shadow: 0 20px 70px rgba(0,0,0,.35); }
+.irhcf-camera-header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
+.irhcf-camera-header h2 { margin:0; font-size:1.1rem; }
+.irhcf-camera-preview { display:block; width:100%; max-height:58dvh; aspect-ratio:4/3; object-fit:contain; background:#080b10; border-radius:12px; }
+.irhcf-camera-status { min-height:1.4em; margin:10px 0; font-size:.92rem; }
+.irhcf-camera-actions { display:flex; flex-wrap:wrap; gap:8px; }
+.irhcf-camera-actions button { min-height:42px; border:0; border-radius:10px; padding:9px 13px; cursor:pointer; }
+.irhcf-camera-primary { background:var(--accent-color, #246bfd); color:#fff; }
+.irhcf-camera-danger { background:#b42318; color:#fff; }
+.irhcf-camera-close { background:transparent; color:inherit; font-size:1.5rem; }
+.irhcf-camera-switch { margin-left:auto; }
