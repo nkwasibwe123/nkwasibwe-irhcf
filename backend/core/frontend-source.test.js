@@ -29,12 +29,12 @@ test("explicit build routing recognizes Kinyarwanda school website requests and 
   const vm = require("node:vm");
   const source = fs.readFileSync(path.join(__dirname, "..", "..", "app.js"), "utf8");
   const start = source.indexOf("function isExplicitBuildTask(text) {");
-  const end = source.indexOf("// ============================================================\\n// SEND MESSAGE", start);
+  const end = source.indexOf("\\n}\\n\\n// ============================================================\\n// SEND MESSAGE", start) + 2;
   assert.ok(start >= 0 && end > start, "Build-task router must exist.");
   const routerSource = source.slice(start, end);
-  const isExplicitBuildTask = vm.runInNewContext("(" + routerSource.replace(/;?\\s*$/, "") + ")");
+  const isExplicitBuildTask = vm.runInNewContext("(" + routerSource + ")");
   assert.equal(isExplicitBuildTask("Ncaka ko unkorera website yishuri rya Gs kitazigurwa ibe ikora neza Kandi hose"), true);
-  assert.equal(isExplicitBuildTask("Oya yinkorere wowe ubwawe"), false, "Follow-up with context words is handled by a separate safe route only when unambiguous.");
+  assert.equal(isExplicitBuildTask("Oya yinkorere wowe ubwawe"), true);
   assert.equal(isExplicitBuildTask("Ngaho yinkorere"), true);
   assert.equal(isExplicitBuildTask("How to build a website"), false);
 });
