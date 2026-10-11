@@ -6014,6 +6014,7 @@ function removeTypingIndicator(
 const composerState = {
   attachments: [],
   mediaRecorder: null,
+  speechRecognition: null,
   recordingChunks: [],
   recording: false,
   pendingImageEditPrompt: ""
@@ -6420,6 +6421,80 @@ function speakAssistantResponse(text) {
 // VOICE RECORDING
 // ============================================================
 
+function startBrowserSpeechRecognition() {
+  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (typeof Recognition !== "function") return false;
+  try {
+    const recognition = new Recognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    const preferred = String(getPreferredResponseLanguage() || "en").toLowerCase();
+    recognition.lang = preferred === "rw" || preferred.startsWith("rw") ? "rw-RW"
+      : preferred.startsWith("fr") ? "fr-FR"
+      : preferred.startsWith("sw") ? "sw-KE"
+      : preferred.length >= 2 ? preferred : "en-US";
+    let finalTranscript = "";
+    recognition.onresult = event => {
+      let interim = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const text = String(event.results[i]?.[0]?.transcript || "");
+        if (event.results[i].isFinal) finalTranscript += text;
+        else interim += text;
+      }
+      if (userInput) {
+        userInput.value = (finalTranscript + (interim ? " " + interim : "")).trim();
+        autoResizeInput();
+      }
+      if (finalTranscript.trim()) {
+        setStatus("Nkwasibwe irimo kumva ijwi ryawe no guhindura amagambo...", "loading");
+      }
+    };
+    recognition.onerror = event => {
+      const reason = String(event?.error || "unknown");
+      console.warn("[IRHCF BROWSER SPEECH] Recognition error:", reason);
+      if (reason !== "no-speech" && reason !== "aborted") {
+        setStatus("Kumva ijwi byanze: " + reason + ". Gerageza kongera gutangira cyangwa ukoreshe voice recording.", "normal");
+      }
+    };
+    recognition.onend = () => {
+      if (composerState.speechRecognition !== recognition) return;
+      composerState.speechRecognition = null;
+      composerState.recording = false;
+      if (composerState.recordingTimeout) {
+        clearTimeout(composerState.recordingTimeout);
+        composerState.recordingTimeout = null;
+      }
+      updateVoiceButton();
+      if (userInput && finalTranscript.trim()) {
+        userInput.value = finalTranscript.trim();
+        autoResizeInput();
+        userInput.focus();
+        userInput.setSelectionRange(userInput.value.length, userInput.value.length);
+        setStatus("Ijwi ryahinduwe amagambo. Ongera uyasome, ukosore niba bikenewe, hanyuma ukande Send.", "online");
+        setDashboardStatus("Browser speech recognition yarangiye; amagambo ari muri composer kandi ntiyoherejwe atabanje kwemezwa.");
+      } else {
+        setStatus("Nta magambo yumvikanye. Reba uruhushya rwa microphone wongere ugerageze.", "normal");
+      }
+    };
+    recognition.start();
+    composerState.speechRecognition = recognition;
+    composerState.recording = true;
+    composerState.recordingTimeout = setTimeout(() => {
+      if (composerState.speechRecognition === recognition) {
+        showToast("Kumva ijwi bigarukira ku munota umwe; birahagarikwa.", "normal");
+        stopVoiceRecording();
+      }
+    }, 60000);
+    updateVoiceButton();
+    setStatus("Nkwasibwe irumva ijwi ryawe... Vuga, hanyuma ukande ⏹.", "loading");
+    showToast("Kumva ijwi bikoresheje browser. Amagambo azashyirwa muri composer mbere yo kohereza.", "normal");
+    return true;
+  } catch (error) {
+    console.warn("[IRHCF BROWSER SPEECH] Could not start recognition:", error?.message || error);
+    return false;
+  }
+}
+
 async function toggleVoiceRecording() {
 
   if (
@@ -6431,6 +6506,10 @@ async function toggleVoiceRecording() {
     return;
 
   }
+
+  // Prefer browser speech recognition when available. This avoids sending
+  // microphone audio to a paid transcription API for ordinary dictation.
+  if (startBrowserSpeechRecognition()) return;
 
   if (
     !navigator.mediaDevices ||
@@ -6579,6 +6658,18 @@ async function toggleVoiceRecording() {
 // ============================================================
 
 function stopVoiceRecording() {
+
+  if (composerState.speechRecognition) {
+    const recognition = composerState.speechRecognition;
+    try { recognition.stop(); } catch {}
+    composerState.recording = false;
+    if (composerState.recordingTimeout) {
+      clearTimeout(composerState.recordingTimeout);
+      composerState.recordingTimeout = null;
+    }
+    updateVoiceButton();
+    return;
+  }
 
   if (
     composerState.mediaRecorder &&
