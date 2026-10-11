@@ -20,7 +20,7 @@
 
   <link
     rel="stylesheet"
-    href="style.css?v=2.0.16"
+    href="style.css?v=2.0.17"
   >
 
 </head>
@@ -304,6 +304,7 @@
             <button class="dashboard-card" type="button" data-dashboard-action="audio-transcribe"><span class="dashboard-card-icon">📝</span><strong>Transcribe Audio</strong><span>Convert an audio file into editable text in supported languages.</span></button>
             <button class="dashboard-card" type="button" data-dashboard-action="image-create"><span class="dashboard-card-icon">✨</span><strong>Create Image</strong><span>Describe an image to create.</span></button>
             <button class="dashboard-card" type="button" data-dashboard-action="video-edit"><span class="dashboard-card-icon">🎞️</span><strong>Video Editor</strong><span>Trim a short video and apply real FFmpeg effects.</span></button>
+            <button class="dashboard-card" type="button" data-dashboard-action="audio-studio"><span class="dashboard-card-icon">🎚️</span><strong>Audio Studio</strong><span>Clean, normalize, enhance voice, boost bass, add reverb, trim and export audio locally.</span></button>
             <button class="dashboard-card" type="button" data-dashboard-action="video-create"><span class="dashboard-card-icon">🎥</span><strong>Create HD Video</strong><span>Generate 720p video clips with Sora; API access and credits required.</span></button>
             <button class="dashboard-card" type="button" data-dashboard-action="video-from-photo"><span class="dashboard-card-icon">🖼️🎬</span><strong>Animate a Photo</strong><span>Use a photo as a reference for a Sora video clip.</span></button>
             <button class="dashboard-card" type="button" data-dashboard-action="music-create"><span class="dashboard-card-icon">🎵</span><strong>Create Song</strong><span>Generate an MP3 song with ElevenLabs Music; API key and credits required.</span></button>
@@ -347,6 +348,38 @@
               <p id="videoEditorStatus" role="status" aria-live="polite"></p>
               <video id="videoEditorOutput" controls playsinline hidden></video>
               <a id="videoEditorDownload" hidden download="nkwasibwe-edited.mp4">Download edited video</a>
+            </form>
+          </section>
+          <section id="audioStudioPanel" class="video-editor-panel audio-studio-panel" hidden aria-labelledby="audioStudioTitle">
+            <div class="task-manager-header">
+              <div><h3 id="audioStudioTitle">Nkwasibwe Audio Studio</h3><p>Local FFmpeg processing for audio up to 6 MB. Song generation still requires a configured music provider.</p></div>
+              <button id="audioStudioClose" class="task-secondary-button" type="button">Close studio</button>
+            </div>
+            <form id="audioStudioForm" class="video-editor-form">
+              <label for="audioStudioFile">Choose audio file</label>
+              <input id="audioStudioFile" type="file" accept="audio/mpeg,audio/wav,audio/x-wav,audio/mp4,audio/x-m4a,audio/ogg,audio/flac,audio/webm,.mp3,.wav,.m4a,.ogg,.flac,.webm" required>
+              <audio id="audioStudioPreview" controls hidden></audio>
+              <div class="video-editor-fields">
+                <label for="audioStudioEffect">Studio effect
+                  <select id="audioStudioEffect">
+                    <option value="clean">Clean / balanced</option>
+                    <option value="normalize">Loudness normalize</option>
+                    <option value="voice">Voice enhancement</option>
+                    <option value="bass">Bass boost</option>
+                    <option value="clarity">Clarity / presence</option>
+                    <option value="reverb">Reverb / echo</option>
+                  </select>
+                </label>
+                <label for="audioStudioStart">Trim start (seconds)<input id="audioStudioStart" type="number" min="0" max="3600" step="0.1" value="0"></label>
+                <label for="audioStudioEnd">Trim end (seconds; optional)<input id="audioStudioEnd" type="number" min="0" max="3600" step="0.1" placeholder="End of audio"></label>
+                <label for="audioStudioFormat">Export format
+                  <select id="audioStudioFormat"><option value="mp3">MP3</option><option value="wav">WAV</option><option value="m4a">M4A</option><option value="ogg">OGG</option></select>
+                </label>
+              </div>
+              <button id="audioStudioSubmit" class="task-primary-button" type="submit">Process audio</button>
+              <p id="audioStudioStatus" role="status" aria-live="polite"></p>
+              <audio id="audioStudioOutput" controls hidden></audio>
+              <a id="audioStudioDownload" hidden download="nkwasibwe-studio.mp3">Download processed audio</a>
             </form>
           </section>
           <section id="taskManager" class="task-manager" hidden aria-labelledby="taskManagerTitle">
@@ -884,7 +917,7 @@ STATUS BAR
        ================================================ -->
 
   <script
-    src="app.js?v=2.0.16"
+    src="app.js?v=2.0.17"
   ></script>
   <script
     src="voice-client.js"
