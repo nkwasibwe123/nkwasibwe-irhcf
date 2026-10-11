@@ -5,6 +5,7 @@ const assert = require("node:assert/strict");
 
 const {
   selectSpecialists,
+  recommendedSpecialistCount,
   buildSpecialistMessages,
   runSpecialistTeam,
   formatSpecialistBriefs
@@ -198,4 +199,12 @@ test("specialist selection supports up to eight bounded agents for complex tasks
   ].map(id => ({ id })) };
   assert.equal(selectSpecialists(team, 99, "Build a website").length, 8);
   assert.equal(selectSpecialists(team, 3, "Build a website").length, 3);
+});
+
+test("recommended specialist budget scales with team size but never exceeds eight", () => {
+  assert.equal(recommendedSpecialistCount({ count: 3 }), 5);
+  assert.equal(recommendedSpecialistCount({ count: 6 }), 6);
+  assert.equal(recommendedSpecialistCount({ count: 14 }), 8);
+  assert.equal(recommendedSpecialistCount({ specialists: [{ id: "a" }, { id: "b" }] }), 5);
+  assert.equal(recommendedSpecialistCount({ count: 14 }, { minimum: 2, maximum: 4 }), 4);
 });

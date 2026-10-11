@@ -18,6 +18,25 @@ function clean(value, max = 8000) {
     .slice(0, max);
 }
 
+function recommendedSpecialistCount(team, options = {}) {
+  const requestedMinimum = Number(options.minimum);
+  const requestedMaximum = Number(options.maximum);
+  const minimum = Number.isFinite(requestedMinimum)
+    ? Math.max(1, Math.min(8, Math.trunc(requestedMinimum)))
+    : 5;
+  const maximum = Number.isFinite(requestedMaximum)
+    ? Math.max(minimum, Math.min(8, Math.trunc(requestedMaximum)))
+    : 8;
+  const declaredCount = Number(team?.count);
+  const availableCount = Array.isArray(team?.specialists)
+    ? team.specialists.length
+    : 0;
+  const teamCount = Number.isFinite(declaredCount) && declaredCount > 0
+    ? Math.trunc(declaredCount)
+    : availableCount;
+  return Math.max(minimum, Math.min(maximum, teamCount || minimum));
+}
+
 function selectSpecialists(team, maxSpecialists = 6, task = "") {
   const specialists = Array.isArray(team?.specialists)
     ? team.specialists
@@ -222,6 +241,7 @@ function formatSpecialistBriefs(teamExecution) {
 
 module.exports = {
   selectSpecialists,
+  recommendedSpecialistCount,
   buildSpecialistMessages,
   runSpecialistTeam,
   formatSpecialistBriefs

@@ -100,7 +100,8 @@ const {
 } = require("./capabilities/discovery");
 const {
   runSpecialistTeam,
-  formatSpecialistBriefs
+  formatSpecialistBriefs,
+  recommendedSpecialistCount
 } = require("./core/multi-agent-engine");
 const {
   buildOpportunity,
@@ -32234,7 +32235,8 @@ const persistentTaskEngine =
             sharedContext:
               repairContext ||
               "Long-running IRHCF project execution.",
-            maxSpecialists: 5
+            maxSpecialists:
+              recommendedSpecialistCount(taskAnalysis.agentTeam)
           });
 
         await updateProgress({
