@@ -8,6 +8,7 @@
  */
 const { buildSandbox, cleanupSandbox } = require("./sandbox");
 const { buildCapabilityExpansionPlan, evaluateExpansionReadiness } = require("./discovery");
+const { createIsolatedTestAdapter } = require("./isolated-capability-checks");
 
 const SAFE_CAPABILITY_NAME = /^[a-z][a-z0-9_]{1,63}$/;
 
@@ -26,7 +27,7 @@ async function createCapabilityCandidate({
   requestedCapability, reason = "", files, entry = null,
   executesCode = true, handlesCredentials = false,
   handlesUserData = false, externalAction = false,
-  runTests = null, reviewSecurity = null, runRegression = null,
+  runTests = createIsolatedTestAdapter(), reviewSecurity = null, runRegression = null,
   explicitPromotion = false, authorization = false
 } = {}) {
   const name = validateCapabilityRequest({ requestedCapability, files });
