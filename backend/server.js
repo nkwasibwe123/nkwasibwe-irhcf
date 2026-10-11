@@ -41,6 +41,7 @@ const {
   isUsableTaskResult
 } = require("./core/task-engine");
 const { createSelfImprovementRouter } = require("./routes/self-improvement-routes");
+const { SelfImprovementWorker } = require("./core/self-improvement-worker");
 
 const { AdapterRegistry } = require("./core/adapter-registry");
 const { ExecutionEngine } = require("./core/execution-engine");
@@ -32261,6 +32262,8 @@ const persistentTaskEngine =
       }
   });
 
+const selfImprovementWorker = new SelfImprovementWorker({ pool });
+
 const scheduleWorker =
   new ScheduleWorker({
     pool,
@@ -32269,7 +32272,7 @@ const scheduleWorker =
 
 app.use(
   "/api/self-improvement",
-  createSelfImprovementRouter({ pool, authenticateToken, taskEngine: persistentTaskEngine })
+  createSelfImprovementRouter({ pool, authenticateToken, taskEngine: persistentTaskEngine, selfImprovementWorker })
 );
 
 app.use(
@@ -32544,6 +32547,7 @@ async function startServer() {
 
       persistentTaskEngine.start();
       scheduleWorker.start();
+      selfImprovementWorker.start();
 
       console.log(
         "[TASK ENGINE] Persistent long-running worker is online."
