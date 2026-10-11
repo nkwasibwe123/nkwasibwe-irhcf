@@ -12,7 +12,10 @@ test("runtime binds PostgreSQL store and blocks when research adapter is absent"
     return { rows: [] };
   }};
   const runtime = createCapabilityLifecycleRuntime({ pool, adapters: {} });
-  const result = await runtime.run({ capability: "new_feature", goal: "Research and build a capability" });
-  assert.equal(result.status, "failed");
-  assert.match(result.error, /research/);
+  await assert.rejects(runtime.run({ capability: "new_feature", goal: "Research and build a capability" }), error => {
+    assert.match(error.message, /research/);
+    assert.equal(error.lifecycleRecord.status, "failed");
+    assert.equal(error.lifecycleRecord.stage, "research");
+    return true;
+  });
 });
