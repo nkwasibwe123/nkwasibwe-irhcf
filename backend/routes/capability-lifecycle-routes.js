@@ -18,7 +18,7 @@ function createCapabilityLifecycleRouter({ pool, search, generateText, runner = 
       return res.status(400).json({ success: false, code: "INVALID_CAPABILITY_REQUEST", error: "Provide a safe capability identifier and a clear goal." });
     }
     try {
-      const result = await runtime.run({
+      const { record, completion } = await runtime.start({
         capability,
         goal: goal.slice(0, 2000),
         reason: String(req.body?.reason || "").slice(0, 2000),
@@ -26,10 +26,20 @@ function createCapabilityLifecycleRouter({ pool, search, generateText, runner = 
         explicitDeploymentAuthorization: false,
         ownerUserId: Number(req.user?.id)
       });
-      return res.status(result.status === "completed" ? 200 : 202).json({
-        success: result.status === "completed",
-        lifecycle: result,
-        deploymentPerformed: result.deployment?.attempted === true
+      // Work continues after the initial durable checkpoint; clients poll GET /:id.
+      completion.catch(error => {
+        console.error("[capability-lifecycle] background run failed", {
+          lifecycleId: record.id,
+          code: error?.code || "CAPABILITY_LIFECYCLE_FAILED"
+        });
+      });
+      return res.status(202).json({
+        success: true,
+        accepted: true,
+        lifecycleId: record.id,
+        lifecycle: record,
+        statusUrl: req.baseUrl + "/" + encodeURIComponent(record.id),
+        deploymentPerformed: false
       });
     } catch (error) {
       const record = error?.lifecycleRecord;
