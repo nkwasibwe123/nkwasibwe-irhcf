@@ -2,7 +2,7 @@
 const express = require("express");
 const { buildImprovementProposal, evaluatePromotion, buildFailureImprovementProposal } = require("../core/self-improvement");
 
-function createSelfImprovementRouter({ pool, authenticateToken, taskEngine } = {}) {
+function createSelfImprovementRouter({ pool, authenticateToken, taskEngine, selfImprovementWorker } = {}) {
   if (!pool?.query || typeof authenticateToken !== "function" || !taskEngine?.getRuntimeState) throw new Error("Self-improvement routes require pool, authentication and task engine.");
   const router = express.Router();
 
@@ -19,7 +19,7 @@ function createSelfImprovementRouter({ pool, authenticateToken, taskEngine } = {
         selfImprovement:{
           enabled:true,mode:"guarded_failure_analysis_and_proposals",
           automaticFailureScanning:true,automaticProductionCodeChanges:false,
-          automaticProductionDeployment:false,requiresReviewedPatchAndPassingCI:true,
+          automaticProductionDeployment:false,requiresReviewedPatchAndPassingCI:true,worker:selfImprovementWorker?.getRuntimeState?.() || {running:false},
           proposalCounts:Object.fromEntries(proposals.rows.map(r=>[r.status,r.count]))
         }
       });
