@@ -61,7 +61,7 @@ function verifyContent(name,extension,content) {
  if(!content.trim()) return {verified:false,reason:"empty content"};
  if(["js","cjs","mjs"].includes(extension)) {
   try { new vm.Script(content,{filename:name}); return {verified:true,reason:"JavaScript syntax passed"}; }
-  catch(error) { return {verified:false,reason:"JavaScript syntax failed: "+String(error.message||error).slice(0,400)}; }
+  catch(error) { return {verified:false,reason:"JavaScript syntax verification failed: "+String(error.message||error).slice(0,400)}; }
  }
  if(extension==="html") {
   const s=content.toLowerCase();
