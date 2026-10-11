@@ -1,7 +1,7 @@
 "use strict";
 const vm=require("node:vm");
 
-const FILE_REQUEST=/\b(create|write|generate|build|make|produce|save|export|nkorera|unkorere|ngukorere|kora|yubake|ubaka|mpa|uyimpe|unkorere)\b.{0,120}\b(file|script|code|document|report|page|website|web site|urubuga|app|application|component|module|spreadsheet|csv|json|html|css|javascript|typescript|site ya internet)\b|\b(file|script|code|document|report|website|urubuga|app|application|component|module)\b.{0,100}\b(for me|please|that works|with|named|called|yuzuye|rwose)\b/i;
+const FILE_REQUEST=/\b(create|write|generate|build|make|produce|save|export|nkorera|unkorera|unkorere|ngukorere|ndashaka|kora|yubake|ubaka|mpa|uyimpe)\b.{0,160}\b(file|script|code|document|report|page|website|web site|urubuga|app|application|component|module|spreadsheet|csv|json|html|css|javascript|typescript|site ya internet)\b|\b(file|script|code|document|report|website|urubuga|app|application|component|module)\b.{0,100}\b(for me|please|that works|with|named|called|yuzuye|rwose)\b/i;
 const EXTENSION=/\b([\w.-]+\.(?:js|cjs|mjs|ts|tsx|jsx|html|css|json|md|txt|csv|xml|svg))\b/i;
 const EXT_TO_MIME=Object.freeze({
  js:"text/javascript",cjs:"text/javascript",mjs:"text/javascript",ts:"text/plain",tsx:"text/plain",jsx:"text/javascript",
