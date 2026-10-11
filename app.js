@@ -8477,6 +8477,31 @@ function renderTaskArtifactButtons(task) {
   }
 }
 
+function formatTaskElapsed(milliseconds) {
+  const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes < 60) return `${minutes}m ${seconds}s`;
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+}
+
+function getTaskTimingSummary(task, progress, status) {
+  const start = Date.parse(task?.started_at || task?.created_at || "");
+  if (!Number.isFinite(start)) return "";
+  const terminal = ["COMPLETED", "FAILED", "CANCELLED", "CANCELED"].includes(status);
+  const elapsedMs = Math.max(0, Date.now() - start);
+  const parts = [`Igihe cyashize: ${formatTaskElapsed(elapsedMs)}`];
+  // ETA is a rough estimate from observed progress, never a promise.
+  if (!terminal && progress >= 5 && progress < 95) {
+    const remainingMs = elapsedMs * ((100 - progress) / progress);
+    if (Number.isFinite(remainingMs) && remainingMs > 0 && remainingMs < 24 * 60 * 60 * 1000) {
+      parts.push(`igihe gisigaye giteganyijwe: ~${formatTaskElapsed(remainingMs)}`);
+    }
+  }
+  return parts.join(" · ");
+}
+
 function renderTaskProgress(task) {
   if (!taskProgressPanel || !task) return;
   const status = String(task.status || "UNKNOWN").toUpperCase();
@@ -8492,11 +8517,13 @@ function renderTaskProgress(task) {
   setAgentActivityFromTask(task);
   if (taskProgressTitle) taskProgressTitle.textContent = `Task #${task.id}: ${String(task.task || "Igikorwa").slice(0, 110)}`;
   if (taskProgressSubtitle) {
+    const timing = getTaskTimingSummary(task, progress, status);
+    const timingSuffix = timing ? ` · ${timing}` : "";
     taskProgressSubtitle.textContent = completed
-      ? "Turangije. Nkwasibwe yagenzuye uko task yarangiye."
+      ? `Turangije. Nkwasibwe yagenzuye uko task yarangiye.${timingSuffix}`
       : failed
-        ? "Task yahagaze. Reba ubutumwa bw'ikibazo hano hepfo."
-        : `Nkwasibwe iri gukora — ${taskStatusLabel(status)}…`;
+        ? `Task yahagaze. Reba ubutumwa bw'ikibazo hano hepfo.${timingSuffix}`
+        : `${message} · Status: ${taskStatusLabel(status)}${timingSuffix}`;
   }
   if (taskProgressStatus) {
     taskProgressStatus.textContent = taskStatusLabel(status);
