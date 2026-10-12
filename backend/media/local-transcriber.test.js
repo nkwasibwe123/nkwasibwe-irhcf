@@ -4,10 +4,10 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { getLocalTranscriberConfig, getLocalTranscriberStatus, timestampToSeconds, MAX_AUDIO_BYTES } = require("./local-transcriber");
 
-test("local transcriber is disabled unless both executable and model are configured", () => {
+test("partial local configuration fails closed instead of silently falling back to a paid provider", () => {
   assert.equal(getLocalTranscriberConfig({}).enabled, false);
-  assert.equal(getLocalTranscriberConfig({ WHISPER_CPP_PATH: "/usr/bin/whisper-cli" }).enabled, false);
-  assert.equal(getLocalTranscriberConfig({ WHISPER_MODEL_PATH: "/models/ggml-small.bin" }).enabled, false);
+  assert.equal(getLocalTranscriberConfig({ WHISPER_CPP_PATH: "/usr/bin/whisper-cli" }).enabled, true);
+  assert.equal(getLocalTranscriberConfig({ WHISPER_MODEL_PATH: "/models/ggml-small.bin" }).enabled, true);
   assert.equal(getLocalTranscriberConfig({
     WHISPER_CPP_PATH: "/usr/bin/whisper-cli",
     WHISPER_MODEL_PATH: "/models/ggml-small.bin"
