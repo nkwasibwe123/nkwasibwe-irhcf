@@ -10,4 +10,4 @@ services:
       - key: IRHCF_IMAGE_SERVICE_TOKEN
         generateValue: true
       - key: IRHCF_REMBG_MODEL
-        value: u2net
+        value: u2netp
