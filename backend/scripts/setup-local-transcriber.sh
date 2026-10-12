@@ -9,8 +9,8 @@ MODEL_URL="https://huggingface.co/ggerganov/whisper.cpp/resolve/main/${MODEL_NAM
 
 for tool in git cmake c++ curl; do
   if ! command -v "$tool" >/dev/null 2>&1; then
-    echo "[local-transcriber] WARNING: $tool is unavailable; skipping local engine build." >&2
-    exit 0
+    echo "[local-transcriber] ERROR: required build tool '$tool' is unavailable; refusing to report a successful install without the local engine." >&2
+    exit 1
   fi
 done
 
@@ -30,11 +30,13 @@ fi
 
 BIN="$ROOT/build/bin/whisper-cli"
 if [ ! -x "$BIN" ] || [ ! -s "$MODEL_PATH" ]; then
-  echo "[local-transcriber] ERROR: local engine build did not produce binary/model." >&2
+  echo "[local-transcriber] ERROR: local engine build did not produce executable binary and non-empty model." >&2
   exit 1
 fi
 
-echo "[local-transcriber] whisper.cpp and multilingual model installed."
+# Verify that the binary starts and accepts CLI arguments before declaring success.
+"$BIN" --help >/dev/null
+
+echo "[local-transcriber] whisper.cpp binary and multilingual model verified."
 echo "[local-transcriber] WHISPER_CPP_PATH=$BIN"
 echo "[local-transcriber] WHISPER_MODEL_PATH=$MODEL_PATH"
-echo "[local-transcriber] Runtime auto-discovery is enabled when these files are present; set WHISPER_CPP_PATH/WHISPER_MODEL_PATH only to override."
