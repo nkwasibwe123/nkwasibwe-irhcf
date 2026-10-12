@@ -13,13 +13,7 @@ npm install
 bash scripts/setup-local-transcriber.sh
 ```
 
-The script prints the exact values to set on the backend service:
-- `WHISPER_CPP_PATH`: absolute path to the built `whisper-cli`
-- `WHISPER_MODEL_PATH`: absolute path to the downloaded multilingual model
-- `WHISPER_THREADS`: optional CPU threads (default 2, clamped to 1–16)
-- `WHISPER_TIMEOUT_MS`: optional per-file timeout (default 180000 ms, clamped to 10–600 seconds)
-
-Default output paths are under `.local/` in the repository working directory. Ensure these files remain available to the running service after the build. Model download increases deployment time and disk usage; the build requires a C++ toolchain. A small instance may be too slow for long recordings.
+The script prints the built paths. The adapter auto-discovers the default files under `.local/` when both are present; `WHISPER_CPP_PATH` and `WHISPER_MODEL_PATH` can override those defaults. `WHISPER_THREADS` optionally sets CPU threads (default 2, clamped to 1–16), and `WHISPER_TIMEOUT_MS` optionally sets the per-file timeout (default 180000 ms, clamped to 10–600 seconds). Ensure these files remain available to the running service after the build. Model download increases deployment time and disk usage; the build requires a C++ toolchain. A small instance may be too slow for long recordings.
 
 ## Runtime behavior
 
@@ -27,7 +21,8 @@ Default output paths are under `.local/` in the repository working directory. En
 - FFmpeg normalizes supported containers to mono 16 kHz PCM WAV before inference.
 - Language is set to `auto` unless the caller explicitly provides a two- or three-letter language code.
 - The response contains transcript text, detected language when reported by whisper.cpp, model identifier, and segment timestamps.
-- The local engine is only active when both environment variables are set. Otherwise the existing hosted-provider route remains available.
+- The local engine auto-enables when both default build artifacts exist, or when either explicit Whisper path is supplied. Partial explicit configuration fails closed, so a missing binary/model is reported rather than silently sending audio to a paid provider.
+- Authenticated `GET /api/media/transcribe/status` reports whether the binary and model are present and the local engine is ready, without exposing absolute filesystem paths.
 - Once configured, a local inference failure is surfaced as an error; it does not fall back to a paid API.
 
 ## Verification required before declaring production-ready
@@ -39,4 +34,4 @@ Default output paths are under `.local/` in the repository working directory. En
 5. Confirm a missing model/binary gives a clear error and no paid provider is invoked.
 6. Confirm the live service has enough RAM, CPU, and disk for the selected model.
 
-The setup script is a reproducible build helper, not proof that Render has been reconfigured or that production inference has passed.
+The setup script is a reproducible build helper. The authenticated status endpoint verifies that the running process can see the binary/model files, but real speech accuracy and production readiness still require live audio tests.
