@@ -86,12 +86,12 @@ async function transcribeLocally(audioBuffer, options = {}) {
     const language = String(options.language || "auto").toLowerCase();
     const allowedLanguage = /^[a-z]{2,3}$/.test(language) ? language : "auto";
     await runWhisper(config.binaryPath, [
-      "--model", config.modelPath,
-      "--file", inputPath,
-      "--language", allowedLanguage,
-      "--threads", String(config.threads),
-      "--output-json",
-      "--output-file", outputBase
+      "-m", config.modelPath,
+      "-f", inputPath,
+      "-l", allowedLanguage,
+      "-t", String(config.threads),
+      "-oj",
+      "-of", outputBase
     ], { timeoutMs: config.timeoutMs });
 
     const json = JSON.parse(await fs.readFile(outputBase + ".json", "utf8"));
