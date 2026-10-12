@@ -3713,14 +3713,6 @@ app.post("/api/media/image", authenticateToken, async (req, res) => {
 
 app.post("/api/media/image/edit", authenticateToken, async (req, res) => {
   try {
-    if (!openai) {
-      return res.status(503).json({
-        success: false,
-        error: "Image editing is unavailable because the OpenAI provider is not configured.",
-        code: "MEDIA_PROVIDER_UNAVAILABLE"
-      });
-    }
-
     const prompt = String(req.body?.prompt || "").trim().slice(0, 4000);
     const dataUrl = String(req.body?.imageDataUrl || "");
     const match = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
