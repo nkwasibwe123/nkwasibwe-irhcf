@@ -1,26 +1,42 @@
-# Self-hosted multilingual transcription
+# Self-hosted multilingual audio transcription
 
 Nkwasibwe IRHCF can use a local `whisper.cpp` executable and multilingual GGML model instead of requiring transcription API credits.
 
-## Runtime configuration
+## Build a local engine
 
-Set these environment variables on the backend service:
+The repository includes `scripts/setup-local-transcriber.sh`. It builds the upstream whisper.cpp CLI and downloads a multilingual model. The default `ggml-tiny` model is relatively small and fast, but less accurate than larger models. It supports automatic language detection and many languages; accuracy varies by language, audio quality, and model size.
 
-- `WHISPER_CPP_PATH`: absolute path to the built `whisper-cli` executable.
-- `WHISPER_MODEL_PATH`: absolute path to a multilingual model file (for example, a `ggml-small.bin`-family model).
-- `WHISPER_THREADS`: optional CPU threads (default 2, clamped to 1–16).
-- `WHISPER_TIMEOUT_MS`: optional per-file timeout (default 180000 ms, clamped to 10–600 seconds).
+Requirements: Linux build environment with `git`, `cmake`, a C++ compiler, and `curl`. The build directory and model must be present in the deployed service filesystem. Example build steps (adapt to the service's existing build steps; do not replace required steps blindly):
 
-The executable must be built with support for the audio formats accepted by the API. The multilingual model must be present on persistent storage or installed during image build. Model files are large; choose a model that fits the host RAM, disk and CPU budget. This is self-hosted inference, so it removes per-request transcription API credits but still uses compute, memory, storage and bandwidth.
+```sh
+npm install
+bash scripts/setup-local-transcriber.sh
+```
 
-## Language and output
+The script prints the exact values to set on the backend service:
+- `WHISPER_CPP_PATH`: absolute path to the built `whisper-cli`
+- `WHISPER_MODEL_PATH`: absolute path to the downloaded multilingual model
+- `WHISPER_THREADS`: optional CPU threads (default 2, clamped to 1–16)
+- `WHISPER_TIMEOUT_MS`: optional per-file timeout (default 180000 ms, clamped to 10–600 seconds)
 
-Language `auto` requests automatic language detection. An explicit two- or three-letter language code can be passed to the local engine. The local runner returns transcript text, detected language when exposed by the model output, and timestamped segments when available.
+Default output paths are under `.local/` in the repository working directory. Ensure these files remain available to the running service after the build. Model download increases deployment time and disk usage; the build requires a C++ toolchain. A small instance may be too slow for long recordings.
 
-## Security and lifecycle
+## Runtime behavior
 
-The runner invokes the executable without a shell, writes audio into a private temporary directory, limits input to 6 MiB, enforces a timeout, and removes temporary audio/output files in a `finally` block. Keep the model path controlled by the server environment, never by a client request.
+- Audio uploads are limited to 6 MiB by the local transcription adapter.
+- FFmpeg normalizes supported containers to mono 16 kHz PCM WAV before inference.
+- Language is set to `auto` unless the caller explicitly provides a two- or three-letter language code.
+- The response contains transcript text, detected language when reported by whisper.cpp, model identifier, and segment timestamps.
+- The local engine is only active when both environment variables are set. Otherwise the existing hosted-provider route remains available.
+- Once configured, a local inference failure is surfaced as an error; it does not fall back to a paid API.
 
-## Important
+## Verification required before declaring production-ready
 
-This module is the local runtime adapter. It is not proof that the production Render service already has the executable or model installed. Deployment wiring and real audio end-to-end validation are required before claiming credit-independent transcription is live.
+1. Run `npm test`.
+2. Confirm the deployed service has both files at the exact configured paths and can execute the binary.
+3. Upload known speech in at least two languages and verify transcript, detected language, and segment timestamps.
+4. Test MP3, WAV, M4A, and WebM inputs.
+5. Confirm a missing model/binary gives a clear error and no paid provider is invoked.
+6. Confirm the live service has enough RAM, CPU, and disk for the selected model.
+
+The setup script is a reproducible build helper, not proof that Render has been reconfigured or that production inference has passed.
