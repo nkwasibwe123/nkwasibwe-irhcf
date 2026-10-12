@@ -22,7 +22,7 @@ const path = require("node:path");
 const { editVideoFile } = require("./media/video-editor");
 const { editAudioFile } = require("./media/audio-editor");
 const { toFile } = require("openai/uploads");
-const { getLocalTranscriberConfig, transcribeLocally } = require("./media/local-transcriber");
+const { getLocalTranscriberConfig, getLocalTranscriberStatus, transcribeLocally } = require("./media/local-transcriber");
 
 // ============================================================
 // INTERNAL MODULES
@@ -4438,6 +4438,19 @@ app.post(
 // AUTHENTICATED AUDIO TRANSCRIPTION
 // Accepts bounded base64 audio uploads and returns editable text.
 // ============================================================
+
+app.get("/api/media/transcribe/status", authenticateToken, (req, res) => {
+  const status = getLocalTranscriberStatus();
+  return res.status(status.ready ? 200 : 503).json({
+    success: status.ready,
+    engine: status.engine,
+    configured: status.configured,
+    ready: status.ready,
+    binaryAvailable: status.binaryAvailable,
+    modelAvailable: status.modelAvailable,
+    model: status.model
+  });
+});
 
 app.post("/api/media/transcribe", authenticateToken, async (req, res) => {
   try {
