@@ -73,6 +73,28 @@ function runProcess(binaryPath, args, options = {}) {
   });
 }
 
+function getLocalTranscriberStatus(env = process.env) {
+  const config = getLocalTranscriberConfig(env);
+  let binaryAvailable = false;
+  let modelAvailable = false;
+  try {
+    fsSync.accessSync(config.binaryPath, fsSync.constants.X_OK);
+    binaryAvailable = true;
+  } catch {}
+  try {
+    const stat = fsSync.statSync(config.modelPath);
+    modelAvailable = stat.isFile() && stat.size > 0;
+  } catch {}
+  return {
+    configured: config.enabled,
+    ready: config.enabled && binaryAvailable && modelAvailable,
+    binaryAvailable,
+    modelAvailable,
+    engine: "whisper.cpp-local",
+    model: path.basename(config.modelPath)
+  };
+}
+
 async function transcribeLocally(audioBuffer, options = {}) {
   const config = options.config || getLocalTranscriberConfig();
   if (!config.enabled) {
@@ -160,6 +182,7 @@ async function transcribeLocally(audioBuffer, options = {}) {
 module.exports = {
   MAX_AUDIO_BYTES,
   getLocalTranscriberConfig,
+  getLocalTranscriberStatus,
   runProcess,
   transcribeLocally
 };
