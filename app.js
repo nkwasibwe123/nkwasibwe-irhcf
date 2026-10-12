@@ -6495,13 +6495,16 @@ function startBrowserSpeechRecognition() {
       : preferred.startsWith("sw") ? "sw-KE"
       : preferred.length >= 2 ? preferred : "en-US";
     let finalTranscript = "";
+    const finalSegments = [];
     recognition.onresult = event => {
       let interim = "";
       for (let i = event.resultIndex; i < event.results.length; i++) {
-        const text = String(event.results[i]?.[0]?.transcript || "");
-        if (event.results[i].isFinal) finalTranscript += text;
+        const text = String(event.results[i]?.[0]?.transcript || "").trim();
+        if (event.results[i].isFinal) finalSegments[i] = text;
         else interim += text;
       }
+      // Rebuild from stable result indices instead of appending every event; browsers can replay finalized segments.
+      finalTranscript = finalSegments.filter(Boolean).join(" ");
       if (userInput) {
         userInput.value = (finalTranscript + (interim ? " " + interim : "")).trim();
         autoResizeInput();

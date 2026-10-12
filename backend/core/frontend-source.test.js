@@ -39,6 +39,13 @@ test("explicit build routing recognizes Kinyarwanda school website requests and 
   assert.equal(isExplicitBuildTask("How to build a website"), false);
 });
 
+test("browser speech recognition does not append replayed finalized transcript segments", () => {
+  const source = fs.readFileSync(path.join(__dirname, "..", "..", "app.js"), "utf8");
+  assert.match(source, /const finalSegments = \[\]/);
+  assert.match(source, /finalSegments\[i\] = text/);
+  assert.match(source, /finalTranscript = finalSegments\.filter\(Boolean\)\.join\(" "\)/);
+});
+
 test("voice note and live voice controls use the existing authenticated IRHCF API", () => {
   const root = path.join(__dirname, "..", "..");
   const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
