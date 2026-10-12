@@ -2,17 +2,15 @@
 set -euo pipefail
 
 # Build a self-hosted multilingual whisper.cpp engine for Render/native Linux.
-# Run this in the service build command before "npm install" completes.
 ROOT="${WHISPER_CPP_DIR:-$PWD/.local/whisper.cpp}"
 MODEL_DIR="${WHISPER_MODEL_DIR:-$PWD/.local/models}"
 MODEL_NAME="${WHISPER_MODEL_NAME:-ggml-tiny}"
 REPO="https://github.com/ggml-org/whisper.cpp.git"
 MODEL_URL="https://huggingface.co/ggerganov/whisper.cpp/resolve/main/${MODEL_NAME}.bin"
 
-command -v git >/dev/null || { echo "ERROR: git is required" >&2; exit 1; }
-command -v cmake >/dev/null || { echo "ERROR: cmake is required" >&2; exit 1; }
-command -v c++ >/dev/null || { echo "ERROR: a C++ compiler is required" >&2; exit 1; }
-command -v curl >/dev/null || { echo "ERROR: curl is required" >&2; exit 1; }
+for tool in git cmake c++ curl; do
+  command -v "$tool" >/dev/null 2>&1 || { echo "ERROR: required build tool '$tool' is unavailable" >&2; exit 1; }
+done
 
 mkdir -p "$(dirname "$ROOT")" "$MODEL_DIR"
 if [ ! -f "$ROOT/CMakeLists.txt" ]; then
@@ -29,10 +27,13 @@ if [ ! -s "$MODEL_PATH" ]; then
 fi
 
 BIN="$ROOT/build/bin/whisper-cli"
-[ -x "$BIN" ] || { echo "ERROR: whisper-cli was not built at $BIN" >&2; exit 1; }
-"$BIN" --help >/dev/null 2>&1 || true
-printf '\nSelf-hosted transcription engine prepared.\n'
-printf 'Set these Render environment variables exactly:\n'
+if [ ! -x "$BIN" ] || [ ! -s "$MODEL_PATH" ]; then
+  echo "ERROR: local engine binary or model is missing/empty." >&2
+  exit 1
+fi
+"$BIN" --help >/dev/null
+
+printf '\nSelf-hosted transcription engine built and verified.\n'
 printf 'WHISPER_CPP_PATH=%s\n' "$BIN"
 printf 'WHISPER_MODEL_PATH=%s\n' "$MODEL_PATH"
 printf 'WHISPER_THREADS=%s\n' "${WHISPER_THREADS:-2}"
