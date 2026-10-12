@@ -1,0 +1,201 @@
+"use strict";
+
+const fs = require("node:fs/promises");
+const fsSync = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const { spawn } = require("node:child_process");
+const ffmpegPath = require("ffmpeg-static");
+
+const MAX_AUDIO_BYTES = 6 * 1024 * 1024;
+const DEFAULT_TIMEOUT_MS = 180000;
+
+function getLocalTranscriberConfig(env = process.env) {
+  const defaultBinaryPath = path.resolve(process.cwd(), ".local/whisper.cpp/build/bin/whisper-cli");
+  const defaultModelPath = path.resolve(process.cwd(), ".local/models/ggml-tiny.bin");
+  const configuredBinaryPath = String(env.WHISPER_CPP_PATH || "").trim();
+  const configuredModelPath = String(env.WHISPER_MODEL_PATH || "").trim();
+  const binaryPath = configuredBinaryPath || defaultBinaryPath;
+  const modelPath = configuredModelPath || defaultModelPath;
+  // Explicit paths opt in even if a file is currently missing: the request then
+  // fails locally with a diagnostic rather than silently uploading audio to a paid API.
+  // Without explicit paths, auto-enable only when both build artifacts are present.
+  const configurationRequested = Boolean(configuredBinaryPath || configuredModelPath);
+  const autoDiscovered = !configuredBinaryPath && !configuredModelPath
+    && fsSync.existsSync(binaryPath) && fsSync.existsSync(modelPath);
+  return {
+    enabled: configurationRequested || autoDiscovered,
+    binaryPath,
+    modelPath,
+    timeoutMs: Math.max(10000, Math.min(Number(env.WHISPER_TIMEOUT_MS) || DEFAULT_TIMEOUT_MS, 600000)),
+    threads: Math.max(1, Math.min(Number(env.WHISPER_THREADS) || 2, 16))
+  };
+}
+
+function timestampToSeconds(value) {
+  if (Number.isFinite(value)) return Number(value);
+  if (typeof value !== "string" || !value.trim()) return null;
+  const raw = value.trim();
+  if (/^\d+(?:\.\d+)?$/.test(raw)) return Number(raw);
+  const parts = raw.split(":");
+  if (parts.length !== 3 || parts.some(part => !/^\d+(?:\.\d+)?$/.test(part))) return null;
+  const [hours, minutes, seconds] = parts.map(Number);
+  if (minutes >= 60 || seconds >= 60) return null;
+  return hours * 3600 + minutes * 60 + seconds;
+}
+
+function runProcess(binaryPath, args, options = {}) {
+  return new Promise((resolve, reject) => {
+    const timeoutMs = options.timeoutMs || DEFAULT_TIMEOUT_MS;
+    const child = spawn(binaryPath, args, {
+      shell: false,
+      windowsHide: true,
+      stdio: ["ignore", "ignore", "pipe"]
+    });
+    let stderr = "";
+    let settled = false;
+    const finish = (error, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (error) reject(error);
+      else resolve(value);
+    };
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      const error = new Error("Local transcription exceeded its time limit.");
+      error.code = "LOCAL_TRANSCRIPTION_TIMEOUT";
+      finish(error);
+    }, timeoutMs);
+    child.stderr.on("data", chunk => {
+      if (stderr.length < 12000) stderr += chunk.toString("utf8").slice(0, 12000 - stderr.length);
+    });
+    child.once("error", error => {
+      error.code = error.code || "WHISPER_CPP_START_FAILED";
+      finish(error);
+    });
+    child.once("close", code => {
+      if (code !== 0) {
+        const error = new Error("whisper.cpp exited unsuccessfully: " + stderr.slice(-1500));
+        error.code = "LOCAL_TRANSCRIPTION_FAILED";
+        return finish(error);
+      }
+      finish(null, { stderr });
+    });
+  });
+}
+
+function getLocalTranscriberStatus(env = process.env) {
+  const config = getLocalTranscriberConfig(env);
+  let binaryAvailable = false;
+  let modelAvailable = false;
+  try {
+    fsSync.accessSync(config.binaryPath, fsSync.constants.X_OK);
+    binaryAvailable = true;
+  } catch {}
+  try {
+    const stat = fsSync.statSync(config.modelPath);
+    modelAvailable = stat.isFile() && stat.size > 0;
+  } catch {}
+  return {
+    configured: config.enabled,
+    ready: config.enabled && binaryAvailable && modelAvailable,
+    binaryAvailable,
+    modelAvailable,
+    engine: "whisper.cpp-local",
+    model: path.basename(config.modelPath)
+  };
+}
+
+async function transcribeLocally(audioBuffer, options = {}) {
+  const config = options.config || getLocalTranscriberConfig();
+  if (!config.enabled) {
+    const error = new Error("Local multilingual transcription is not configured. Set WHISPER_CPP_PATH and WHISPER_MODEL_PATH.");
+    error.code = "LOCAL_TRANSCRIBER_NOT_CONFIGURED";
+    throw error;
+  }
+  if (!Buffer.isBuffer(audioBuffer) || audioBuffer.length === 0 || audioBuffer.length > MAX_AUDIO_BYTES) {
+    const error = new Error("Audio must be a non-empty buffer no larger than 6 MB.");
+    error.code = "AUDIO_SIZE_LIMIT";
+    throw error;
+  }
+
+  const extension = String(options.extension || "wav").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const safeExtension = new Set(["wav", "mp3", "m4a", "mp4", "mpeg", "mpga", "ogg", "flac", "webm"]).has(extension)
+    ? extension
+    : "wav";
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "irhcf-transcribe-"));
+  const inputPath = path.join(directory, "input." + safeExtension);
+  const outputBase = path.join(directory, "result");
+  const wavPath = path.join(directory, "normalized.wav");
+  try {
+    try {
+      await fs.access(config.binaryPath, fsSync.constants.X_OK);
+    } catch {
+      const error = new Error("The configured whisper.cpp executable is missing or not executable.");
+      error.code = "LOCAL_TRANSCRIBER_BINARY_MISSING";
+      throw error;
+    }
+    try {
+      const modelStat = await fs.stat(config.modelPath);
+      if (!modelStat.isFile() || modelStat.size === 0) throw new Error("empty model");
+    } catch {
+      const error = new Error("The configured multilingual Whisper model is missing or empty.");
+      error.code = "LOCAL_TRANSCRIBER_MODEL_MISSING";
+      throw error;
+    }
+    await fs.writeFile(inputPath, audioBuffer, { flag: "wx", mode: 0o600 });
+    const language = String(options.language || "auto").toLowerCase();
+    const allowedLanguage = /^[a-z]{2,3}$/.test(language) ? language : "auto";
+    if (!ffmpegPath) {
+      const error = new Error("FFmpeg is unavailable; cannot normalize audio for local transcription.");
+      error.code = "AUDIO_DECODER_UNAVAILABLE";
+      throw error;
+    }
+    // Normalize uploads to mono 16 kHz PCM WAV because whisper.cpp's CLI supports
+    // WAV/MP3/OGG/FLAC rather than every container accepted by the upload endpoint.
+    await runProcess(ffmpegPath, [
+      "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
+      "-i", inputPath, "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", wavPath
+    ], { timeoutMs: Math.min(config.timeoutMs, 120000) });
+    await runProcess(config.binaryPath, [
+      "-m", config.modelPath,
+      "-f", wavPath,
+      "-l", allowedLanguage,
+      "-t", String(config.threads),
+      "-oj",
+      "-of", outputBase
+    ], { timeoutMs: config.timeoutMs });
+
+    const json = JSON.parse(await fs.readFile(outputBase + ".json", "utf8"));
+    const segments = Array.isArray(json.transcription) ? json.transcription : [];
+    const text = segments.map(segment => String(segment.text || "")).join("").trim()
+      || String(json.text || "").trim();
+    if (!text) {
+      const error = new Error("Local speech recognition returned an empty transcript.");
+      error.code = "TRANSCRIPTION_EMPTY";
+      throw error;
+    }
+    return {
+      text,
+      language: json.result?.language || json.language || (allowedLanguage === "auto" ? null : allowedLanguage),
+      model: "whisper.cpp-local",
+      segments: segments.map(segment => ({
+        start: timestampToSeconds(segment.timestamps?.from),
+        end: timestampToSeconds(segment.timestamps?.to),
+        text: String(segment.text || "")
+      }))
+    };
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+}
+
+module.exports = {
+  MAX_AUDIO_BYTES,
+  getLocalTranscriberConfig,
+  getLocalTranscriberStatus,
+  timestampToSeconds,
+  runProcess,
+  transcribeLocally
+};
