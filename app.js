@@ -75,7 +75,8 @@ function getPreferredResponseLanguage() {
 function getInterfaceLanguage() {
   const saved = (() => { try { return localStorage.getItem(IRHCF_LANGUAGE_STORAGE_KEY) || "auto"; } catch (_) { return "auto"; } })();
   if (saved !== "auto") return String(saved).split("-")[0].toLowerCase();
-  return String(getDeviceLanguage()).split("-")[0].toLowerCase();
+  const device = String(getDeviceLanguage()).split("-")[0].toLowerCase();
+  return IRHCF_UI_TEXT[device] ? device : "rw";
 }
 const IRHCF_UI_TEXT = {
   rw: { newChat: "Ikiganiro gishya", placeholder: "Andika icyo ushaka...", welcome: "Nakugirira iki?", menu: "Fungura menu", responseLanguage: "Ururimi rw'igaruka", dashboard: "Ibikoresho", clear: "Siba ikiganiro", attach: "Ongeraho dosiye", camera: "Fungura kamera", voice: "Andika ukoresheje ijwi", send: "Ohereza" },
@@ -149,6 +150,7 @@ function initializeLanguageControl() {
         ? "Automatically follow phone language"
         : "Interface language: " + (IRHCF_LANGUAGE_NAMES[value] || value);
       selects.forEach((other) => { other.title = title; });
+      applyInterfaceLanguage();
       applyInterfaceLanguage();
     });
   });
