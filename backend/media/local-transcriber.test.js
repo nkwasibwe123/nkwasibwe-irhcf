@@ -2,7 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { getLocalTranscriberConfig, getLocalTranscriberStatus, MAX_AUDIO_BYTES } = require("./local-transcriber");
+const { getLocalTranscriberConfig, getLocalTranscriberStatus, timestampToSeconds, MAX_AUDIO_BYTES } = require("./local-transcriber");
 
 test("local transcriber is disabled unless both executable and model are configured", () => {
   assert.equal(getLocalTranscriberConfig({}).enabled, false);
@@ -41,4 +41,11 @@ test("runtime status reports missing local artifacts without exposing filesystem
   assert.equal(status.model, "model.bin");
   assert.equal(Object.hasOwn(status, "binaryPath"), false);
   assert.equal(Object.hasOwn(status, "modelPath"), false);
+});
+
+test("whisper.cpp timestamp strings are normalized to numeric seconds", () => {
+  assert.equal(timestampToSeconds("00:00:01.250"), 1.25);
+  assert.equal(timestampToSeconds("00:02:03.500"), 123.5);
+  assert.equal(timestampToSeconds(2.75), 2.75);
+  assert.equal(timestampToSeconds("invalid"), null);
 });
