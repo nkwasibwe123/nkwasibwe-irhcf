@@ -135,18 +135,12 @@ def edit_image(payload: EditRequest, x_irhcf_image_token: str | None = Header(de
             # Serialize ONNX inference: concurrent requests on a 512 MB instance can exhaust RAM.
             with _inference_lock:
                 if _session is None:
-                    import onnxruntime as ort
                     from rembg import new_session, remove
 
-                    session_options = ort.SessionOptions()
-                    session_options.intra_op_num_threads = 1
-                    session_options.inter_op_num_threads = 1
-                    session_options.enable_cpu_mem_arena = False
-                    session_options.enable_mem_pattern = False
-                    _session = new_session(
-                        os.getenv("IRHCF_REMBG_MODEL", "u2netp"),
-                        sess_opts=session_options,
-                    )
+                    # rembg 2.0.65 can pass sess_opts twice through new_session,
+                    # raising BaseSession.__init__() multiple-values TypeError.
+                    # Use its supported defaults; keep requests serialized above.
+                    _session = new_session(os.getenv("IRHCF_REMBG_MODEL", "u2netp"))
                 else:
                     from rembg import remove
 
