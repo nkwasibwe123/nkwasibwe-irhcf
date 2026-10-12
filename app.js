@@ -6797,6 +6797,137 @@ function updateVoiceButton() {
 
 }
 
+
+/* Free on-device file library. Files stay in this browser/device, not in cloud storage. */
+const IRHCF_LOCAL_FILES_DB = "nkwasibwe-irhcf-local-files";
+function openIRHCFLocalFilesDB() {
+  return new Promise((resolve, reject) => {
+    if (!("indexedDB" in window)) return reject(new Error("Browser storage is not supported on this device."));
+    const request = indexedDB.open(IRHCF_LOCAL_FILES_DB, 1);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains("files")) db.createObjectStore("files", { keyPath: "id" });
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error("Could not open local storage."));
+  });
+}
+async function getIRHCFLocalFiles() {
+  const db = await openIRHCFLocalFilesDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction("files", "readonly");
+    const request = tx.objectStore("files").getAll();
+    request.onsuccess = () => { db.close(); resolve(request.result || []); };
+    request.onerror = () => { db.close(); reject(request.error || new Error("Could not read saved files.")); };
+  });
+}
+async function removeIRHCFLocalFile(id) {
+  const db = await openIRHCFLocalFilesDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction("files", "readwrite");
+    tx.objectStore("files").delete(id);
+    tx.oncomplete = () => { db.close(); resolve(true); };
+    tx.onerror = () => { db.close(); reject(tx.error || new Error("Could not delete file.")); };
+  });
+}
+async function cleanupIRHCFLocalFiles() {
+  try {
+    const files = await getIRHCFLocalFiles();
+    const now = Date.now();
+    for (const file of files) {
+      if (file.expiresAt && file.expiresAt <= now) await removeIRHCFLocalFile(file.id);
+    }
+  } catch (error) {
+    console.warn("[IRHCF local files] Cleanup skipped:", error?.message || error);
+  }
+}
+async function saveIRHCFLocalImage(dataUrl, filename, keepForever) {
+  if (!/^data:image\/(png|jpeg|webp);base64,/.test(String(dataUrl || ""))) {
+    throw new Error("The edited image format is not supported for local saving.");
+  }
+  const db = await openIRHCFLocalFilesDB();
+  const now = Date.now();
+  const record = {
+    id: (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(now) + "-" + Math.random().toString(36).slice(2),
+    name: String(filename || "nkwasibwe-edited.png").slice(0, 160),
+    dataUrl,
+    createdAt: now,
+    expiresAt: keepForever ? null : now + 7 * 24 * 60 * 60 * 1000,
+    keepForever: Boolean(keepForever),
+    bytesApprox: Math.floor(dataUrl.length * 0.75)
+  };
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction("files", "readwrite");
+    tx.objectStore("files").put(record);
+    tx.oncomplete = () => { db.close(); resolve(record); };
+    tx.onerror = () => { db.close(); reject(tx.error || new Error("Local device storage may be full. Download the image instead.")); };
+    tx.onabort = () => { db.close(); reject(tx.error || new Error("Local device storage may be full. Download the image instead.")); };
+  });
+}
+async function showIRHCFLocalFiles() {
+  await cleanupIRHCFLocalFiles();
+  let panel = document.getElementById("irhcfLocalFilesPanel");
+  if (!panel) {
+    panel = document.createElement("section");
+    panel.id = "irhcfLocalFilesPanel";
+    panel.setAttribute("role", "dialog");
+    panel.setAttribute("aria-modal", "true");
+    panel.style.cssText = "position:fixed;z-index:100000;inset:4% 12px auto;max-height:92vh;overflow:auto;margin:auto;max-width:760px;padding:18px;border-radius:18px;background:var(--panel-bg,#fff);color:var(--text-color,#202124);box-shadow:0 12px 48px #0005;border:1px solid #8885";
+    panel.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px"><h2 style="margin:0">My Files — this device</h2><button type="button" id="irhcfLocalFilesClose" style="padding:8px 12px">Close</button></div><p style="font-size:13px">Files are saved only in this browser/device. Temporary files expire after 7 days; permanent files remain until you delete them or the browser clears its data. This is not cloud storage.</p><div id="irhcfLocalFilesList" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px"></div><p id="irhcfLocalFilesEmpty" hidden>No saved files on this device.</p>';
+    document.body.appendChild(panel);
+    panel.querySelector("#irhcfLocalFilesClose").addEventListener("click", () => { panel.hidden = true; });
+  }
+  panel.hidden = false;
+  const list = panel.querySelector("#irhcfLocalFilesList");
+  const empty = panel.querySelector("#irhcfLocalFilesEmpty");
+  list.replaceChildren();
+  let files = [];
+  try { files = await getIRHCFLocalFiles(); } catch (error) {
+    empty.hidden = false; empty.textContent = String(error?.message || "Could not read local files."); return;
+  }
+  files.sort((x, y) => y.createdAt - x.createdAt);
+  empty.hidden = files.length > 0;
+  for (const file of files) {
+    const card = document.createElement("article");
+    card.style.cssText = "border:1px solid #8885;border-radius:12px;padding:10px;min-width:0";
+    const img = document.createElement("img");
+    img.src = file.dataUrl; img.alt = file.name; img.loading = "lazy";
+    img.style.cssText = "width:100%;height:150px;object-fit:contain;background:#eee;border-radius:8px";
+    const title = document.createElement("p");
+    title.textContent = file.name; title.style.cssText = "font-weight:600;overflow-wrap:anywhere";
+    const meta = document.createElement("p");
+    meta.textContent = file.keepForever ? "Saved permanently on this device" : "Expires " + new Date(file.expiresAt).toLocaleString();
+    meta.style.fontSize = "12px";
+    const download = document.createElement("a");
+    download.href = file.dataUrl; download.download = file.name; download.textContent = "Download";
+    download.style.cssText = "display:inline-block;margin:4px 8px 4px 0";
+    const remove = document.createElement("button");
+    remove.type = "button"; remove.textContent = "Delete";
+    remove.addEventListener("click", async () => { await removeIRHCFLocalFile(file.id); await showIRHCFLocalFiles(); });
+    card.append(img, title, meta, download, remove);
+    list.appendChild(card);
+  }
+}
+function ensureIRHCFLocalFilesButton() {
+  const dashboardButton = document.getElementById("dashboardButton");
+  if (!dashboardButton || document.getElementById("irhcfLocalFilesButton")) return;
+  const button = document.createElement("button");
+  button.id = "irhcfLocalFilesButton";
+  button.type = "button";
+  button.className = "icon-button";
+  button.textContent = "📁";
+  button.title = "My Files — saved on this device";
+  button.setAttribute("aria-label", "My Files saved on this device");
+  button.addEventListener("click", () => showIRHCFLocalFiles().catch(error => showToast(String(error?.message || "Could not open My Files."), "warning")));
+  dashboardButton.parentElement.insertBefore(button, dashboardButton);
+}
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", ensureIRHCFLocalFilesButton, { once: true });
+} else {
+  ensureIRHCFLocalFilesButton();
+}
+cleanupIRHCFLocalFiles();
+
 // Interactive photo-effects editor. Effect strength is passed to the image model
 // as an explicit instruction; 0% is a no-op and 100% is the strongest requested change.
 async function editAttachedImage(prompt, file) {
@@ -6965,6 +7096,44 @@ async function editAttachedImage(prompt, file) {
       download.textContent = "Download image"; download.className = "message-link";
       download.style.cssText = "display:inline-block;margin-top:10px;padding:8px 12px";
       wrapper.appendChild(download);
+      const saveTemporary = document.createElement("button");
+      saveTemporary.type = "button";
+      saveTemporary.textContent = "Save on this device (7 days)";
+      saveTemporary.style.cssText = "display:inline-block;margin:10px 8px 0 0;padding:8px 12px";
+      saveTemporary.addEventListener("click", async () => {
+        saveTemporary.disabled = true;
+        try {
+          const saved = await saveIRHCFLocalImage(safeSource, download.download, false);
+          showToast("Saved on this device for 7 days.", "success");
+          saveTemporary.textContent = "Saved for 7 days";
+        } catch (error) {
+          showToast(String(error?.message || "Could not save locally."), "warning");
+          saveTemporary.disabled = false;
+        }
+      });
+      wrapper.appendChild(saveTemporary);
+      const savePermanent = document.createElement("button");
+      savePermanent.type = "button";
+      savePermanent.textContent = "Keep on this device";
+      savePermanent.style.cssText = "display:inline-block;margin:10px 8px 0 0;padding:8px 12px";
+      savePermanent.addEventListener("click", async () => {
+        savePermanent.disabled = true;
+        try {
+          await saveIRHCFLocalImage(safeSource, download.download, true);
+          showToast("Saved on this device until you delete it.", "success");
+          savePermanent.textContent = "Saved permanently";
+        } catch (error) {
+          showToast(String(error?.message || "Could not save locally."), "warning");
+          savePermanent.disabled = false;
+        }
+      });
+      wrapper.appendChild(savePermanent);
+      const openLocalFiles = document.createElement("button");
+      openLocalFiles.type = "button";
+      openLocalFiles.textContent = "My Files";
+      openLocalFiles.style.cssText = "display:inline-block;margin:10px 8px 0 0;padding:8px 12px";
+      openLocalFiles.addEventListener("click", () => showIRHCFLocalFiles().catch(error => showToast(String(error?.message || "Could not open My Files."), "warning")));
+      wrapper.appendChild(openLocalFiles);
       composerState.attachments = []; renderAttachmentPreview(); if (fileInput) fileInput.value = "";
       updateBackendState(true);
       setStatus("Ifoto yatunganyijwe. Effect: " + effect + "; change level: " + strength + "%.", "online");
