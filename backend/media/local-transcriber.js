@@ -4,6 +4,7 @@ const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
+const ffmpegPath = require("ffmpeg-static");
 
 const MAX_AUDIO_BYTES = 6 * 1024 * 1024;
 const DEFAULT_TIMEOUT_MS = 180000;
@@ -20,7 +21,7 @@ function getLocalTranscriberConfig(env = process.env) {
   };
 }
 
-function runWhisper(binaryPath, args, options = {}) {
+function runProcess(binaryPath, args, options = {}) {
   return new Promise((resolve, reject) => {
     const timeoutMs = options.timeoutMs || DEFAULT_TIMEOUT_MS;
     const child = spawn(binaryPath, args, {
@@ -81,13 +82,25 @@ async function transcribeLocally(audioBuffer, options = {}) {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "irhcf-transcribe-"));
   const inputPath = path.join(directory, "input." + safeExtension);
   const outputBase = path.join(directory, "result");
+  const wavPath = path.join(directory, "normalized.wav");
   try {
     await fs.writeFile(inputPath, audioBuffer, { flag: "wx", mode: 0o600 });
     const language = String(options.language || "auto").toLowerCase();
     const allowedLanguage = /^[a-z]{2,3}$/.test(language) ? language : "auto";
-    await runWhisper(config.binaryPath, [
+    if (!ffmpegPath) {
+      const error = new Error("FFmpeg is unavailable; cannot normalize audio for local transcription.");
+      error.code = "AUDIO_DECODER_UNAVAILABLE";
+      throw error;
+    }
+    // Normalize uploads to mono 16 kHz PCM WAV because whisper.cpp's CLI supports
+    // WAV/MP3/OGG/FLAC rather than every container accepted by the upload endpoint.
+    await runProcess(ffmpegPath, [
+      "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
+      "-i", inputPath, "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", wavPath
+    ], { timeoutMs: Math.min(config.timeoutMs, 120000) });
+    await runProcess(config.binaryPath, [
       "-m", config.modelPath,
-      "-f", inputPath,
+      "-f", wavPath,
       "-l", allowedLanguage,
       "-t", String(config.threads),
       "-oj",
@@ -121,6 +134,6 @@ async function transcribeLocally(audioBuffer, options = {}) {
 module.exports = {
   MAX_AUDIO_BYTES,
   getLocalTranscriberConfig,
-  runWhisper,
+  runProcess,
   transcribeLocally
 };
