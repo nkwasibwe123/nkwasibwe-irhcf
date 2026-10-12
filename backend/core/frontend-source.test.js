@@ -340,3 +340,13 @@ test("photo effects studio provides multiple effects and an explicit 0-100 stren
   assert.match(app, /strength === 0/);
   assert.match(app, /API_ENDPOINTS\.imageEditing/);
 });
+
+test("audio transcription validates supported formats and requests automatic language detection", () => {
+  const root = path.join(__dirname, "..", "..");
+  const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
+  assert.match(app, /const supported = new Set\(\["mp3", "wav", "m4a", "ogg", "flac", "webm", "mp4", "mpeg", "mpga"\]\)/);
+  assert.match(app, /language: "auto"/);
+  assert.match(app, /result\?\.language \|\| result\?\.detectedLanguage/);
+  assert.match(app, /Serivisi ya transcription iri kubura cyangwa quota\/credits byarangiye/);
+  assert.match(app, /ntitwakwandikira amagambo y'ibihimbano/);
+});
