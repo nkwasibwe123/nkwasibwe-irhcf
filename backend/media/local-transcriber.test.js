@@ -49,3 +49,17 @@ test("whisper.cpp timestamp strings are normalized to numeric seconds", () => {
   assert.equal(timestampToSeconds(2.75), 2.75);
   assert.equal(timestampToSeconds("invalid"), null);
 });
+
+test("multilingual Whisper requests use automatic language detection by default", () => {
+  // The transcriber must not assume Kinyarwanda or English when no language
+  // was explicitly selected; Whisper's auto mode detects the spoken language.
+  const source = require("node:fs").readFileSync(require.resolve("./local-transcriber"), "utf8");
+  assert.match(source, /options\.language\s*\|\|\s*"auto"/);
+  assert.match(source, /"-l",\s*allowedLanguage/);
+});
+
+test("transcriber accepts explicit ISO language codes without forcing translation", () => {
+  const source = require("node:fs").readFileSync(require.resolve("./local-transcriber"), "utf8");
+  assert.match(source, /const language = String\(options\.language \|\| "auto"\)\.toLowerCase\(\)/);
+  assert.match(source, /const allowedLanguage = \/\^\[a-z\]\{2,3\}\$\/\.test\(language\) \? language : "auto"/);
+});
