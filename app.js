@@ -72,6 +72,62 @@ function getPreferredResponseLanguage() {
   } catch (_) {}
   return getDeviceLanguage();
 }
+function getInterfaceLanguage() {
+  const saved = (() => { try { return localStorage.getItem(IRHCF_LANGUAGE_STORAGE_KEY) || "auto"; } catch (_) { return "auto"; } })();
+  if (saved !== "auto") return String(saved).split("-")[0].toLowerCase();
+  const device = String(getDeviceLanguage()).split("-")[0].toLowerCase();
+  return IRHCF_UI_TEXT[device] ? device : "rw";
+}
+const IRHCF_UI_TEXT = {
+  rw: { newChat: "Ikiganiro gishya", placeholder: "Andika icyo ushaka...", welcome: "Nakugirira iki?", menu: "Fungura menu", responseLanguage: "Ururimi rw'igaruka", dashboard: "Ibikoresho", clear: "Siba ikiganiro", attach: "Ongeraho dosiye", camera: "Fungura kamera", voice: "Andika ukoresheje ijwi", send: "Ohereza" },
+  en: { newChat: "New Conversation", placeholder: "Write or ask what you want...", welcome: "What can I help you with?", menu: "Open menu", responseLanguage: "Response language", dashboard: "Tools", clear: "Clear conversation", attach: "Attach file", camera: "Open camera", voice: "Record voice", send: "Send" },
+  fr: { newChat: "Nouvelle conversation", placeholder: "Écrivez ou demandez ce que vous voulez...", welcome: "Comment puis-je vous aider ?", menu: "Ouvrir le menu", responseLanguage: "Langue de réponse", dashboard: "Outils", clear: "Effacer la conversation", attach: "Joindre un fichier", camera: "Ouvrir la caméra", voice: "Enregistrer la voix", send: "Envoyer" },
+  sw: { newChat: "Mazungumzo mapya", placeholder: "Andika au uliza unachotaka...", welcome: "Nikusaidie nini?", menu: "Fungua menyu", responseLanguage: "Lugha ya majibu", dashboard: "Zana", clear: "Futa mazungumzo", attach: "Ambatisha faili", camera: "Fungua kamera", voice: "Rekodi sauti", send: "Tuma" },
+  es: { newChat: "Nueva conversación", placeholder: "Escribe o pregunta lo que quieras...", welcome: "¿En qué puedo ayudarte?", menu: "Abrir menú", responseLanguage: "Idioma de respuesta", dashboard: "Herramientas", clear: "Borrar conversación", attach: "Adjuntar archivo", camera: "Abrir cámara", voice: "Grabar voz", send: "Enviar" },
+  de: { newChat: "Neues Gespräch", placeholder: "Schreibe oder frage, was du möchtest...", welcome: "Wie kann ich dir helfen?", menu: "Menü öffnen", responseLanguage: "Antwortsprache", dashboard: "Werkzeuge", clear: "Gespräch löschen", attach: "Datei anhängen", camera: "Kamera öffnen", voice: "Sprache aufnehmen", send: "Senden" },
+  pt: { newChat: "Nova conversa", placeholder: "Escreva ou pergunte o que quiser...", welcome: "Como posso ajudar?", menu: "Abrir menu", responseLanguage: "Idioma da resposta", dashboard: "Ferramentas", clear: "Limpar conversa", attach: "Anexar arquivo", camera: "Abrir câmera", voice: "Gravar voz", send: "Enviar" },
+  ar: { newChat: "محادثة جديدة", placeholder: "اكتب أو اسأل عما تريد...", welcome: "كيف يمكنني مساعدتك؟", menu: "افتح القائمة", responseLanguage: "لغة الرد", dashboard: "الأدوات", clear: "مسح المحادثة", attach: "إرفاق ملف", camera: "افتح الكاميرا", voice: "تسجيل الصوت", send: "إرسال" },
+  hi: { newChat: "नई बातचीत", placeholder: "जो चाहें लिखें या पूछें...", welcome: "मैं आपकी क्या मदद कर सकता हूँ?", menu: "मेनू खोलें", responseLanguage: "उत्तर की भाषा", dashboard: "उपकरण", clear: "बातचीत मिटाएँ", attach: "फ़ाइल जोड़ें", camera: "कैमरा खोलें", voice: "आवाज़ रिकॉर्ड करें", send: "भेजें" },
+  zh: { newChat: "新对话", placeholder: "写下或询问你想要的内容...", welcome: "我能为你做些什么？", menu: "打开菜单", responseLanguage: "回复语言", dashboard: "工具", clear: "清除对话", attach: "添加文件", camera: "打开相机", voice: "录制语音", send: "发送" },
+  ja: { newChat: "新しい会話", placeholder: "聞きたいことや書きたいことを入力...", welcome: "どのようにお手伝いできますか？", menu: "メニューを開く", responseLanguage: "回答言語", dashboard: "ツール", clear: "会話を消去", attach: "ファイルを添付", camera: "カメラを開く", voice: "音声を録音", send: "送信" },
+  ko: { newChat: "새 대화", placeholder: "원하는 내용을 입력하거나 질문하세요...", welcome: "무엇을 도와드릴까요?", menu: "메뉴 열기", responseLanguage: "응답 언어", dashboard: "도구", clear: "대화 지우기", attach: "파일 첨부", camera: "카메라 열기", voice: "음성 녹음", send: "보내기" },
+  it: { newChat: "Nuova conversazione", placeholder: "Scrivi o chiedi ciò che vuoi...", welcome: "Come posso aiutarti?", menu: "Apri menu", responseLanguage: "Lingua della risposta", dashboard: "Strumenti", clear: "Cancella conversazione", attach: "Allega file", camera: "Apri fotocamera", voice: "Registra voce", send: "Invia" },
+  ru: { newChat: "Новый диалог", placeholder: "Напишите или спросите, что хотите...", welcome: "Чем я могу помочь?", menu: "Открыть меню", responseLanguage: "Язык ответа", dashboard: "Инструменты", clear: "Очистить диалог", attach: "Прикрепить файл", camera: "Открыть камеру", voice: "Записать голос", send: "Отправить" },
+  tr: { newChat: "Yeni konuşma", placeholder: "İstediğinizi yazın veya sorun...", welcome: "Size nasıl yardımcı olabilirim?", menu: "Menüyü aç", responseLanguage: "Yanıt dili", dashboard: "Araçlar", clear: "Konuşmayı temizle", attach: "Dosya ekle", camera: "Kamerayı aç", voice: "Ses kaydet", send: "Gönder" },
+  nl: { newChat: "Nieuw gesprek", placeholder: "Schrijf of vraag wat je wilt...", welcome: "Waarmee kan ik je helpen?", menu: "Menu openen", responseLanguage: "Antwoordtaal", dashboard: "Hulpmiddelen", clear: "Gesprek wissen", attach: "Bestand toevoegen", camera: "Camera openen", voice: "Stem opnemen", send: "Verzenden" },
+  pl: { newChat: "Nowa rozmowa", placeholder: "Napisz lub zapytaj o co chcesz...", welcome: "W czym mogę pomóc?", menu: "Otwórz menu", responseLanguage: "Język odpowiedzi", dashboard: "Narzędzia", clear: "Wyczyść rozmowę", attach: "Dołącz plik", camera: "Otwórz aparat", voice: "Nagraj głos", send: "Wyślij" }
+};
+function applyInterfaceLanguage() {
+  const language = getInterfaceLanguage();
+  const fallback = IRHCF_UI_TEXT.en;
+  const labels = IRHCF_UI_TEXT[language] || fallback;
+  const input = document.getElementById("userInput");
+  if (input) input.placeholder = labels.placeholder;
+  document.querySelectorAll("#newChatButton").forEach((button) => {
+    const span = button.querySelector("span");
+    button.textContent = "";
+    if (span) button.appendChild(span);
+    button.appendChild(document.createTextNode(" " + labels.newChat));
+  });
+  const menu = document.getElementById("mobileMenuButton");
+  if (menu) { menu.title = labels.menu; menu.setAttribute("aria-label", labels.menu); }
+  const clear = document.getElementById("clearChatButton");
+  if (clear) { clear.title = labels.clear; clear.setAttribute("aria-label", labels.clear); }
+  const attach = document.getElementById("attachButton");
+  if (attach) { attach.title = labels.attach; attach.setAttribute("aria-label", labels.attach); }
+  const camera = document.getElementById("cameraButton");
+  if (camera) { camera.title = labels.camera; camera.setAttribute("aria-label", labels.camera); }
+  const voice = document.getElementById("voiceButton");
+  if (voice) { voice.title = labels.voice; voice.setAttribute("aria-label", labels.voice); }
+  const send = document.getElementById("sendButton");
+  if (send) { send.title = labels.send; send.setAttribute("aria-label", labels.send); }
+  const dashboard = document.getElementById("dashboardButton");
+  if (dashboard) { dashboard.title = labels.dashboard; dashboard.setAttribute("aria-label", labels.dashboard); }
+  const welcome = document.querySelector("#welcome h2");
+  if (welcome) welcome.textContent = labels.welcome;
+  document.documentElement.lang = language;
+  document.documentElement.dir = language === "ar" ? "rtl" : "ltr";
+}
 function initializeLanguageControl() {
   const selects = [
     document.getElementById("languageSelect"),
@@ -92,10 +148,12 @@ function initializeLanguageControl() {
       selects.forEach((other) => { other.value = value; });
       const title = value === "auto"
         ? "Automatically follow phone language"
-        : "Response language: " + (IRHCF_LANGUAGE_NAMES[value] || value);
+        : "Interface language: " + (IRHCF_LANGUAGE_NAMES[value] || value);
       selects.forEach((other) => { other.title = title; });
+      applyInterfaceLanguage();
     });
   });
+  applyInterfaceLanguage();
 }
 initializeLanguageControl();
 
@@ -7172,9 +7230,7 @@ async function sendMessage() {
           body:
             JSON.stringify({
               message:
-                taskText + "\\n\\n[Response language preference: " +
-                  (IRHCF_LANGUAGE_NAMES[getPreferredResponseLanguage().split("-")[0]] || ("the user's language (locale " + getPreferredResponseLanguage() + ")")) +
-                  ". Understand and follow the user's request in any language; do not translate or change the task itself unless asked.]",
+                taskText,
 
               sessionId:
                 activeSessionId,
@@ -7183,10 +7239,10 @@ async function sendMessage() {
                 activeSessionId,
 
               responseLanguage:
-                getPreferredResponseLanguage(),
+                "auto",
 
               languagePreference:
-                (document.getElementById("languageSelect")?.value || "auto")
+                "auto"
             })
         }
       );
