@@ -2,6 +2,7 @@ import base64
 import hmac
 import os
 import re
+import threading
 from io import BytesIO
 
 from fastapi import FastAPI, Header, HTTPException
@@ -12,6 +13,7 @@ app = FastAPI(title="Nkwasibwe IRHCF Local Image Service", version="0.1.0")
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
 SERVICE_TOKEN = os.getenv("IRHCF_IMAGE_SERVICE_TOKEN", "").strip()
 _session = None
+_inference_lock = threading.Lock()
 
 
 class EditRequest(BaseModel):
@@ -130,23 +132,25 @@ def edit_image(payload: EditRequest, x_irhcf_image_token: str | None = Header(de
             # Keep model input small to stay within Render's free 512 MB RAM limit.
             inference_image = original.copy()
             inference_image.thumbnail((512, 512), Image.Resampling.LANCZOS)
-            if _session is None:
-                import onnxruntime as ort
-                from rembg import new_session, remove
+            # Serialize ONNX inference: concurrent requests on a 512 MB instance can exhaust RAM.
+            with _inference_lock:
+                if _session is None:
+                    import onnxruntime as ort
+                    from rembg import new_session, remove
 
-                session_options = ort.SessionOptions()
-                session_options.intra_op_num_threads = 1
-                session_options.inter_op_num_threads = 1
-                session_options.enable_cpu_mem_arena = False
-                session_options.enable_mem_pattern = False
-                _session = new_session(
-                    os.getenv("IRHCF_REMBG_MODEL", "u2netp"),
-                    sess_opts=session_options,
-                )
-            else:
-                from rembg import remove
+                    session_options = ort.SessionOptions()
+                    session_options.intra_op_num_threads = 1
+                    session_options.inter_op_num_threads = 1
+                    session_options.enable_cpu_mem_arena = False
+                    session_options.enable_mem_pattern = False
+                    _session = new_session(
+                        os.getenv("IRHCF_REMBG_MODEL", "u2netp"),
+                        sess_opts=session_options,
+                    )
+                else:
+                    from rembg import remove
 
-            cutout_bytes = remove(inference_image, session=_session, force_return_bytes=True)
+                cutout_bytes = remove(inference_image, session=_session, force_return_bytes=True)
             subject = Image.open(BytesIO(cutout_bytes)).convert("RGBA")
             if subject.size != inference_image.size:
                 subject = subject.resize(inference_image.size, Image.Resampling.LANCZOS)
