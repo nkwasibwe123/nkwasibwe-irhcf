@@ -10,26 +10,26 @@
  */
 function detectAgentLanguage(input) {
   const userText = String(input ?? "").replace(
-    /\\s*\\[Response language preference:[\\s\\S]*?\\]\\s*/gi,
+    /\s*\[Response language preference:[\s\S]*?\]\s*/gi,
     " "
   ).normalize("NFKC").trim();
   if (!userText) return "en";
 
   const scriptChecks = [
-    ["zh", /[\\u3400-\\u4dbf\\u4e00-\\u9fff]/u],
-    ["ja", /[\\u3040-\\u30ff]/u],
-    ["ko", /[\\uac00-\\ud7af]/u],
-    ["ar", /[\\u0600-\\u06ff\\u0750-\\u077f]/u],
-    ["hi", /[\\u0900-\\u097f]/u],
-    ["ru", /[\\u0400-\\u04ff]/u]
+    ["zh", /[\u3400-\u4dbf\u4e00-\u9fff]/u],
+    ["ja", /[\u3040-\u30ff]/u],
+    ["ko", /[\uac00-\ud7af]/u],
+    ["ar", /[\u0600-\u06ff\u0750-\u077f]/u],
+    ["hi", /[\u0900-\u097f]/u],
+    ["ru", /[\u0400-\u04ff]/u]
   ];
   for (const [language, pattern] of scriptChecks) {
     if (pattern.test(userText)) return language;
   }
 
   const text = " " + userText.toLowerCase()
-    .replace(/[^\\p{L}\\p{N}'’\\s]/gu, " ")
-    .replace(/\\s+/g, " ").trim() + " ";
+    .replace(/[^\p{L}\p{N}'’\s]/gu, " ")
+    .replace(/\s+/g, " ").trim() + " ";
   const lexicons = {
     rw: [" muraho ", " amakuru ", " ndashaka ", " ndakwinginze ", " umfasha ", " ndifuza ", " mbwira ", " mfasha ", " urakoze ", " yego ", " oya ", " gute ", " kubera iki ", " ese ", " nkeneye ", " nshaka ", " ikinyarwanda ", " gukora ", " ikibazo ", " igisubizo ", " urubuga ", " amafaranga ", " tubikore ", " birakora ", " ndi ", " nsubiza ", " unsobanurire ", " nyereka ", " ndagusaba ", " ndimo ", " ushobora ", " ni gute ", " ndashaka ko "],
     fr: [" bonjour ", " salut ", " merci ", " s il vous plaît ", " comment ", " pourquoi ", " pouvez-vous ", " aide-moi ", " aidez-moi ", " je veux ", " je voudrais ", " j ai besoin ", " est-ce que ", " qu est-ce que ", " où ", " quand ", " avec ", " pour ", " français ", " créer ", " corriger ", " problème ", " réponse ", " veuillez ", " expliquez ", " aujourd hui "],
