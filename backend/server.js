@@ -3753,8 +3753,13 @@ app.post("/api/media/image/edit", authenticateToken, async (req, res) => {
     // Prefer the self-hosted, no-OpenAI-credit background service when configured.
     // Other generative edits continue through OpenAI until a local generative model is added.
     const localImageServiceUrl = String(process.env.IRHCF_IMAGE_SERVICE_URL || "").trim().replace(/\/+$/, "");
-    const isBackgroundEdit = /background|back[ -]?ground|fond|inyuma|ibara/i.test(prompt);
-    if (localImageServiceUrl && isBackgroundEdit) {
+    const requestedMode = String(req.body?.mode || "prompt").toLowerCase();
+    const requestedEffect = String(req.body?.effect || "prompt").toLowerCase();
+    const requestedStrength = Math.max(0, Math.min(100, Number(req.body?.strength) || 50));
+    const isBackgroundEdit = /background|back[ -]?ground|fond|inyuma|ibara/i.test(prompt) || requestedEffect.startsWith("background-");
+    const freeLocalEffects = new Set(["prompt", "natural", "brightness", "contrast", "saturation", "warmth", "cool", "black-white", "sepia", "sharpen", "soft-focus", "background-white", "background-blur"]);
+    const promptMapsToFreeEffect = /background|back[ -]?ground|fond|inyuma|ibara|bright|lighten|contrast|saturat|vibrant|warm|cool tone|black.?and.?white|grayscale|monochrome|sepia|vintage|sharpen|clarity|clearer|gusobanuka|soft.?focus|soften|blur|natural|enhance|improve|kunoza|kunonosora/i.test(prompt);
+    if (localImageServiceUrl && (isBackgroundEdit || freeLocalEffects.has(requestedEffect) || (requestedMode === "prompt" && promptMapsToFreeEffect))) {
       const serviceToken = String(process.env.IRHCF_IMAGE_SERVICE_TOKEN || "").trim();
       if (!serviceToken) {
         return res.status(503).json({
@@ -3766,13 +3771,13 @@ app.post("/api/media/image/edit", authenticateToken, async (req, res) => {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 180000);
       try {
-        const localResponse = await fetch(`${localImageServiceUrl}/edit/background`, {
+        const localResponse = await fetch(`${localImageServiceUrl}/edit`, {
           method: "POST",
           headers: {
             "content-type": "application/json",
             "x-irhcf-image-token": serviceToken
           },
-          body: JSON.stringify({ imageDataUrl: dataUrl, prompt }),
+          body: JSON.stringify({ imageDataUrl: dataUrl, prompt, mode: requestedMode, effect: requestedEffect, strength: requestedStrength }),
           signal: controller.signal
         });
         const localResult = await localResponse.json().catch(() => ({}));
