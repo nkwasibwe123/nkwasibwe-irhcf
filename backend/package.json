@@ -4,7 +4,8 @@
   "description": "Nkwasibwe IRHCF AI Backend",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "postinstall": "bash scripts/setup-local-transcriber.sh"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",
