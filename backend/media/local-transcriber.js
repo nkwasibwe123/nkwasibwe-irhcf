@@ -20,11 +20,11 @@ function getLocalTranscriberConfig(env = process.env) {
   // Explicit paths opt in even if a file is currently missing: the request then
   // fails locally with a diagnostic rather than silently uploading audio to a paid API.
   // Without explicit paths, auto-enable only when both build artifacts are present.
-  const explicitlyConfigured = Boolean(configuredBinaryPath && configuredModelPath);
+  const configurationRequested = Boolean(configuredBinaryPath || configuredModelPath);
   const autoDiscovered = !configuredBinaryPath && !configuredModelPath
     && fsSync.existsSync(binaryPath) && fsSync.existsSync(modelPath);
   return {
-    enabled: explicitlyConfigured || autoDiscovered,
+    enabled: configurationRequested || autoDiscovered,
     binaryPath,
     modelPath,
     timeoutMs: Math.max(10000, Math.min(Number(env.WHISPER_TIMEOUT_MS) || DEFAULT_TIMEOUT_MS, 600000)),
