@@ -2270,3 +2270,80 @@ input::placeholder, textarea::placeholder { color: #647184; opacity: 1; }
 .input-area:focus-within {
   background: #ffffff !important;
 }
+
+
+/* =========================================================
+   CHAT-FIRST HOME — keep workflow/task tools inside the app
+   ========================================================= */
+@media (min-width: 0px) {
+  /* The workflow is still used by the agent internally; don't
+     expose its implementation checklist on the welcome screen. */
+  #agentWorkflow,
+  #suggestions {
+    display: none !important;
+  }
+
+  /* Keep the welcome area calm and focused on the conversation. */
+  .welcome {
+    max-width: 760px;
+    margin: auto auto 24px;
+    padding: 34px 18px 18px;
+  }
+
+  .welcome-logo {
+    display: none !important;
+  }
+
+  .welcome p {
+    max-width: 620px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+}
+
+@media (max-width: 700px) {
+  .brand-text p {
+    display: none !important;
+  }
+
+  .header {
+    gap: 7px;
+    padding: 8px 10px;
+  }
+
+  .header-actions {
+    gap: 5px;
+  }
+
+  .language-control {
+    max-width: 126px;
+  }
+
+  .language-control select {
+    max-width: 94px;
+    min-width: 0;
+  }
+
+  .icon-button {
+    flex-shrink: 0;
+  }
+
+  .chat {
+    padding-top: 14px;
+  }
+
+  .welcome {
+    padding: 24px 10px 14px;
+    margin-bottom: 10px;
+  }
+
+  .welcome h2 {
+    font-size: clamp(23px, 6vw, 30px);
+    line-height: 1.2;
+  }
+
+  .welcome p {
+    font-size: 14px;
+    line-height: 1.65;
+  }
+}
