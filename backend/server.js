@@ -32782,6 +32782,13 @@ async function startServer() {
             "Status: ONLINE"
           );
 
+          // Verify the running process can see the installed local ASR binary/model,
+          // not merely that the build command printed successful output.
+          console.log(
+            "[LOCAL TRANSCRIPTION RUNTIME]",
+            JSON.stringify(getLocalTranscriberStatus())
+          );
+
           console.log(
             "============================================================"
           );
