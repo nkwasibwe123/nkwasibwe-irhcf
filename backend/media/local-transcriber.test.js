@@ -2,7 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { getLocalTranscriberConfig, MAX_AUDIO_BYTES } = require("./local-transcriber");
+const { getLocalTranscriberConfig, getLocalTranscriberStatus, MAX_AUDIO_BYTES } = require("./local-transcriber");
 
 test("local transcriber is disabled unless both executable and model are configured", () => {
   assert.equal(getLocalTranscriberConfig({}).enabled, false);
@@ -27,4 +27,18 @@ test("local transcription configuration bounds timeout and thread counts", () =>
 
 test("local transcriber exposes a bounded audio size", () => {
   assert.equal(MAX_AUDIO_BYTES, 6 * 1024 * 1024);
+});
+
+test("runtime status reports missing local artifacts without exposing filesystem paths", () => {
+  const status = getLocalTranscriberStatus({
+    WHISPER_CPP_PATH: "/definitely/missing/whisper-cli",
+    WHISPER_MODEL_PATH: "/definitely/missing/model.bin"
+  });
+  assert.equal(status.configured, true);
+  assert.equal(status.ready, false);
+  assert.equal(status.binaryAvailable, false);
+  assert.equal(status.modelAvailable, false);
+  assert.equal(status.model, "model.bin");
+  assert.equal(Object.hasOwn(status, "binaryPath"), false);
+  assert.equal(Object.hasOwn(status, "modelPath"), false);
 });
