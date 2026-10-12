@@ -325,3 +325,18 @@ test("live voice starts browser fallback when WebRTC is unavailable and can stop
   assert.match(html, /voice-client\.js\?v=2\.0\.24/);
 });
 
+
+test("photo effects studio provides multiple effects and an explicit 0-100 strength control", () => {
+  const root = path.join(__dirname, "..", "..");
+  const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
+  assert.match(app, /irhcfPhotoEffectsPanel/);
+  assert.match(app, /irhcfPhotoEffectStrength/);
+  assert.match(app, /min="0" max="100" step="1" value="50"/);
+  assert.match(app, /background-white/);
+  assert.match(app, /cinematic/);
+  assert.match(app, /black-white/);
+  assert.match(app, /Requested effect strength:/);
+  assert.match(app, /change level: " \+ strength \+ "%"/);
+  assert.match(app, /strength === 0/);
+  assert.match(app, /API_ENDPOINTS\.imageEditing/);
+});

@@ -6788,7 +6788,8 @@ function updateVoiceButton() {
 
 }
 
-// Edit an attached photo through the real authenticated image-editing API.
+// Interactive photo-effects editor. Effect strength is passed to the image model
+// as an explicit instruction; 0% is a no-op and 100% is the strongest requested change.
 async function editAttachedImage(prompt, file) {
   if (!file || !/^image\/(png|jpeg|webp)$/i.test(String(file.type || ""))) {
     showToast("Hitamo ifoto ya PNG, JPG/JPEG cyangwa WebP.", "warning");
@@ -6798,77 +6799,145 @@ async function editAttachedImage(prompt, file) {
     showToast("Ifoto igomba kuba iri munsi ya 5 MB.", "warning");
     return;
   }
-  if (!authToken) {
-    showAuthenticationDialog();
-    return;
-  }
+  if (!authToken) { showAuthenticationDialog(); return; }
 
-  updateSendingState(true);
-  setSendingState(true);
-  const userRow = addMessage(prompt, "user", { attachments: [file] });
-  setStatus("IRHCF iri guhindura background y'ifoto. Tegereza...", "loading");
-  try {
-    const imageDataUrl = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result || ""));
-      reader.onerror = () => reject(new Error("Ntibyashobotse gusoma ifoto."));
-      reader.readAsDataURL(file);
+  let panel = document.getElementById("irhcfPhotoEffectsPanel");
+  if (!panel) {
+    panel = document.createElement("section");
+    panel.id = "irhcfPhotoEffectsPanel";
+    panel.setAttribute("role", "dialog");
+    panel.setAttribute("aria-modal", "true");
+    panel.setAttribute("aria-labelledby", "irhcfPhotoEffectsTitle");
+    panel.style.cssText = "position:fixed;z-index:99999;inset:5% max(12px,env(safe-area-inset-right)) auto max(12px,env(safe-area-inset-left));max-height:90vh;overflow:auto;margin:auto;max-width:560px;padding:18px;border-radius:18px;background:var(--panel-bg,#fff);color:var(--text-color,#202124);box-shadow:0 12px 48px #0005;border:1px solid #8885";
+    panel.innerHTML = `
+      <h2 id="irhcfPhotoEffectsTitle" style="margin:0 0 8px">Photo Effects Studio</h2>
+      <p style="margin:0 0 12px">Hitamo effect n'urwego rw'impinduka. 0% ntihindura ifoto; 100% ni impinduka ikomeye kurushaho.</p>
+      <img id="irhcfPhotoEffectsOriginal" alt="Original photo preview" style="display:block;width:100%;max-height:32vh;object-fit:contain;border-radius:12px;background:#eee;margin-bottom:12px">
+      <label for="irhcfPhotoEffectSelect" style="display:block;font-weight:600;margin:10px 0 6px">Effect</label>
+      <select id="irhcfPhotoEffectSelect" style="box-sizing:border-box;width:100%;padding:12px;border-radius:10px">
+        <option value="natural">Natural enhancement</option>
+        <option value="brightness">Brightness</option>
+        <option value="contrast">Contrast</option>
+        <option value="saturation">Saturation / vibrant colors</option>
+        <option value="warmth">Warmth</option>
+        <option value="cool">Cool tone</option>
+        <option value="black-white">Black &amp; White</option>
+        <option value="sepia">Sepia / vintage</option>
+        <option value="cinematic">Cinematic color grade</option>
+        <option value="portrait">Portrait retouch</option>
+        <option value="background-white">Replace background with white</option>
+        <option value="background-blur">Blur background</option>
+        <option value="sharpen">Sharpen details</option>
+        <option value="soft-focus">Soft focus</option>
+        <option value="artistic">Artistic style</option>
+        <option value="custom">Custom instructions (use chat message)</option>
+      </select>
+      <label for="irhcfPhotoEffectStrength" style="display:flex;justify-content:space-between;gap:8px;font-weight:600;margin:14px 0 6px">Change level <output id="irhcfPhotoEffectStrengthValue">50%</output></label>
+      <input id="irhcfPhotoEffectStrength" type="range" min="0" max="100" step="1" value="50" style="width:100%">
+      <div style="display:flex;justify-content:space-between;font-size:12px;opacity:.8"><span>0% · None</span><span>50% · Medium</span><span>100% · Strong</span></div>
+      <p id="irhcfPhotoEffectsHint" aria-live="polite" style="font-size:13px">Original photo will be kept unchanged; the result appears separately.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">
+        <button id="irhcfPhotoEffectsApply" type="button" style="flex:1;min-width:140px;padding:12px;border:0;border-radius:10px;background:#4f46e5;color:white;font-weight:700">Apply effect</button>
+        <button id="irhcfPhotoEffectsCancel" type="button" style="padding:12px;border-radius:10px">Cancel</button>
+      </div>`;
+    document.body.appendChild(panel);
+    panel.querySelector("#irhcfPhotoEffectStrength").addEventListener("input", event => {
+      panel.querySelector("#irhcfPhotoEffectStrengthValue").textContent = event.target.value + "%";
     });
-    const result = await apiRequest(API_ENDPOINTS.imageEditing, {
-      method: "POST",
-      body: JSON.stringify({
-        prompt: prompt.slice(0, 4000),
-        imageDataUrl
-      })
+    panel.querySelector("#irhcfPhotoEffectsCancel").addEventListener("click", () => { panel.hidden = true; });
+    panel.querySelector("#irhcfPhotoEffectSelect").addEventListener("change", () => {
+      const effect = panel.querySelector("#irhcfPhotoEffectSelect").selectedOptions[0]?.textContent || "";
+      panel.querySelector("#irhcfPhotoEffectsHint").textContent = "Effect: " + effect + ". Hindura urwego, hanyuma ukande Apply effect.";
     });
-    const source = String(result?.image || "");
-    const safeSource = source.startsWith("data:image/png;base64,") ||
-      (source.startsWith("https://") && source.length < 4096)
-        ? source
-        : "";
-    if (!result?.success || !safeSource) {
-      throw new Error(result?.error || "Serivisi ntiyagaruye ifoto yahinduwe.");
+  }
+  panel.hidden = false;
+  panel.querySelector("#irhcfPhotoEffectsOriginal").src = URL.createObjectURL(file);
+  panel.querySelector("#irhcfPhotoEffectSelect").value = /background|inyuma/i.test(prompt) ? "background-white" : "natural";
+  panel.querySelector("#irhcfPhotoEffectStrength").value = 50;
+  panel.querySelector("#irhcfPhotoEffectStrengthValue").textContent = "50%";
+  const applyButton = panel.querySelector("#irhcfPhotoEffectsApply");
+  // Replace the previous handler to avoid duplicate image-edit requests on repeat use.
+  applyButton.onclick = async () => {
+    const effect = panel.querySelector("#irhcfPhotoEffectSelect").value;
+    const strength = Number(panel.querySelector("#irhcfPhotoEffectStrength").value);
+    if (strength === 0) {
+      panel.hidden = true;
+      showToast("Change level ni 0%: nta mpinduka yakozwe.", "normal");
+      return;
     }
-
-    const row = addMessage("Ifoto yahinduwe neza. Kanda Download kugira ngo uyibike.", "ai");
-    const wrapper = row?.querySelector(".message-content-wrapper");
-    if (!wrapper) throw new Error("Ntibyashobotse kwerekana ifoto yahinduwe.");
-    const image = document.createElement("img");
-    image.src = safeSource;
-    image.alt = "Edited image";
-    image.loading = "lazy";
-    image.decoding = "async";
-    image.style.display = "block";
-    image.style.maxWidth = "100%";
-    image.style.maxHeight = "640px";
-    image.style.objectFit = "contain";
-    image.style.borderRadius = "12px";
-    image.style.marginTop = "10px";
-    wrapper.appendChild(image);
-
-    const download = document.createElement("a");
-    download.href = safeSource;
-    download.download = "nkwasibwe-irhcf-edited-image.png";
-    download.textContent = "Download image";
-    download.className = "message-link";
-    download.style.display = "inline-block";
-    download.style.marginTop = "10px";
-    download.style.padding = "8px 12px";
-    wrapper.appendChild(download);
-
-    composerState.attachments = [];
-    renderAttachmentPreview();
-    if (fileInput) fileInput.value = "";
-    updateBackendState(true);
-    setStatus("Ifoto yahinduwe kandi iriteguye kubikwa.", "normal");
-  } catch (error) {
-    console.error("[IRHCF IMAGE EDIT]", error);
-    setStatus("Ntibyashobotse guhindura ifoto: " +
-      String(error?.message || "serivisi ntiboneka").slice(0, 180), "normal");
-  } finally {
-    updateSendingState(false);
-    setSendingState(false);
-  }
+    const effectInstructions = {
+      natural: "Apply natural, realistic photo enhancement",
+      brightness: "Adjust image brightness",
+      contrast: "Adjust image contrast",
+      saturation: "Adjust color saturation",
+      warmth: "Apply a warmer color temperature",
+      cool: "Apply a cooler color temperature",
+      "black-white": "Convert the photo to a clean black and white image",
+      sepia: "Apply a tasteful sepia vintage effect",
+      cinematic: "Apply cinematic color grading",
+      portrait: "Perform subtle natural portrait retouching",
+      "background-white": "Replace only the background with pure white (#FFFFFF)",
+      "background-blur": "Blur the background while keeping the main subject sharp",
+      sharpen: "Improve perceived sharpness and fine detail",
+      "soft-focus": "Apply a soft-focus photographic effect",
+      artistic: "Apply an artistic visual style",
+      custom: "Follow the user's custom photo-editing instructions"
+    };
+    const effectPrompt = effectInstructions[effect] || effectInstructions.natural;
+    const fullPrompt = [
+      effectPrompt + ".",
+      "Requested effect strength: " + strength + "% on a scale from 0 to 100.",
+      "Make the visual intensity proportional to the requested percentage: low values subtle, 50% moderate, high values strong. Do not ignore this strength setting.",
+      "Preserve the identity and natural facial features of any person, unless the user explicitly asks otherwise. Do not add text, watermarks, or unrelated objects.",
+      "Original user request: " + String(prompt || "").slice(0, 2500)
+    ].join("\\n");
+    panel.hidden = true;
+    applyButton.disabled = true;
+    updateSendingState(true);
+    setSendingState(true);
+    setStatus("Photo Effects Studio iri gukoresha " + (panel.querySelector("#irhcfPhotoEffectSelect").selectedOptions[0]?.textContent || effect) + " (" + strength + "%)...", "loading");
+    try {
+      const imageDataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(new Error("Ntibyashobotse gusoma ifoto."));
+        reader.readAsDataURL(file);
+      });
+      const result = await apiRequest(API_ENDPOINTS.imageEditing, {
+        method: "POST",
+        timeoutMs: 180000,
+        body: JSON.stringify({ prompt: fullPrompt.slice(0, 4000), imageDataUrl, effect, strength })
+      });
+      const source = String(result?.image || "");
+      const safeSource = source.startsWith("data:image/png;base64,") ||
+        source.startsWith("data:image/jpeg;base64,") ||
+        source.startsWith("data:image/webp;base64,") ||
+        (source.startsWith("https://") && source.length < 4096) ? source : "";
+      if (!result?.success || !safeSource) throw new Error(result?.error || "Serivisi ntiyagaruye ifoto yahinduwe.");
+      const row = addMessage("Ifoto yatunganyijwe: " + (panel.querySelector("#irhcfPhotoEffectSelect").selectedOptions[0]?.textContent || effect) + " — " + strength + "%. Kanda Download kugira ngo uyibike.", "ai");
+      const wrapper = row?.querySelector(".message-content-wrapper");
+      if (!wrapper) throw new Error("Ntibyashobotse kwerekana ifoto yahinduwe.");
+      const image = document.createElement("img");
+      image.src = safeSource; image.alt = "Edited photo, " + effect + ", strength " + strength + "%";
+      image.loading = "lazy"; image.decoding = "async";
+      image.style.cssText = "display:block;max-width:100%;max-height:640px;object-fit:contain;border-radius:12px;margin-top:10px";
+      wrapper.appendChild(image);
+      const download = document.createElement("a");
+      download.href = safeSource; download.download = "nkwasibwe-irhcf-" + effect + "-" + strength + ".png";
+      download.textContent = "Download image"; download.className = "message-link";
+      download.style.cssText = "display:inline-block;margin-top:10px;padding:8px 12px";
+      wrapper.appendChild(download);
+      composerState.attachments = []; renderAttachmentPreview(); if (fileInput) fileInput.value = "";
+      updateBackendState(true);
+      setStatus("Ifoto yatunganyijwe. Effect: " + effect + "; change level: " + strength + "%.", "online");
+    } catch (error) {
+      console.error("[IRHCF IMAGE EDIT]", error);
+      setStatus("Ntibyashobotse guhindura ifoto: " + String(error?.message || "serivisi ntiboneka").slice(0, 180), "normal");
+    } finally {
+      applyButton.disabled = false;
+      updateSendingState(false); setSendingState(false);
+    }
+  };
 }
 
 // ============================================================
