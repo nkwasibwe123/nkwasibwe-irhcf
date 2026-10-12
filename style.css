@@ -2222,3 +2222,26 @@ input::placeholder, textarea::placeholder { color: #647184; opacity: 1; }
     transition-duration: .01ms !important;
   }
 }
+
+
+/* Readability fix: keep composer text and controls high-contrast on the light UI. */
+#userInput,
+.input-area textarea,
+.input-area input {
+  color: #17202b !important;
+  -webkit-text-fill-color: #17202b !important;
+  background-color: #ffffff !important;
+  caret-color: #17202b !important;
+  opacity: 1 !important;
+}
+#userInput::placeholder,
+.input-area textarea::placeholder {
+  color: #647184 !important;
+  -webkit-text-fill-color: #647184 !important;
+  opacity: 1 !important;
+}
+.input-area button,
+.header .icon-button,
+.dashboard-panel .icon-button {
+  color: #17202b;
+}
