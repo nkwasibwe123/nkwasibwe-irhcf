@@ -176,7 +176,11 @@
       }
       await peer.setRemoteDescription({ type: "answer", sdp: await response.text() });
     } catch (error) {
-      cleanupLive(error.message || "Live voice could not start.");
+      const reason = error.message || "Live voice could not start.";
+      cleanupLive(reason);
+      // Provider 4xx errors (including billing/model access) do not throw at fetch level;
+      // this catch handles the explicit !response.ok branch too and starts the no-Realtime fallback.
+      startBrowserFallback("Realtime unavailable: " + reason);
     }
   });
 
