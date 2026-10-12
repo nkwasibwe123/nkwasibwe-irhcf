@@ -34,10 +34,12 @@
   let remoteAudio = null;
   let live = false;
   let starting = false;
+  let fallbackRecognition = null;
 
   const cleanupLive = (message = "Live voice conversation ended.") => {
     live = false;
     starting = false;
+    if (fallbackRecognition) { try { fallbackRecognition.stop(); } catch (_) {} fallbackRecognition = null; }
     if (dataChannel && dataChannel.readyState !== "closed") dataChannel.close();
     dataChannel = null;
     if (peer) peer.close();
@@ -53,6 +55,55 @@
     setBusy(false);
     setStatus(message);
   };
+
+  function startBrowserFallback(reason) {
+    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!Recognition) {
+      setBusy(false);
+      setStatus(reason + " Browser speech recognition is unavailable. Use the regular chat microphone.");
+      return;
+    }
+    const recognition = new Recognition();
+    fallbackRecognition = recognition;
+    recognition.lang = "rw-RW";
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    let submitted = false;
+    setBusy(true);
+    setStatus("Browser voice fallback ready. Speak now; the recognized words will be sent once to IRHCF chat.");
+    recognition.onresult = event => {
+      if (submitted) return;
+      const text = Array.from(event.results || []).filter(r => r.isFinal).map(r => r[0]?.transcript || "").join(" ").trim();
+      if (!text) return;
+      submitted = true;
+      const input = document.getElementById("userInput");
+      const send = document.getElementById("sendButton");
+      if (!input || !send) { setStatus("Chat input was not found."); return; }
+      input.value = text;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      setStatus("Sending recognized speech to IRHCF…");
+      send.click();
+      setBusy(false);
+      fallbackRecognition = null;
+    };
+    recognition.onerror = event => {
+      setBusy(false);
+      fallbackRecognition = null;
+      setStatus("Browser voice error: " + (event.error || "microphone error") + ". You can use the normal chat.");
+    };
+    recognition.onend = () => {
+      if (!submitted && fallbackRecognition === recognition) {
+        fallbackRecognition = null;
+        setBusy(false);
+      }
+    };
+    try { recognition.start(); } catch (error) {
+      fallbackRecognition = null;
+      setBusy(false);
+      setStatus("Browser voice could not start: " + (error.message || "microphone unavailable"));
+    }
+  }
 
   liveButton.addEventListener("click", async () => {
     if (live || starting) {

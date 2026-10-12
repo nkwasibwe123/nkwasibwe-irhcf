@@ -62,6 +62,9 @@ test("voice note and live voice controls use the existing authenticated IRHCF AP
   assert.doesNotMatch(voice, /getElementById\(["']voiceButton["']\)/, "The live voice module must not register a duplicate voice-note handler.");
   assert.match(server, /app\.post\([\s\S]{0,80}["']\/api\/voice\/realtime["'][\s\S]{0,100}authenticateToken/, "Realtime voice session creation must be authenticated.");
   assert.match(server, /https:\/\/api\.openai\.com\/v1\/realtime\/calls/, "Realtime calls must be negotiated server-side.");
+  assert.match(server, /form\.set\("sdp", sdp\)/, "Realtime SDP must be sent as a multipart text field, not a file upload.");
+  assert.match(server, /form\.set\("session", JSON\.stringify\(/, "Realtime session configuration must be sent as a multipart text field.");
+  assert.doesNotMatch(server, /form\.set\("sdp", new Blob/, "Do not upload SDP as a file; the Realtime API expects a text field.");
 });
 
 
