@@ -73,7 +73,7 @@ def replace_background(payload: EditRequest, x_irhcf_image_token: str | None = H
         raise HTTPException(status_code=400, detail="The uploaded image could not be decoded.")
     try:
         if _session is None:
-            _session = new_session(os.getenv("IRHCF_REMBG_MODEL", "u2net"))
+            _session = new_session(os.getenv("IRHCF_REMBG_MODEL", "u2netp"))
         cutout_bytes = remove(original, session=_session, force_return_bytes=True)
         subject = Image.open(BytesIO(cutout_bytes)).convert("RGBA")
         if subject.size != original.size:
