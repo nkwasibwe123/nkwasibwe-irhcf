@@ -2,7 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { getLocalTranscriberConfig, getLocalTranscriberStatus, timestampToSeconds, MAX_AUDIO_BYTES } = require("./local-transcriber");
+const { getLocalTranscriberConfig, getLocalTranscriberStatus, timestampToSeconds, normalizeTranscriptionLanguage, MAX_AUDIO_BYTES } = require("./local-transcriber");
 
 test("partial local configuration fails closed instead of silently falling back to a paid provider", () => {
   assert.equal(getLocalTranscriberConfig({}).enabled, false);
@@ -48,4 +48,24 @@ test("whisper.cpp timestamp strings are normalized to numeric seconds", () => {
   assert.equal(timestampToSeconds("00:02:03.500"), 123.5);
   assert.equal(timestampToSeconds(2.75), 2.75);
   assert.equal(timestampToSeconds("invalid"), null);
+});
+
+test("multilingual transcription defaults to automatic spoken-language detection", () => {
+  assert.equal(normalizeTranscriptionLanguage(undefined), "auto");
+  assert.equal(normalizeTranscriptionLanguage(""), "auto");
+  assert.equal(normalizeTranscriptionLanguage("auto"), "auto");
+  assert.equal(normalizeTranscriptionLanguage(" AUTO "), "auto");
+});
+
+test("multilingual transcription respects a valid explicitly selected language", () => {
+  assert.equal(normalizeTranscriptionLanguage("rw"), "rw");
+  assert.equal(normalizeTranscriptionLanguage("fr"), "fr");
+  assert.equal(normalizeTranscriptionLanguage("eng"), "eng");
+  assert.equal(normalizeTranscriptionLanguage(" FR "), "fr");
+});
+
+test("invalid language values fall back safely to automatic detection", () => {
+  assert.equal(normalizeTranscriptionLanguage("french"), "auto");
+  assert.equal(normalizeTranscriptionLanguage("en-US"), "auto");
+  assert.equal(normalizeTranscriptionLanguage("1"), "auto");
 });
