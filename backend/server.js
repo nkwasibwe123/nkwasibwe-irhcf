@@ -3712,6 +3712,9 @@ app.post("/api/media/image", authenticateToken, async (req, res) => {
 // ============================================================
 
 app.post("/api/media/image/edit", authenticateToken, async (req, res) => {
+  // Allow up to five minutes for image inference and a little time to send the result.
+  req.setTimeout(330000);
+  res.setTimeout(330000);
   try {
     const prompt = String(req.body?.prompt || "").trim().slice(0, 4000);
     const dataUrl = String(req.body?.imageDataUrl || "");
@@ -3769,7 +3772,7 @@ app.post("/api/media/image/edit", authenticateToken, async (req, res) => {
         });
       }
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 180000);
+      const timeout = setTimeout(() => controller.abort(), 300000);
       try {
         const localResponse = await fetch(`${localImageServiceUrl}/edit`, {
           method: "POST",
