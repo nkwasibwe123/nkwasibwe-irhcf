@@ -315,3 +315,13 @@ test("live voice fallback follows the selected/device language and preserves rep
   assert.match(html, /voice-client\.js\?v=2\.0\.23/);
 });
 
+test("live voice starts browser fallback when WebRTC is unavailable and can stop it", () => {
+  const root = path.join(__dirname, "..", "..");
+  const voice = fs.readFileSync(path.join(root, "voice-client.js"), "utf8");
+  const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  assert.match(voice, /if \(live \|\| starting \|\| fallbackRecognition\)/);
+  assert.match(voice, /if \(!window\.RTCPeerConnection \|\| !navigator\.mediaDevices\?\.getUserMedia\) \{\s*startBrowserFallback\(/);
+  assert.match(voice, /cleanupLive\("Live voice conversation ended\."\)/);
+  assert.match(html, /voice-client\.js\?v=2\.0\.24/);
+});
+
