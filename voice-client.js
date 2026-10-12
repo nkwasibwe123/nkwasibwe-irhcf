@@ -115,16 +115,20 @@
   }
 
   liveButton.addEventListener("click", async () => {
-    if (live || starting) {
-      cleanupLive();
+    // The button also controls browser fallback recording. Stop it on the
+    // next tap rather than launching a second recognition session.
+    if (live || starting || fallbackRecognition) {
+      cleanupLive("Live voice conversation ended.");
       return;
     }
     if (!getToken()) {
       setStatus("Please sign in before starting live voice.");
       return;
     }
+    // WebRTC may be missing even when the browser's SpeechRecognition works.
+    // Fall back instead of making Live Voice unavailable in that browser.
     if (!window.RTCPeerConnection || !navigator.mediaDevices?.getUserMedia) {
-      setStatus("Live voice requires a modern browser with WebRTC and microphone support.");
+      startBrowserFallback("Realtime voice is unavailable in this browser.");
       return;
     }
 
