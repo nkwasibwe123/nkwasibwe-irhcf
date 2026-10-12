@@ -65,7 +65,16 @@
     }
     const recognition = new Recognition();
     fallbackRecognition = recognition;
-    recognition.lang = "rw-RW";
+    // Respect an explicitly selected app language; otherwise follow the
+    // device/browser locale instead of hard-coding Kinyarwanda. Hard-coding
+    // rw-RW caused short English utterances such as "hi hi" to be misheard.
+    const savedLanguage = String(localStorage.getItem("nkwasibwe_language_preference") || "auto").trim().toLowerCase();
+    const browserLanguage = String(navigator.languages?.[0] || navigator.language || "en-US").trim();
+    const selectedLanguage = savedLanguage && savedLanguage !== "auto" ? savedLanguage : browserLanguage;
+    const languageTag = selectedLanguage.includes("-")
+      ? selectedLanguage
+      : ({ rw: "rw-RW", en: "en-US", fr: "fr-FR", sw: "sw-KE" }[selectedLanguage] || selectedLanguage);
+    recognition.lang = languageTag;
     recognition.continuous = false;
     recognition.interimResults = false;
     recognition.maxAlternatives = 1;

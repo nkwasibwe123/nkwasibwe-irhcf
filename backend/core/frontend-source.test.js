@@ -303,3 +303,15 @@ test("persistent task progress is shown outside chat with a character-like think
   assert.match(css, /prefers-reduced-motion/);
   assert.match(css, /\.task-progress-stages li\.is-current/);
 });
+
+test("live voice fallback follows the selected/device language and preserves repeated words", () => {
+  const root = path.join(__dirname, "..", "..");
+  const voice = fs.readFileSync(path.join(root, "voice-client.js"), "utf8");
+  const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  assert.match(voice, /nkwasibwe_language_preference/);
+  assert.match(voice, /navigator\.languages\?\.\[0\] \|\| navigator\.language/);
+  assert.match(voice, /recognition\.lang = languageTag/);
+  assert.match(voice, /\.map\(r => r\[0\]\?\.transcript \|\| ""\)\.join\(" "\)/);
+  assert.match(html, /voice-client\.js\?v=2\.0\.23/);
+});
+
