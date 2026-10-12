@@ -3758,6 +3758,79 @@ app.post("/api/media/image/edit", authenticateToken, async (req, res) => {
       });
     }
 
+    // Prefer the self-hosted, no-OpenAI-credit background service when configured.
+    // Other generative edits continue through OpenAI until a local generative model is added.
+    const localImageServiceUrl = String(process.env.IRHCF_IMAGE_SERVICE_URL || "").trim().replace(/\\/+$/, "");
+    const isBackgroundEdit = /background|back[ -]?ground|fond|inyuma|ibara/i.test(prompt);
+    if (localImageServiceUrl && isBackgroundEdit) {
+      const serviceToken = String(process.env.IRHCF_IMAGE_SERVICE_TOKEN || "").trim();
+      if (!serviceToken) {
+        return res.status(503).json({
+          success: false,
+          error: "The local image service URL is configured but its access token is missing.",
+          code: "LOCAL_IMAGE_SERVICE_TOKEN_MISSING"
+        });
+      }
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 180000);
+      try {
+        const localResponse = await fetch(`${localImageServiceUrl}/edit/background`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-irhcf-image-token": serviceToken
+          },
+          body: JSON.stringify({ imageDataUrl: dataUrl, prompt }),
+          signal: controller.signal
+        });
+        const localResult = await localResponse.json().catch(() => ({}));
+        if (!localResponse.ok || !localResult?.success || !localResult?.image) {
+          console.error("[MEDIA_IMAGE_EDIT] Local service rejected edit:", {
+            status: localResponse.status,
+            detail: String(localResult?.detail || localResult?.error || "").slice(0, 300)
+          });
+          return res.status(localResponse.status >= 400 && localResponse.status < 500 ? localResponse.status : 502).json({
+            success: false,
+            error: String(localResult?.detail || localResult?.error || "The local image service could not edit this photo.").slice(0, 300),
+            code: localResult?.code || "LOCAL_IMAGE_EDIT_FAILED"
+          });
+        }
+        return res.status(200).json({
+          success: true,
+          mediaType: "image",
+          mimeType: localResult.mimeType || "image/png",
+          image: localResult.image,
+          format: localResult.format || "data_url",
+          provider: "irhcf-local",
+          operation: "background-replacement",
+          generatedAt: new Date().toISOString()
+        });
+      } catch (localError) {
+        const timedOut = localError?.name === "AbortError";
+        console.error("[MEDIA_IMAGE_EDIT] Local service unavailable:", {
+          name: localError?.name || null,
+          message: String(localError?.message || "").slice(0, 300)
+        });
+        return res.status(502).json({
+          success: false,
+          error: timedOut
+            ? "The local image service took too long. Please retry with a smaller photo."
+            : "The local image service is unavailable. The original photo was not changed.",
+          code: timedOut ? "LOCAL_IMAGE_SERVICE_TIMEOUT" : "LOCAL_IMAGE_SERVICE_UNAVAILABLE"
+        });
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+
+    if (!openai) {
+      return res.status(503).json({
+        success: false,
+        error: "Generative image editing is unavailable. Configure the local background service or an AI image provider.",
+        code: "MEDIA_PROVIDER_UNAVAILABLE"
+      });
+    }
+
     const extension = mimeType === "image/jpeg" ? "jpg" : mimeType.split("/")[1];
     const inputFile = await toFile(imageBuffer, `irhcf-input.${extension}`, { type: mimeType });
     const edited = await openai.images.edit({
