@@ -66,6 +66,8 @@ def infer_effect(prompt: str, requested_effect: str, mode: str) -> str:
     if effect != "prompt" and mode != "prompt":
         raise HTTPException(status_code=422, detail="This local tool is not supported yet.")
     p = prompt.lower()
+    if re.search(r"(background|back[ -]?ground|inyuma).{0,20}blur|blur.{0,20}(background|back[ -]?ground|inyuma)", p):
+        return "background-blur"
     if re.search(r"background|back[ -]?ground|fond|inyuma|ibara", p):
         return "background-white"
     if re.search(r"bright|brightness|lighten|urumuri|kurabagirana", p):
