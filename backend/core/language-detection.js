@@ -1,67 +1,52 @@
 "use strict";
 
 /**
- * Detect the language used in a user task.
- *
- * This deliberately uses lightweight lexical signals rather than a remote
- * service, so chat can continue when no language-detection provider exists.
- * Supported return codes match the language-specific response handling in
- * backend/server.js: rw (Kinyarwanda), fr (French), and en (English/default).
+ * Lightweight offline language detector for chat response routing.
+ * Script detection is preferred for languages with distinctive scripts;
+ * common-word scoring handles Kinyarwanda, English, French, Kiswahili and
+ * other common Latin-script languages. Short/ambiguous inputs use English
+ * as a neutral fallback; the model is also instructed to mirror the user's
+ * actual message language rather than the interface locale.
  */
 function detectAgentLanguage(input) {
-  // UI language instructions are metadata, not evidence of the language
-  // used in the user's actual question.
   const userText = String(input ?? "").replace(
-    /\s*\[Response language preference:[\s\S]*?\]\s*/gi,
+    /\\s*\\[Response language preference:[\\s\\S]*?\\]\\s*/gi,
     " "
-  );
-  const text = userText
-    .normalize("NFKC")
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s']/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  ).normalize("NFKC").trim();
+  if (!userText) return "en";
 
-  if (!text) return "en";
+  const scriptChecks = [
+    ["zh", /[\\u3400-\\u4dbf\\u4e00-\\u9fff]/u],
+    ["ja", /[\\u3040-\\u30ff]/u],
+    ["ko", /[\\uac00-\\ud7af]/u],
+    ["ar", /[\\u0600-\\u06ff\\u0750-\\u077f]/u],
+    ["hi", /[\\u0900-\\u097f]/u],
+    ["ru", /[\\u0400-\\u04ff]/u]
+  ];
+  for (const [language, pattern] of scriptChecks) {
+    if (pattern.test(userText)) return language;
+  }
 
-  const scores = {
-    rw: [
-      " muraho ", " amakuru ", " uraho ", " ndashaka ", " ndakwinginze ", " umfasha ", " ndifuza ",
-      " mbwira ", " mfasha ", " urakoze ", " yego ", " oya ", " gute ",
-      " iki ", " iki? ", " iki ", " ikihe ", " gute ", " kubera iki ",
-      " ese ", " nkeneye ", " nshaka ", " ndifuza ", " kinyarwanda ",
-      " ikinyarwanda ", " gukora ", " ikibazo ", " igisubizo ",
-      " urubuga ", " konti ", " amafaranga ", " ndabinginze ", " byagenda ",
-      " tubikore ", " birakora ", " birakunze ", " heza ", " ndi ", " ndabaza ", " nsubiza ", " subiza ", " unsobanurire ", " unkorere ", " yinkorere ", " urukundo ", " umutima ", " umukobwa ", " umusore ", " ishuri ", " ikora neza ", " mbese ", " wagira ute ", " nyereka ", " ndagusaba "
-    ],
-    fr: [
-      " bonjour ", " salut ", " merci ", " s'il vous plaît ", " svp ",
-      " comment ", " pourquoi ", " pouvez-vous ", " aide-moi ", " aidez-moi ",
-      " je veux ", " je voudrais ", " j'ai besoin ", " est-ce que ",
-      " qu'est-ce que ", " où ", " quand ", " avec ", " pour ", " dans ",
-      " français ", " créer ", " corriger ", " problème ", " réponse ",
-      " veuillez ", " faites ", " expliquez ", " aujourd'hui ", " demain "
-    ],
-    en: [
-      " hello ", " hi ", " please ", " thank you ", " can you ", " could you ",
-      " help me ", " i need ", " i want ", " how do ", " what is ", " why ",
-      " where ", " when ", " explain ", " create ", " build ", " fix ",
-      " problem ", " answer ", " english ", " tell me ", " do this ", " make "
-    ]
+  const text = " " + userText.toLowerCase()
+    .replace(/[^\\p{L}\\p{N}'’\\s]/gu, " ")
+    .replace(/\\s+/g, " ").trim() + " ";
+  const lexicons = {
+    rw: [" muraho ", " amakuru ", " ndashaka ", " ndakwinginze ", " umfasha ", " ndifuza ", " mbwira ", " mfasha ", " urakoze ", " yego ", " oya ", " gute ", " kubera iki ", " ese ", " nkeneye ", " nshaka ", " ikinyarwanda ", " gukora ", " ikibazo ", " igisubizo ", " urubuga ", " amafaranga ", " tubikore ", " birakora ", " ndi ", " nsubiza ", " unsobanurire ", " nyereka ", " ndagusaba ", " ndimo ", " ushobora ", " ni gute ", " ndashaka ko "],
+    fr: [" bonjour ", " salut ", " merci ", " s il vous plaît ", " comment ", " pourquoi ", " pouvez-vous ", " aide-moi ", " aidez-moi ", " je veux ", " je voudrais ", " j ai besoin ", " est-ce que ", " qu est-ce que ", " où ", " quand ", " avec ", " pour ", " français ", " créer ", " corriger ", " problème ", " réponse ", " veuillez ", " expliquez ", " aujourd hui "],
+    en: [" hello ", " hi ", " please ", " thank you ", " can you ", " could you ", " help me ", " i need ", " i want ", " how do ", " what is ", " why ", " where ", " when ", " explain ", " create ", " build ", " fix ", " problem ", " answer ", " tell me ", " do this ", " make ", " write ", " ask "],
+    sw: [" habari ", " tafadhali ", " asante ", " naomba ", " ninataka ", " nataka ", " nisaidie ", " unaweza ", " kwa nini ", " jinsi ya ", " niambie ", " swahili ", " kiswahili ", " tafadhali nisaidie "],
+    es: [" hola ", " gracias ", " por favor ", " quiero ", " necesito ", " puedes ", " cómo ", " qué ", " dónde ", " cuándo ", " ayuda ", " crear ", " explicar ", " español "],
+    pt: [" olá ", " obrigado ", " obrigada ", " por favor ", " quero ", " preciso ", " você ", " como ", " porque ", " ajuda ", " português "],
+    de: [" hallo ", " danke ", " bitte ", " ich möchte ", " ich brauche ", " kannst du ", " wie ", " warum ", " hilfe ", " deutsch "],
+    it: [" ciao ", " grazie ", " per favore ", " vorrei ", " ho bisogno ", " puoi ", " come ", " perché ", " aiuto ", " italiano "],
+    nl: [" hallo ", " bedankt ", " alsjeblieft ", " ik wil ", " ik heb nodig ", " help me ", " waarom ", " nederlands "],
+    pl: [" cześć ", " dziękuję ", " proszę ", " chcę ", " potrzebuję ", " pomóż mi ", " dlaczego ", " polski "],
+    tr: [" merhaba ", " teşekkürler ", " lütfen ", " istiyorum ", " bana yardım ", " nasıl ", " neden ", " türkçe "]
   };
-
-  const padded = ` ${text} `;
-  const count = (words) => words.reduce(
-    (total, word) => total + (padded.includes(word) ? 1 : 0),
-    0
-  );
-
-  const ranked = Object.entries(scores)
-    .map(([language, words]) => ({ language, score: count(words) }))
-    .sort((a, b) => b.score - a.score);
-
-  // Return English when the text is too short or has no reliable signals.
-  if (ranked[0].score === 0) return "en";
+  const ranked = Object.entries(lexicons).map(([language, words]) => ({
+    language, score: words.reduce((n, word) => n + (text.includes(word) ? 1 : 0), 0)
+  })).sort((a, b) => b.score - a.score);
+  if (!ranked[0] || ranked[0].score === 0) return "en";
   if (ranked[0].score === ranked[1].score) return "en";
   return ranked[0].language;
 }
