@@ -44,6 +44,10 @@
   let starting = false;
   let fallbackActive = false;
   let processingTurn = false;
+  let recognitionStarting = false;
+  let restartTimer = null;
+  let lastSubmittedText = "";
+  let lastSubmittedAt = 0;
   let activeSessionId = localStorage.getItem("nkwasibwe_session_id") || null;
 
   const stopRealtimeResources = () => {
@@ -66,9 +70,13 @@
     starting = false;
     fallbackActive = false;
     processingTurn = false;
+    if (restartTimer) window.clearTimeout(restartTimer);
+    restartTimer = null;
+    recognitionStarting = false;
     if (recognition) {
       recognition.onend = null;
-      try { recognition.stop(); } catch (_) {}
+      recognition.onresult = null;
+      try { recognition.abort(); } catch (_) { try { recognition.stop(); } catch (_) {} }
     }
     recognition = null;
     stopRealtimeResources();
@@ -98,9 +106,17 @@
   };
 
   const sendRecognizedSpeech = async transcript => {
-    const message = String(transcript || "").trim();
+    const message = String(transcript || "").replace(/\\s+/g, " ").trim();
+    const dedupeKey = message.toLocaleLowerCase();
+    const now = Date.now();
     if (!message || processingTurn || !live) return;
+    if (dedupeKey === lastSubmittedText && now - lastSubmittedAt < 8000) return;
+    lastSubmittedText = dedupeKey;
+    lastSubmittedAt = now;
     processingTurn = true;
+    if (recognition) {
+      try { recognition.stop(); } catch (_) {}
+    }
     setStatus("IRHCF iratekereza…");
     try {
       const response = await fetch(API_BASE + "/api/chat", {
@@ -130,14 +146,23 @@
       setStatus("Ikibazo cya chat: " + (error.message || "ongera ugerageze."));
     } finally {
       processingTurn = false;
-      if (live && fallbackActive) {
-        window.setTimeout(() => {
-          if (live && fallbackActive && recognition) {
-            try { recognition.start(); } catch (_) {}
-          }
-        }, 350);
-      }
+      scheduleRecognitionRestart();
     }
+  };
+
+  const scheduleRecognitionRestart = () => {
+    if (restartTimer) window.clearTimeout(restartTimer);
+    if (!live || !fallbackActive || processingTurn || !recognition) return;
+    restartTimer = window.setTimeout(() => {
+      restartTimer = null;
+      if (!live || !fallbackActive || processingTurn || !recognition || recognitionStarting) return;
+      try {
+        recognitionStarting = true;
+        recognition.start();
+      } catch (_) {
+        recognitionStarting = false;
+      }
+    }, 500);
   };
 
   const startBrowserFallback = reason => {
@@ -157,18 +182,24 @@
     recognition.interimResults = true;
     recognition.maxAlternatives = 1;
     recognition.lang = preferredSpeechLocale();
-    let finalTranscript = "";
+    recognition.onstart = () => { recognitionStarting = false; };
     recognition.onresult = event => {
       let interim = "";
+      const finalParts = [];
+      // The results list includes earlier final results. Read only changed
+      // entries and submit each turn once, rather than accumulating old words.
       for (let i = event.resultIndex; i < event.results.length; i++) {
-        const phrase = event.results[i][0]?.transcript || "";
-        if (event.results[i].isFinal) finalTranscript += " " + phrase;
-        else interim += phrase;
+        const result = event.results[i];
+        const phrase = String(result[0]?.transcript || "").trim();
+        if (!phrase) continue;
+        if (result.isFinal) finalParts.push(phrase);
+        else interim += (interim ? " " : "") + phrase;
       }
       if (interim.trim()) setStatus("Ndumva: " + interim.trim().slice(0, 160));
-      if (finalTranscript.trim() && !processingTurn) {
-        const ready = finalTranscript.trim();
-        finalTranscript = "";
+      if (finalParts.length && !processingTurn) {
+        const ready = finalParts.join(" ").replace(/\\s+/g, " ").trim();
+        // Stop before sending so the same utterance cannot trigger another turn.
+        try { recognition.stop(); } catch (_) {}
         void sendRecognizedSpeech(ready);
       }
     };
@@ -181,17 +212,14 @@
       }
     };
     recognition.onend = () => {
-      if (live && fallbackActive && !processingTurn) {
-        window.setTimeout(() => {
-          if (live && fallbackActive && recognition) {
-            try { recognition.start(); } catch (_) {}
-          }
-        }, 350);
-      }
+      recognitionStarting = false;
+      scheduleRecognitionRestart();
     };
     try {
+      recognitionStarting = true;
       recognition.start();
     } catch (error) {
+      recognitionStarting = false;
       cleanupLive("Browser voice ntiyatangiye: " + (error.message || reason || "ongera ugerageze."));
     }
   };
