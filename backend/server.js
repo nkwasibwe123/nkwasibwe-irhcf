@@ -30649,10 +30649,11 @@ app.get(
         mediaProviders: {
           imageGeneration: Boolean(openai),
           speechGeneration: Boolean(openai),
-          audioTranscription: Boolean(openai),
+          audioTranscription: Boolean(openai) || getLocalTranscriberStatus().ready,
           videoGeneration: false,
           musicGeneration: false
         },
+        localTranscription: getLocalTranscriberStatus(),
         mediaProviderConfiguration: {
           openai: Boolean(OPENAI_API_KEY),
           elevenLabs: Boolean(ELEVENLABS_API_KEY),
