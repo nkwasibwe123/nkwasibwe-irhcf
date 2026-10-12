@@ -33,6 +33,6 @@ test("Audio Studio dashboard is connected to the authenticated endpoint and prov
   assert.match(app, /initializeVideoEditor\(\);/);
   assert.match(app, /initializeAudioStudio\(\);/);
   assert.match(css, /\.audio-studio-panel audio/);
-  assert.match(html, /app\.js\?v=2\.0\.17/);
-  assert.match(html, /style\.css\?v=2\.0\.17/);
+  assert.match(html, /app\.js\?v=2\.0\.20/);
+  assert.match(html, /style\.css\?v=2\.0\.20/);
 });
