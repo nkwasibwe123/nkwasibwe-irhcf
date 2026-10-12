@@ -130,7 +130,7 @@ test("attached-photo background editing calls the authenticated real image-edit 
   assert.match(app, /fileInput\.accept = "image\/\*,video\/\*,audio\/\*,application\/pdf,text\/\*[,\s\S]*?spreadsheetml\.sheet"/,
     "The normal attachment picker types must be restored after the one-off photo selection.");
   assert.ok(app.includes("imageDataUrl"));
-  assert.ok(app.includes('download.download = "nkwasibwe-irhcf-edited-image.png"'));
+  assert.match(app, /download\.download = "nkwasibwe-irhcf-" \+ effect \+ "-" \+ strength \+ "\.png"/, "Edited images should have a downloadable filename that includes the chosen effect and strength.");
   assert.ok(server.includes('app.post("/api/media/image/edit", authenticateToken'));
   assert.ok(server.includes("openai.images.edit("));
   assert.ok(server.includes("IMAGE_EDIT_INPUT_TOO_LARGE"));
