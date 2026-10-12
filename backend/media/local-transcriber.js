@@ -107,6 +107,13 @@ function getLocalTranscriberStatus(env = process.env) {
   };
 }
 
+function normalizeTranscriptionLanguage(language) {
+  const normalized = String(language || "auto").trim().toLowerCase();
+  // "auto" is the default: whisper.cpp detects the spoken language itself.
+  // Explicit ISO 639-1/639-2 language codes are allowed when the user selects one.
+  return /^[a-z]{2,3}$/.test(normalized) ? normalized : "auto";
+}
+
 async function transcribeLocally(audioBuffer, options = {}) {
   const config = options.config || getLocalTranscriberConfig();
   if (!config.enabled) {
@@ -145,8 +152,7 @@ async function transcribeLocally(audioBuffer, options = {}) {
       throw error;
     }
     await fs.writeFile(inputPath, audioBuffer, { flag: "wx", mode: 0o600 });
-    const language = String(options.language || "auto").toLowerCase();
-    const allowedLanguage = /^[a-z]{2,3}$/.test(language) ? language : "auto";
+    const allowedLanguage = normalizeTranscriptionLanguage(options.language);
     if (!ffmpegPath) {
       const error = new Error("FFmpeg is unavailable; cannot normalize audio for local transcription.");
       error.code = "AUDIO_DECODER_UNAVAILABLE";
@@ -196,6 +202,7 @@ module.exports = {
   getLocalTranscriberConfig,
   getLocalTranscriberStatus,
   timestampToSeconds,
+  normalizeTranscriptionLanguage,
   runProcess,
   transcribeLocally
 };
