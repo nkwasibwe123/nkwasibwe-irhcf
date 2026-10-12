@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: nkwasibwe-irhcf-image-service
+    runtime: docker
+    plan: free
+    dockerfilePath: ./image-service/Dockerfile
+    dockerContext: ./image-service
+    healthCheckPath: /health
+    envVars:
+      - key: IRHCF_IMAGE_SERVICE_TOKEN
+        generateValue: true
+      - key: IRHCF_REMBG_MODEL
+        value: u2netp
