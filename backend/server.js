@@ -22,6 +22,7 @@ const path = require("node:path");
 const { editVideoFile } = require("./media/video-editor");
 const { editAudioFile } = require("./media/audio-editor");
 const { toFile } = require("openai/uploads");
+const { getLocalTranscriberConfig, transcribeLocally } = require("./media/local-transcriber");
 
 // ============================================================
 // INTERNAL MODULES
@@ -4440,14 +4441,6 @@ app.post(
 
 app.post("/api/media/transcribe", authenticateToken, async (req, res) => {
   try {
-    if (!openai) {
-      return res.status(503).json({
-        success: false,
-        error: "Audio transcription is unavailable because the OpenAI provider is not configured.",
-        code: "MEDIA_PROVIDER_UNAVAILABLE"
-      });
-    }
-
     const encoded = String(req.body?.audioBase64 || "");
     const rawName = String(req.body?.fileName || "audio.webm").split(/[\\/]/).pop().slice(0, 120);
     const extension = (rawName.split(".").pop() || "").toLowerCase();
@@ -4488,8 +4481,37 @@ app.post("/api/media/transcribe", authenticateToken, async (req, res) => {
       });
     }
 
-    req.setTimeout(90000);
-    res.setTimeout(90000);
+    req.setTimeout(180000);
+    res.setTimeout(180000);
+
+    // Prefer the self-hosted multilingual engine. When configured, do not silently
+    // send audio to a paid provider if local inference fails.
+    const localConfig = getLocalTranscriberConfig();
+    if (localConfig.enabled) {
+      const local = await transcribeLocally(audioBuffer, {
+        extension,
+        language: req.body?.language || "auto",
+        config: localConfig
+      });
+      return res.json({
+        success: true,
+        text: local.text,
+        language: local.language || null,
+        model: local.model,
+        segments: local.segments,
+        engine: "local",
+        fileName: rawName
+      });
+    }
+
+    if (!openai) {
+      return res.status(503).json({
+        success: false,
+        error: "No transcription engine is configured. Install whisper.cpp with a multilingual model using WHISPER_CPP_PATH and WHISPER_MODEL_PATH; paid-provider transcription is unavailable.",
+        code: "TRANSCRIPTION_ENGINE_UNAVAILABLE"
+      });
+    }
+
     const audioFile = await toFile(audioBuffer, rawName, {
       type: mimeByExtension[extension]
     });
@@ -4512,6 +4534,7 @@ app.post("/api/media/transcribe", authenticateToken, async (req, res) => {
       text: transcript,
       language: transcription?.language || null,
       model: "gpt-4o-mini-transcribe",
+      engine: "provider",
       fileName: rawName
     });
   } catch (error) {
