@@ -7,7 +7,6 @@ from io import BytesIO
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 from PIL import Image
-from rembg import remove, new_session
 
 app = FastAPI(title="Nkwasibwe IRHCF Local Image Service", version="0.1.0")
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
@@ -73,7 +72,10 @@ def replace_background(payload: EditRequest, x_irhcf_image_token: str | None = H
         raise HTTPException(status_code=400, detail="The uploaded image could not be decoded.")
     try:
         if _session is None:
+            from rembg import new_session, remove
             _session = new_session(os.getenv("IRHCF_REMBG_MODEL", "u2netp"))
+        else:
+            from rembg import remove
         cutout_bytes = remove(original, session=_session, force_return_bytes=True)
         subject = Image.open(BytesIO(cutout_bytes)).convert("RGBA")
         if subject.size != original.size:
