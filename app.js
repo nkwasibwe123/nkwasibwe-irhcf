@@ -6821,8 +6821,16 @@ async function editAttachedImage(prompt, file) {
     panel.innerHTML = `
       <h2 id="irhcfPhotoEffectsTitle" style="margin:0 0 8px">Photo Effects Studio</h2>
       <p style="margin:0 0 12px">Hitamo effect n'urwego rw'impinduka. 0% ntihindura ifoto; 100% ni impinduka ikomeye kurushaho.</p>
+      <label for="irhcfPhotoEditMode" style="display:block;font-weight:700;margin:12px 0 6px">Mode / Uburyo</label>
+      <select id="irhcfPhotoEditMode" style="box-sizing:border-box;width:100%;padding:12px;border-radius:10px;margin-bottom:10px">
+        <option value="standard">STANDARD TOOLS — hitamo igikoresho</option>
+        <option value="prompt">PROMPT MODE — andika icyo ushaka</option>
+      </select>
+      <label for="irhcfPhotoPrompt" style="display:block;font-weight:600;margin:8px 0 6px">Prompt / Icyo ushaka ko gihinduka</label>
+      <textarea id="irhcfPhotoPrompt" rows="3" maxlength="2500" style="box-sizing:border-box;width:100%;padding:12px;border-radius:10px;margin-bottom:12px" placeholder="Urugero: hindura background ibe umweru cyangwa wongere clarity"></textarea>
+
       <img id="irhcfPhotoEffectsOriginal" alt="Original photo preview" style="display:block;width:100%;max-height:32vh;object-fit:contain;border-radius:12px;background:#eee;margin-bottom:12px">
-      <label for="irhcfPhotoEffectSelect" style="display:block;font-weight:600;margin:10px 0 6px">Effect</label>
+      <label id="irhcfPhotoEffectLabel" for="irhcfPhotoEffectSelect" style="display:block;font-weight:600;margin:10px 0 6px">STANDARD TOOLS — Effect</label>
       <select id="irhcfPhotoEffectSelect" style="box-sizing:border-box;width:100%;padding:12px;border-radius:10px">
         <option value="natural">Natural enhancement</option>
         <option value="brightness">Brightness</option>
@@ -6841,7 +6849,7 @@ async function editAttachedImage(prompt, file) {
         <option value="artistic">Artistic style</option>
         <option value="custom">Custom instructions (use chat message)</option>
       </select>
-      <label for="irhcfPhotoEffectStrength" style="display:flex;justify-content:space-between;gap:8px;font-weight:600;margin:14px 0 6px">Change level <output id="irhcfPhotoEffectStrengthValue">50%</output></label>
+      <label id="irhcfPhotoStrengthLabel" for="irhcfPhotoEffectStrength" style="display:flex;justify-content:space-between;gap:8px;font-weight:600;margin:14px 0 6px">Change level <output id="irhcfPhotoEffectStrengthValue">50%</output></label>
       <input id="irhcfPhotoEffectStrength" type="range" min="0" max="100" step="1" value="50" style="width:100%">
       <div style="display:flex;justify-content:space-between;font-size:12px;opacity:.8"><span>0% · None</span><span>50% · Medium</span><span>100% · Strong</span></div>
       <p id="irhcfPhotoEffectsHint" aria-live="polite" style="font-size:13px">Original photo will be kept unchanged; the result appears separately.</p>
@@ -6853,6 +6861,18 @@ async function editAttachedImage(prompt, file) {
     panel.querySelector("#irhcfPhotoEffectStrength").addEventListener("input", event => {
       panel.querySelector("#irhcfPhotoEffectStrengthValue").textContent = event.target.value + "%";
     });
+    const syncPhotoMode = () => {
+      const promptMode = panel.querySelector("#irhcfPhotoEditMode").value === "prompt";
+      panel.querySelector("#irhcfPhotoEffectSelect").disabled = promptMode;
+      panel.querySelector("#irhcfPhotoEffectStrength").disabled = promptMode;
+      panel.querySelector("#irhcfPhotoEffectLabel").hidden = promptMode;
+      panel.querySelector("#irhcfPhotoStrengthLabel").hidden = promptMode;
+      panel.querySelector("#irhcfPhotoEffectStrength").hidden = promptMode;
+      panel.querySelector("#irhcfPhotoEffectsHint").textContent = promptMode
+        ? "PROMPT MODE: andika igikorwa ushaka. Ubu buryo bw'ubuntu bukora ibikorwa by'amafoto bishyigikiwe na serivisi yacu."
+        : "STANDARD TOOLS: hitamo igikoresho n'urwego rw'impinduka.";
+    };
+    panel.querySelector("#irhcfPhotoEditMode").addEventListener("change", syncPhotoMode);
     panel.querySelector("#irhcfPhotoEffectsCancel").addEventListener("click", () => { panel.hidden = true; });
     panel.querySelector("#irhcfPhotoEffectSelect").addEventListener("change", () => {
       const effect = panel.querySelector("#irhcfPhotoEffectSelect").selectedOptions[0]?.textContent || "";
@@ -6861,8 +6881,11 @@ async function editAttachedImage(prompt, file) {
   }
   panel.hidden = false;
   panel.querySelector("#irhcfPhotoEffectsOriginal").src = URL.createObjectURL(file);
+  panel.querySelector("#irhcfPhotoEditMode").value = "standard";
+  panel.querySelector("#irhcfPhotoPrompt").value = String(prompt || "").slice(0, 2500);
   panel.querySelector("#irhcfPhotoEffectSelect").value = /background|inyuma/i.test(prompt) ? "background-white" : "natural";
   panel.querySelector("#irhcfPhotoEffectStrength").value = 50;
+  panel.querySelector("#irhcfPhotoEditMode").dispatchEvent(new Event("change"));
   panel.querySelector("#irhcfPhotoEffectStrengthValue").textContent = "50%";
   const applyButton = panel.querySelector("#irhcfPhotoEffectsApply");
   // Replace the previous handler to avoid duplicate image-edit requests on repeat use.
@@ -6892,13 +6915,19 @@ async function editAttachedImage(prompt, file) {
       artistic: "Apply an artistic visual style",
       custom: "Follow the user's custom photo-editing instructions"
     };
+    const mode = panel.querySelector("#irhcfPhotoEditMode").value;
+    const userPrompt = String(panel.querySelector("#irhcfPhotoPrompt").value || prompt || "").trim().slice(0, 2500);
+    if (mode === "prompt" && !userPrompt) {
+      showToast("Andika icyo ushaka ko gihinduka mbere yo gukomeza.", "warning");
+      return;
+    }
     const effectPrompt = effectInstructions[effect] || effectInstructions.natural;
-    const fullPrompt = [
+    const fullPrompt = mode === "prompt" ? userPrompt : [
       effectPrompt + ".",
       "Requested effect strength: " + strength + "% on a scale from 0 to 100.",
       "Make the visual intensity proportional to the requested percentage: low values subtle, 50% moderate, high values strong. Do not ignore this strength setting.",
       "Preserve the identity and natural facial features of any person, unless the user explicitly asks otherwise. Do not add text, watermarks, or unrelated objects.",
-      "Original user request: " + String(prompt || "").slice(0, 2500)
+      "Original user request: " + userPrompt
     ].join("\\n");
     panel.hidden = true;
     applyButton.disabled = true;
@@ -6915,7 +6944,7 @@ async function editAttachedImage(prompt, file) {
       const result = await apiRequest(API_ENDPOINTS.imageEditing, {
         method: "POST",
         timeoutMs: 180000,
-        body: JSON.stringify({ prompt: fullPrompt.slice(0, 4000), imageDataUrl, effect, strength })
+        body: JSON.stringify({ prompt: fullPrompt.slice(0, 4000), imageDataUrl, mode, effect: mode === "prompt" ? "prompt" : effect, strength })
       });
       const source = String(result?.image || "");
       const safeSource = source.startsWith("data:image/png;base64,") ||
