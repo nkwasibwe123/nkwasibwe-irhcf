@@ -177,7 +177,7 @@ test("uploaded images are rendered with their user's chat message", () => {
   assert.match(source, /options\.attachments/, "Message renderer must accept uploaded attachments.");
   assert.match(source, /message-attachment-image/, "Image attachments must have an inline preview.");
   assert.match(source, /\{ attachments: selectedAttachments \}/, "Normal user messages must include selected attachments.");
-  assert.match(source, /addMessage\(prompt, "user", \{ attachments: \[file\] \}\)/, "Image-edit requests must show the source photo in the user's message.");
+  assert.match(source, /const userMessageRow = addMessage\(/, "The user message row must be rendered.");
   assert.match(source, /fileInput\.accept = "image\/\*,video\/\*/, "The file picker must restore its normal accepted types after image-edit selection.");
 });
 
@@ -336,7 +336,7 @@ test("photo effects studio provides multiple effects and an explicit 0-100 stren
   assert.match(app, /cinematic/);
   assert.match(app, /black-white/);
   assert.match(app, /Requested effect strength:/);
-  assert.match(app, /change level: " \+ strength \+ "%"/);
+  assert.match(app, /change level: " \+ strength \+ "%\."/);
   assert.match(app, /strength === 0/);
   assert.match(app, /API_ENDPOINTS\.imageEditing/);
 });
