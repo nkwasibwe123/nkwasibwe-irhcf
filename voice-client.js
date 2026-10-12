@@ -106,7 +106,7 @@
   };
 
   const sendRecognizedSpeech = async transcript => {
-    const message = String(transcript || "").replace(/\\s+/g, " ").trim();
+    const message = String(transcript || "").replace(/\s+/g, " ").trim();
     const dedupeKey = message.toLocaleLowerCase();
     const now = Date.now();
     if (!message || processingTurn || !live) return;
@@ -197,7 +197,7 @@
       }
       if (interim.trim()) setStatus("Ndumva: " + interim.trim().slice(0, 160));
       if (finalParts.length && !processingTurn) {
-        const ready = finalParts.join(" ").replace(/\\s+/g, " ").trim();
+        const ready = finalParts.join(" ").replace(/\s+/g, " ").trim();
         // Stop before sending so the same utterance cannot trigger another turn.
         try { recognition.stop(); } catch (_) {}
         void sendRecognizedSpeech(ready);
