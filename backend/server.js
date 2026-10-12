@@ -3752,7 +3752,7 @@ app.post("/api/media/image/edit", authenticateToken, async (req, res) => {
 
     // Prefer the self-hosted, no-OpenAI-credit background service when configured.
     // Other generative edits continue through OpenAI until a local generative model is added.
-    const localImageServiceUrl = String(process.env.IRHCF_IMAGE_SERVICE_URL || "").trim().replace(/\\/+$/, "");
+    const localImageServiceUrl = String(process.env.IRHCF_IMAGE_SERVICE_URL || "").trim().replace(/\/+$/, "");
     const isBackgroundEdit = /background|back[ -]?ground|fond|inyuma|ibara/i.test(prompt);
     if (localImageServiceUrl && isBackgroundEdit) {
       const serviceToken = String(process.env.IRHCF_IMAGE_SERVICE_TOKEN || "").trim();
