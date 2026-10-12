@@ -30,10 +30,11 @@ fi
 
 BIN="$ROOT/build/bin/whisper-cli"
 if [ ! -x "$BIN" ] || [ ! -s "$MODEL_PATH" ]; then
-  echo "[local-transcriber] WARNING: local engine build did not produce binary/model." >&2
-  exit 0
+  echo "[local-transcriber] ERROR: local engine build did not produce binary/model." >&2
+  exit 1
 fi
 
 echo "[local-transcriber] whisper.cpp and multilingual model installed."
 echo "[local-transcriber] WHISPER_CPP_PATH=$BIN"
 echo "[local-transcriber] WHISPER_MODEL_PATH=$MODEL_PATH"
+echo "[local-transcriber] Runtime auto-discovery is enabled when these files are present; set WHISPER_CPP_PATH/WHISPER_MODEL_PATH only to override."
