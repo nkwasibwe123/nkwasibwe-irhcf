@@ -151,7 +151,6 @@ function initializeLanguageControl() {
         : "Interface language: " + (IRHCF_LANGUAGE_NAMES[value] || value);
       selects.forEach((other) => { other.title = title; });
       applyInterfaceLanguage();
-      applyInterfaceLanguage();
     });
   });
   applyInterfaceLanguage();
