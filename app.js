@@ -6096,8 +6096,11 @@ const MAX_ATTACHMENT_SIZE =
 
 async function transcribeAudioFile(file) {
   if (!file) return;
-  if (!authToken) {
-    showAuthenticationDialog();
+  if (!authToken) { showAuthenticationDialog(); return; }
+  const extension = String(file.name || "").split(".").pop().toLowerCase();
+  const supported = new Set(["mp3", "wav", "m4a", "ogg", "flac", "webm", "mp4", "mpeg", "mpga"]);
+  if (!supported.has(extension)) {
+    showToast("Audio format ntishyigikiwe. Koresha MP3, WAV, M4A, OGG, FLAC, WEBM cyangwa MP4.", "warning");
     return;
   }
   if (file.size > 6 * 1024 * 1024) {
@@ -6105,7 +6108,7 @@ async function transcribeAudioFile(file) {
     return;
   }
 
-  setStatus("IRHCF iri guhindura amajwi mo amagambo...", "loading");
+  setStatus("IRHCF iri kumva audio no kugerageza kumenya ururimi rwayo...", "loading");
   try {
     const dataUrl = await new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -6116,12 +6119,16 @@ async function transcribeAudioFile(file) {
     const audioBase64 = dataUrl.includes(",") ? dataUrl.slice(dataUrl.indexOf(",") + 1) : "";
     const result = await apiRequest(API_ENDPOINTS.audioTranscription, {
       method: "POST",
-      timeoutMs: 90000,
-      body: JSON.stringify({ fileName: file.name, mimeType: file.type, audioBase64 })
+      timeoutMs: 180000,
+      body: JSON.stringify({ fileName: file.name, mimeType: file.type, audioBase64, language: "auto" })
     });
     const transcript = String(result?.text || "").trim();
     if (!result?.success || !transcript) {
-      throw new Error("Serivisi ntiyagaruye amagambo avuye mu majwi.");
+      const code = String(result?.code || "");
+      if (/CREDITS_EXHAUSTED|INSUFFICIENT_QUOTA|MEDIA_PROVIDER_UNAVAILABLE|AUDIO_TRANSCRIPTION_FAILED/i.test(code)) {
+        throw new Error("Serivisi ya transcription iri kubura cyangwa quota/credits byarangiye. Ubu server ntirimo model ya transcription ikora offline; ntitwakwandikira amagambo y'ibihimbano.");
+      }
+      throw new Error(result?.error || "Serivisi ntiyagaruye amagambo avuye mu majwi.");
     }
     if (userInput) {
       userInput.value = transcript;
@@ -6129,11 +6136,13 @@ async function transcribeAudioFile(file) {
       userInput.focus();
       userInput.setSelectionRange(userInput.value.length, userInput.value.length);
     }
-    setStatus("Audio yahinduwe amagambo. Ongera usome, ukosore niba bikenewe, hanyuma ukande Send.", "online");
-    setDashboardStatus("Transcription iriteguye kandi iri muri composer kugira ngo uyikosore mbere yo kohereza.");
+    const language = String(result?.language || result?.detectedLanguage || "").trim();
+    const languageLabel = language ? " Ururimi rwamenyekanye: " + language + "." : " Ururimi rugeragezwa kumenyekana mu buryo bwikora.";
+    setStatus("Audio yahinduwe amagambo." + languageLabel + " Ongera usome, ukosore niba bikenewe, hanyuma ukande Send.", "online");
+    setDashboardStatus("Transcription iriteguye kandi iri muri composer kugira ngo uyikosore mbere yo kohereza." + languageLabel);
   } catch (error) {
     console.error("[IRHCF AUDIO TRANSCRIPTION]", error);
-    const message = String(error?.message || "serivisi ntiboneka").slice(0, 200);
+    const message = String(error?.message || "Serivisi ntiboneka").slice(0, 240);
     setStatus("Audio ntiyashoboye guhindurwa amagambo: " + message, "normal");
     setDashboardStatus("Transcription yanze: " + message);
   }
