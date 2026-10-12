@@ -148,10 +148,15 @@ def edit_image(payload: EditRequest, x_irhcf_image_token: str | None = Header(de
             subject = Image.open(BytesIO(cutout_bytes)).convert("RGBA")
             if subject.size != inference_image.size:
                 subject = subject.resize(inference_image.size, Image.Resampling.LANCZOS)
-            rgb = background_color(payload.prompt)
-            background = Image.new("RGBA", subject.size, (*rgb, 255))
-            background.alpha_composite(subject)
-            result = background.convert("RGB").resize(original.size, Image.Resampling.LANCZOS)
+            if effect == "background-blur":
+                background = inference_image.filter(ImageFilter.GaussianBlur(radius=5 + 5 * (strength / 100.0))).convert("RGBA")
+                background.alpha_composite(subject)
+                result = background.convert("RGB").resize(original.size, Image.Resampling.LANCZOS)
+            else:
+                rgb = background_color(payload.prompt)
+                background = Image.new("RGBA", subject.size, (*rgb, 255))
+                background.alpha_composite(subject)
+                result = background.convert("RGB").resize(original.size, Image.Resampling.LANCZOS)
         else:
             result = original.copy()
             amount = strength / 100.0
