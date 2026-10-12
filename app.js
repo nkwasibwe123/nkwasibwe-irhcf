@@ -7074,7 +7074,7 @@ async function editAttachedImage(prompt, file) {
       });
       const result = await apiRequest(API_ENDPOINTS.imageEditing, {
         method: "POST",
-        timeoutMs: 180000,
+        timeoutMs: 360000,
         body: JSON.stringify({ prompt: fullPrompt.slice(0, 4000), imageDataUrl, mode, effect: mode === "prompt" ? "prompt" : effect, strength })
       });
       const source = String(result?.image || "");
