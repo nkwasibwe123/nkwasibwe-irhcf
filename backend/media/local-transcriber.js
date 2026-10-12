@@ -1,6 +1,7 @@
 "use strict";
 
 const fs = require("node:fs/promises");
+const fsSync = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
@@ -10,10 +11,20 @@ const MAX_AUDIO_BYTES = 6 * 1024 * 1024;
 const DEFAULT_TIMEOUT_MS = 180000;
 
 function getLocalTranscriberConfig(env = process.env) {
-  const binaryPath = String(env.WHISPER_CPP_PATH || "").trim();
-  const modelPath = String(env.WHISPER_MODEL_PATH || "").trim();
+  const defaultBinaryPath = path.resolve(process.cwd(), ".local/whisper.cpp/build/bin/whisper-cli");
+  const defaultModelPath = path.resolve(process.cwd(), ".local/models/ggml-tiny.bin");
+  const configuredBinaryPath = String(env.WHISPER_CPP_PATH || "").trim();
+  const configuredModelPath = String(env.WHISPER_MODEL_PATH || "").trim();
+  const binaryPath = configuredBinaryPath || defaultBinaryPath;
+  const modelPath = configuredModelPath || defaultModelPath;
+  // Explicit paths opt in even if a file is currently missing: the request then
+  // fails locally with a diagnostic rather than silently uploading audio to a paid API.
+  // Without explicit paths, auto-enable only when both build artifacts are present.
+  const explicitlyConfigured = Boolean(configuredBinaryPath && configuredModelPath);
+  const autoDiscovered = !configuredBinaryPath && !configuredModelPath
+    && fsSync.existsSync(binaryPath) && fsSync.existsSync(modelPath);
   return {
-    enabled: Boolean(binaryPath && modelPath),
+    enabled: explicitlyConfigured || autoDiscovered,
     binaryPath,
     modelPath,
     timeoutMs: Math.max(10000, Math.min(Number(env.WHISPER_TIMEOUT_MS) || DEFAULT_TIMEOUT_MS, 600000)),
@@ -84,6 +95,21 @@ async function transcribeLocally(audioBuffer, options = {}) {
   const outputBase = path.join(directory, "result");
   const wavPath = path.join(directory, "normalized.wav");
   try {
+    try {
+      await fs.access(config.binaryPath, fsSync.constants.X_OK);
+    } catch {
+      const error = new Error("The configured whisper.cpp executable is missing or not executable.");
+      error.code = "LOCAL_TRANSCRIBER_BINARY_MISSING";
+      throw error;
+    }
+    try {
+      const modelStat = await fs.stat(config.modelPath);
+      if (!modelStat.isFile() || modelStat.size === 0) throw new Error("empty model");
+    } catch {
+      const error = new Error("The configured multilingual Whisper model is missing or empty.");
+      error.code = "LOCAL_TRANSCRIBER_MODEL_MISSING";
+      throw error;
+    }
     await fs.writeFile(inputPath, audioBuffer, { flag: "wx", mode: 0o600 });
     const language = String(options.language || "auto").toLowerCase();
     const allowedLanguage = /^[a-z]{2,3}$/.test(language) ? language : "auto";
