@@ -2,7 +2,7 @@ services:
   - type: web
     name: nkwasibwe-irhcf-image-service
     runtime: docker
-    plan: starter
+    plan: free
     dockerfilePath: ./image-service/Dockerfile
     dockerContext: ./image-service
     healthCheckPath: /health
