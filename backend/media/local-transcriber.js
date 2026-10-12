@@ -32,6 +32,18 @@ function getLocalTranscriberConfig(env = process.env) {
   };
 }
 
+function timestampToSeconds(value) {
+  if (Number.isFinite(value)) return Number(value);
+  if (typeof value !== "string" || !value.trim()) return null;
+  const raw = value.trim();
+  if (/^\d+(?:\.\d+)?$/.test(raw)) return Number(raw);
+  const parts = raw.split(":");
+  if (parts.length !== 3 || parts.some(part => !/^\d+(?:\.\d+)?$/.test(part))) return null;
+  const [hours, minutes, seconds] = parts.map(Number);
+  if (minutes >= 60 || seconds >= 60) return null;
+  return hours * 3600 + minutes * 60 + seconds;
+}
+
 function runProcess(binaryPath, args, options = {}) {
   return new Promise((resolve, reject) => {
     const timeoutMs = options.timeoutMs || DEFAULT_TIMEOUT_MS;
@@ -169,8 +181,8 @@ async function transcribeLocally(audioBuffer, options = {}) {
       language: json.result?.language || json.language || (allowedLanguage === "auto" ? null : allowedLanguage),
       model: "whisper.cpp-local",
       segments: segments.map(segment => ({
-        start: Number.isFinite(segment.timestamps?.from) ? segment.timestamps.from : null,
-        end: Number.isFinite(segment.timestamps?.to) ? segment.timestamps.to : null,
+        start: timestampToSeconds(segment.timestamps?.from),
+        end: timestampToSeconds(segment.timestamps?.to),
         text: String(segment.text || "")
       }))
     };
@@ -183,6 +195,7 @@ module.exports = {
   MAX_AUDIO_BYTES,
   getLocalTranscriberConfig,
   getLocalTranscriberStatus,
+  timestampToSeconds,
   runProcess,
   transcribeLocally
 };
