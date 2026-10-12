@@ -6,7 +6,7 @@ from io import BytesIO
 
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
-from PIL import Image
+from PIL import Image, ImageEnhance, ImageFilter
 
 app = FastAPI(title="Nkwasibwe IRHCF Local Image Service", version="0.1.0")
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
@@ -42,7 +42,8 @@ def background_color(prompt: str):
     for words, rgb in colors:
         if any(word in p for word in words):
             return rgb
-    raise HTTPException(status_code=422, detail="Specify a solid background color: white, black, blue, green, red, gray or yellow.")
+    # A plain request such as “make it clear and change background” defaults to white.
+    return (255, 255, 255)
 
 
 @app.get("/health")
@@ -71,20 +72,41 @@ def replace_background(payload: EditRequest, x_irhcf_image_token: str | None = H
     except Exception:
         raise HTTPException(status_code=400, detail="The uploaded image could not be decoded.")
     try:
+        # Keep inference memory bounded on the 512 MB free-tier instance.
+        original_size = original.size
+        inference_image = original.copy()
+        inference_image.thumbnail((768, 768), Image.Resampling.LANCZOS)
+
         if _session is None:
+            import onnxruntime as ort
             from rembg import new_session, remove
-            _session = new_session(os.getenv("IRHCF_REMBG_MODEL", "u2netp"))
+
+            session_options = ort.SessionOptions()
+            session_options.intra_op_num_threads = 1
+            session_options.inter_op_num_threads = 1
+            session_options.enable_cpu_mem_arena = False
+            session_options.enable_mem_pattern = False
+            _session = new_session(
+                os.getenv("IRHCF_REMBG_MODEL", "u2netp"),
+                sess_opts=session_options,
+            )
         else:
             from rembg import remove
-        cutout_bytes = remove(original, session=_session, force_return_bytes=True)
+
+        cutout_bytes = remove(inference_image, session=_session, force_return_bytes=True)
         subject = Image.open(BytesIO(cutout_bytes)).convert("RGBA")
-        if subject.size != original.size:
-            subject = subject.resize(original.size, Image.Resampling.LANCZOS)
+        if subject.size != inference_image.size:
+            subject = subject.resize(inference_image.size, Image.Resampling.LANCZOS)
         background = Image.new("RGBA", subject.size, (*rgb, 255))
         background.alpha_composite(subject)
+        result = background.convert("RGB").resize(original_size, Image.Resampling.LANCZOS)
+        # Mild sharpening improves perceived clarity without inventing image details.
+        result = ImageEnhance.Contrast(result).enhance(1.05)
+        result = result.filter(ImageFilter.UnsharpMask(radius=1.2, percent=115, threshold=3))
         output = BytesIO()
-        background.convert("RGB").save(output, format="PNG", optimize=True)
+        result.save(output, format="PNG", optimize=True)
     except Exception as exc:
-        raise HTTPException(status_code=502, detail="Local background segmentation failed.") from exc
+        print(f"[IMAGE_EDIT] segmentation failed: {type(exc).__name__}: {exc}", flush=True)
+        raise HTTPException(status_code=502, detail=f"Local background segmentation failed ({type(exc).__name__}).") from exc
     encoded = base64.b64encode(output.getvalue()).decode("ascii")
     return {"success": True, "mediaType": "image", "mimeType": "image/png", "image": "data:image/png;base64," + encoded, "format": "data_url", "provider": "irhcf-local", "operation": "background-replacement", "background": {"rgb": list(rgb)}}
