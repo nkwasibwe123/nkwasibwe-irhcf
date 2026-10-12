@@ -3802,7 +3802,8 @@ app.post("/api/media/image/edit", authenticateToken, async (req, res) => {
           image: localResult.image,
           format: localResult.format || "data_url",
           provider: "irhcf-local",
-          operation: "background-replacement",
+          operation: localResult.operation || requestedEffect,
+          verified: localResult.verified === true,
           generatedAt: new Date().toISOString()
         });
       } catch (localError) {
@@ -3823,10 +3824,20 @@ app.post("/api/media/image/edit", authenticateToken, async (req, res) => {
       }
     }
 
+    // Do not silently call a potentially billable provider. The default is free/local-only;
+    // a future UI must send allowPaidProvider=true after an explicit user choice.
+    if (req.body?.allowPaidProvider !== true) {
+      return res.status(422).json({
+        success: false,
+        error: "Iyi prompt cyangwa effect ntishyigikiwe n'ibikoresho by'ubuntu biriho. Nta serivisi yishyurwa yakoreshejwe. Hitamo Standard Tool ishyigikiwe cyangwa uhindure prompt.",
+        code: "FREE_IMAGE_EFFECT_UNSUPPORTED"
+      });
+    }
+
     if (!openai) {
       return res.status(503).json({
         success: false,
-        error: "Generative image editing is unavailable. Configure the local background service or an AI image provider.",
+        error: "Generative image editing is unavailable. Configure an AI image provider only after explicitly enabling paid use.",
         code: "MEDIA_PROVIDER_UNAVAILABLE"
       });
     }
