@@ -554,6 +554,7 @@ class TaskEngine {
       [
         agentRun.id,
         stepNumber,
+        safeText(phase, 40),
         safeText(description, 1000)
       ]
     );
