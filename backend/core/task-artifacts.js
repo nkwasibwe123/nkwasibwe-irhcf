@@ -227,13 +227,13 @@ if (year) year.textContent = String(new Date().getFullYear());
 A responsive starter school website generated as a safe fallback because the AI response did not contain the four expected source files.
 
 ## Files
-- `index.html` — page structure and school sections
-- `style.css` — responsive layout and visual styling
-- `script.js` — mobile navigation and current-year footer
-- `README.md` — project notes
+- **index.html** — page structure and school sections
+- **style.css** — responsive layout and visual styling
+- **script.js** — mobile navigation and current-year footer
+- **README.md** — project notes
 
 ## Run locally
-Open `index.html` in a browser. Keep all three source files in the same folder.
+Open index.html in a browser. Keep all three source files in the same folder.
 
 ## Before publishing
 Replace the sample school name and contact email, add verified school details and images, and confirm any admissions information before making the site public.
