@@ -144,8 +144,19 @@ def edit_image(payload: EditRequest, x_irhcf_image_token: str | None = Header(de
                 else:
                     from rembg import remove
 
-                cutout_bytes = remove(inference_image, session=_session, force_return_bytes=True)
-            subject = Image.open(BytesIO(cutout_bytes)).convert("RGBA")
+                cutout_result = remove(inference_image, session=_session, force_return_bytes=True)
+            # rembg versions/wrappers may return a PIL Image even when
+            # force_return_bytes=True. Accept both documented representations
+            # instead of passing an Image object to BytesIO (the former 502).
+            if isinstance(cutout_result, Image.Image):
+                subject = cutout_result.convert("RGBA")
+            elif isinstance(cutout_result, (bytes, bytearray, memoryview)):
+                subject = Image.open(BytesIO(bytes(cutout_result))).convert("RGBA")
+            else:
+                raise TypeError(
+                    "Unsupported rembg result type: "
+                    + type(cutout_result).__name__
+                )
             if subject.size != inference_image.size:
                 subject = subject.resize(inference_image.size, Image.Resampling.LANCZOS)
             if effect == "background-blur":
