@@ -3762,7 +3762,7 @@ app.post("/api/media/image/edit", authenticateToken, async (req, res) => {
     const isBackgroundEdit = /background|back[ -]?ground|fond|inyuma|ibara/i.test(prompt) || requestedEffect.startsWith("background-");
     const freeLocalEffects = new Set(["prompt", "natural", "brightness", "contrast", "saturation", "warmth", "cool", "black-white", "sepia", "sharpen", "soft-focus", "background-white", "background-blur"]);
     const promptMapsToFreeEffect = /background|back[ -]?ground|fond|inyuma|ibara|bright|lighten|contrast|saturat|vibrant|warm|cool tone|black.?and.?white|grayscale|monochrome|sepia|vintage|sharpen|clarity|clearer|gusobanuka|soft.?focus|soften|blur|natural|enhance|improve|kunoza|kunonosora/i.test(prompt);
-    if (localImageServiceUrl && (isBackgroundEdit || freeLocalEffects.has(requestedEffect) || (requestedMode === "prompt" && promptMapsToFreeEffect))) {
+    if (localImageServiceUrl && (isBackgroundEdit || (requestedEffect !== "prompt" && freeLocalEffects.has(requestedEffect)) || (requestedMode === "prompt" && promptMapsToFreeEffect))) {
       const serviceToken = String(process.env.IRHCF_IMAGE_SERVICE_TOKEN || "").trim();
       if (!serviceToken) {
         return res.status(503).json({
