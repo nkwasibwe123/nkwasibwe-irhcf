@@ -312,9 +312,14 @@ const taskCreateButton =
 
 const taskList =
   document.getElementById("taskList");
-
+const dashboardActivityCenter = document.getElementById("dashboardActivityCenter");
+const recentActivityList = document.getElementById("recentActivityList");
+const activityRefreshButton = document.getElementById("activityRefreshButton");
 let taskRefreshTimer = null;
 let taskListBusy = false;
+let dashboardActivityBusy = false;
+let cachedTasks = [];
+let taskActivityFilter = "all";
 
 const taskProgressPanel = document.getElementById("taskProgressPanel");
 const taskProgressTitle = document.getElementById("taskProgressTitle");
@@ -8172,6 +8177,7 @@ document.addEventListener(
 
 function showDashboardHome() {
   activeDashboardCategory = null;
+  if (dashboardActivityCenter) dashboardActivityCenter.hidden = false;
   if (dashboardCategories) dashboardCategories.hidden = false;
   if (dashboardGrid) dashboardGrid.hidden = true;
   if (dashboardWorkspaceHeading) dashboardWorkspaceHeading.hidden = true;
@@ -8189,6 +8195,7 @@ function showDashboardWorkspace(category) {
   const workspace = DASHBOARD_WORKSPACES[category];
   if (!workspace) return;
   activeDashboardCategory = category;
+  if (dashboardActivityCenter) dashboardActivityCenter.hidden = true;
   if (dashboardCategories) dashboardCategories.hidden = true;
   if (dashboardWorkspaceHeading) dashboardWorkspaceHeading.hidden = false;
   if (dashboardWorkspaceTitle) dashboardWorkspaceTitle.textContent = workspace.title;
@@ -8208,7 +8215,10 @@ function showDashboardWorkspace(category) {
 
 function setDashboardOpen(open) {
   if (!capabilityDashboard) return;
-  if (open) showDashboardHome();
+  if (open) {
+    showDashboardHome();
+    if (authToken) void refreshDashboardActivities();
+  }
   capabilityDashboard.classList.toggle("open", Boolean(open));
   capabilityDashboard.setAttribute("aria-hidden", String(!open));
   if (open) dashboardCloseButton?.focus();
@@ -8616,19 +8626,136 @@ function makeTaskActionButton(label, action, taskId, confirmText = "") {
   return button;
 }
 
+function getActivityKind(task) {
+  const status = String(task?.status || "").toUpperCase();
+  if (["COMPLETED", "SUCCEEDED", "SUCCESS", "DONE"].includes(status)) return "succeeded";
+  if (["FAILED", "ERROR"].includes(status)) return "failed";
+  if (["CANCELLED", "CANCELED"].includes(status)) return "cancelled";
+  return "running";
+}
+
+function filterTasksForActivity(tasks) {
+  const source = Array.isArray(tasks) ? tasks : [];
+  if (taskActivityFilter === "all") return source;
+  if (taskActivityFilter === "running") return source.filter((task) => getActivityKind(task) === "running");
+  if (taskActivityFilter === "succeeded") return source.filter((task) => getActivityKind(task) === "succeeded");
+  if (taskActivityFilter === "failed") return source.filter((task) => getActivityKind(task) === "failed");
+  return source;
+}
+
+function getTaskWorkspaceLabel(task) {
+  const metadata = taskMetadata(task);
+  const category = String(metadata.workspace || metadata.category || metadata.originWorkspace || "").toLowerCase();
+  const labels = {
+    files: "Files & Projects", create: "Create Media", edit: "Media Studio",
+    build: "Software Factory", research: "Research & Knowledge",
+    agents: "Agents & Automation", settings: "Settings"
+  };
+  if (labels[category]) return labels[category];
+  const source = String(metadata.source || "").toLowerCase();
+  if (source.includes("chat")) return "Conversation";
+  if (source.includes("dashboard")) return "Agents & Automation";
+  return "General task";
+}
+
+function renderActivityDashboard(tasks) {
+  const all = Array.isArray(tasks) ? tasks : [];
+  const counts = {
+    all: all.length,
+    succeeded: all.filter((task) => getActivityKind(task) === "succeeded").length,
+    failed: all.filter((task) => getActivityKind(task) === "failed").length,
+    running: all.filter((task) => getActivityKind(task) === "running").length
+  };
+  const countIds = {
+    all: "activityRecentCount", succeeded: "activitySucceededCount",
+    failed: "activityFailedCount", running: "activityRunningCount"
+  };
+  Object.entries(countIds).forEach(([key, id]) => {
+    const element = document.getElementById(id);
+    if (element) element.textContent = String(counts[key]);
+  });
+  const updated = document.getElementById("activityLastUpdated");
+  if (updated) updated.textContent = "Updated " + new Date().toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"});
+  if (!recentActivityList) return;
+  recentActivityList.replaceChildren();
+  if (!all.length) {
+    const empty = document.createElement("p");
+    empty.className = "task-list-empty";
+    empty.textContent = authToken ? "Nta bikorwa biragaragara ubu. Ibikorwa bishya bizajya bigaragara hano." : "Injira muri konti kugira ngo urebe ibikorwa byawe.";
+    recentActivityList.appendChild(empty);
+    return;
+  }
+  all.slice(0, 6).forEach((task) => {
+    const row = document.createElement("article");
+    row.className = "recent-activity-item";
+    const copy = document.createElement("div");
+    copy.className = "recent-activity-copy";
+    const title = document.createElement("strong");
+    title.textContent = String(task?.task || "Untitled task").slice(0, 180);
+    const meta = document.createElement("p");
+    meta.textContent = getTaskWorkspaceLabel(task) + " · " + String(task?.status || "UNKNOWN").replace(/_/g, " ");
+    const message = document.createElement("small");
+    message.textContent = String(task?.progress_message || task?.error || "Nta butumwa bw'inyongera.");
+    copy.append(title, meta, message);
+    const side = document.createElement("div");
+    side.className = "recent-activity-side";
+    const progress = document.createElement("b");
+    progress.textContent = Math.max(0, Math.min(100, Number(task?.progress) || 0)) + "%";
+    const open = document.createElement("button");
+    open.type = "button";
+    open.className = "task-secondary-button";
+    open.textContent = "View activity";
+    open.addEventListener("click", () => {
+      const kind = getActivityKind(task);
+      openTaskManager(kind === "cancelled" ? "all" : kind);
+    });
+    side.append(progress, open);
+    row.append(copy, side);
+    recentActivityList.appendChild(row);
+  });
+}
+
+async function refreshDashboardActivities() {
+  if (dashboardActivityBusy || !authToken) {
+    if (!authToken) renderActivityDashboard([]);
+    return;
+  }
+  dashboardActivityBusy = true;
+  if (activityRefreshButton) activityRefreshButton.disabled = true;
+  try {
+    const data = await apiRequest(API_ENDPOINTS.tasks + "?limit=50", { method: "GET", timeoutMs: 20000 });
+    if (!data?.success || !Array.isArray(data.tasks)) throw new Error(data?.error || "Ntibyashobotse kubona activities.");
+    cachedTasks = data.tasks.slice().sort((a, b) => Date.parse(b?.created_at || 0) - Date.parse(a?.created_at || 0));
+    renderActivityDashboard(cachedTasks);
+  } catch (error) {
+    if (recentActivityList && !recentActivityList.childElementCount) {
+      const message = document.createElement("p");
+      message.className = "task-list-empty";
+      message.textContent = String(error?.message || "Activities ntizashoboye kuboneka. Kanda Refresh activities wongere ugerageze.");
+      recentActivityList.appendChild(message);
+    }
+  } finally {
+    dashboardActivityBusy = false;
+    if (activityRefreshButton) activityRefreshButton.disabled = false;
+  }
+}
+
 function renderTaskList(tasks) {
   if (!taskList) return;
   taskList.replaceChildren();
+  const filteredTasks = filterTasksForActivity(tasks);
 
-  if (!tasks.length) {
+  if (!filteredTasks.length) {
     const empty = document.createElement("p");
     empty.className = "task-list-empty";
-    empty.textContent = "Nta task uratangiza. Andika icyo ushaka ko IRHCF ikora hejuru, hanyuma ukande Start task.";
+    empty.textContent = taskActivityFilter === "all"
+      ? "Nta task uratangiza. Andika icyo ushaka ko IRHCF ikora hejuru, hanyuma ukande Start task."
+      : "Nta gikorwa kiri muri iki cyiciro.";
     taskList.appendChild(empty);
     return;
   }
 
-  for (const task of tasks) {
+  for (const task of filteredTasks) {
     const article = document.createElement("article");
     article.className = "task-item";
 
@@ -8787,7 +8914,9 @@ async function refreshTaskList() {
     if (!data?.success || !Array.isArray(data.tasks)) {
       throw new Error(data?.error || "Ntibyashobotse kubona tasks.");
     }
-    renderTaskList(data.tasks);
+    cachedTasks = data.tasks.slice().sort((a, b) => Date.parse(b?.created_at || 0) - Date.parse(a?.created_at || 0));
+    renderActivityDashboard(cachedTasks);
+    renderTaskList(cachedTasks);
     setDashboardStatus(`Loaded ${data.tasks.length} task(s). Progress refreshes automatically.`);
   } catch (error) {
     console.error("[IRHCF TASKS] Refresh failed:", error);
@@ -9123,15 +9252,18 @@ if (taskProgressPanel) {
   });
 }
 
-function openTaskManager() {
+function openTaskManager(filter = "all") {
+  taskActivityFilter = ["all", "running", "succeeded", "failed"].includes(filter) ? filter : "all";
   if (!authToken) {
     setDashboardStatus("Banza winjire muri konti kugira ngo ukoreshe Long Tasks.");
     showAuthenticationDialog();
     return;
   }
+  setDashboardOpen(true);
+  if (dashboardCategories) dashboardCategories.hidden = true;
+  if (dashboardActivityCenter) dashboardActivityCenter.hidden = true;
   if (dashboardGrid) dashboardGrid.hidden = true;
   if (taskManager) taskManager.hidden = false;
-  setDashboardOpen(true);
   if (taskInput) taskInput.focus();
   void refreshTaskList();
   if (taskRefreshTimer) clearInterval(taskRefreshTimer);
@@ -9647,6 +9779,11 @@ if (dashboardCategories) {
     button.addEventListener("click", () => showDashboardWorkspace(button.dataset.dashboardCategory));
   });
 }
+
+if (activityRefreshButton) activityRefreshButton.addEventListener("click", () => void refreshDashboardActivities());
+document.querySelectorAll("[data-activity-filter]").forEach((button) => {
+  button.addEventListener("click", () => openTaskManager(button.dataset.activityFilter || "all"));
+});
 
 if (taskManagerBackButton) {
   taskManagerBackButton.addEventListener("click", closeTaskManager);
