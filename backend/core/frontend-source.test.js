@@ -361,3 +361,29 @@ test("local image routing keeps unsupported prompts eligible for explicitly appr
   assert.ok(server.includes("req.body?.allowPaidProvider !== true"),
     "Unsupported effects must not use a paid provider unless the user explicitly approves it.");
 });
+
+
+test("chat-first layout exposes one main dashboard entry instead of a crowded tool header", () => {
+  const root = path.join(__dirname, "..", "..");
+  const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  const headerStart = html.indexOf('<div class="header-actions">');
+  const headerEnd = html.indexOf("</div>", headerStart);
+  assert.ok(headerStart >= 0 && headerEnd > headerStart, "Main header actions must exist.");
+  const header = html.slice(headerStart, headerEnd);
+  assert.match(header, /id="dashboardButton"/);
+  assert.doesNotMatch(header, /id="actionCenterButton"|id="clearChatButton"|id="headerNewChatButton"|id="languageSelect"/,
+    "Extra service/settings actions must not clutter the chat header.");
+  assert.match(html, /id="dashboardCategories"/, "Main dashboard must group services into workspaces.");
+  assert.match(html, /data-dashboard-category="create"/, "Creation tools must live inside a workspace.");
+  assert.match(html, /id="dashboardServices" hidden/, "Individual services must stay hidden until a workspace is opened.");
+  assert.match(html, /id="dashboardBackButton"/, "Users must be able to return to the main dashboard.");
+});
+
+test("dashboard workspace navigation filters services and resets to the main dashboard on open", () => {
+  const app = fs.readFileSync(path.join(__dirname, "..", "..", "app.js"), "utf8");
+  assert.match(app, /function showDashboardHome\(\)/);
+  assert.match(app, /function showDashboardWorkspace\(category\)/);
+  assert.match(app, /card\.dataset\.dashboardCategory !== category/);
+  assert.match(app, /dashboardCategories\.querySelectorAll\("\[data-dashboard-category\]"\)/);
+  assert.match(app, /if \(open\) showDashboardHome\(\)/);
+});
