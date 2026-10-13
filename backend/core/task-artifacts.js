@@ -101,12 +101,43 @@ function buildTaskArtifact({task,result,taskId}={}) {
   :{required:true,artifacts:[],verified:false,expectedFiles:[request.name],error:built.error||"The requested artifact could not be verified."};
 }
 
-function extractNamedFileBlocks(text) {
+function extractNamedFileBlocks(text, expectedFiles = WEBSITE_FILES) {
  const source=String(text||"");
  const blocks=[];
- const pattern=/```([a-zA-Z0-9_-]+)\s+(?:filename\s*=\s*)?["']?([A-Za-z0-9_.-]+\.(?:html|css|js|md))["']?\s*\r?\n([\s\S]*?)\r?\n```/g;
+ const pattern=/```([^\r\n`]*)(?:\r?\n)([\s\S]*?)\r?\n```/g;
  let match;
- while((match=pattern.exec(source))!==null) blocks.push({language:match[1].toLowerCase(),name:match[2],content:match[3].trim()+"\n"});
+ while((match=pattern.exec(source))!==null) {
+  const info=String(match[1]||"").trim();
+  const body=String(match[2]||"").trim()+"\n";
+  if(!body.trim()) continue;
+  const filenameMatch=info.match(/(?:filename\s*=\s*)?["']?([A-Za-z0-9_.-]+\.(?:html|css|js|md))["']?/i);
+  const language=(info.split(/\s+/)[0]||"").toLowerCase();
+  const languageExtension=({html:"html",htm:"html",css:"css",js:"js",javascript:"js",ecmascript:"js",md:"md",markdown:"md",text:"md",txt:"md"})[language]||"";
+  const explicitName=filenameMatch?.[1];
+  const expectedExtension=expectedFiles.find(file=>file.extension===languageExtension)?.name;
+  blocks.push({language,name:explicitName||expectedExtension||null,content:body,info});
+ }
+ // Also support labelled Markdown sections such as "## index.html" followed by a code fence.
+ for(const file of expectedFiles) {
+  if(blocks.some(block=>block.name===file.name)) continue;
+  const heading=new RegExp("^[#]{1,4}\\s*"+file.name.replace(/[.*+?^${}()|[\\]\\\\]/g,"\\$&")+"\\s*$","im");
+  const found=heading.exec(source);
+  if(!found) continue;
+  const from=found.index+found[0].length;
+  const nextHeading=/^#{1,4}\s+[^\r\n]+/gm;
+  nextHeading.lastIndex=from;
+  const next=nextHeading.exec(source);
+  const section=source.slice(from,next?next.index:source.length).trim();
+  const fenced=section.match(/```[^\r\n`]*(?:\r?\n)([\s\S]*?)\r?\n```/);
+  const content=(fenced?fenced[1]:section).trim();
+  if(content) blocks.push({language:file.extension,name:file.name,content:content+"\n",info:"section"});
+ }
+ // Legacy responses often return four anonymous code blocks in the expected order.
+ const unassigned=blocks.filter(block=>!block.name);
+ const missing=expectedFiles.filter(file=>!blocks.some(block=>block.name===file.name));
+ if(unassigned.length && unassigned.length===missing.length) {
+  unassigned.forEach((block,index)=>{ block.name=missing[index].name; });
+ }
  return blocks;
 }
 
@@ -116,7 +147,7 @@ function buildTaskArtifacts({task,result,taskId}={}) {
  if(expected.length===1)return buildTaskArtifact({task,result,taskId});
  if(!result||result.success===false)return {required:true,verified:false,expectedFiles:expected.map(f=>f.name),artifacts:[],error:"Agent execution failed; no website files were created."};
  const response=getResponseText(result);
- const blocks=extractNamedFileBlocks(response);
+ const blocks=extractNamedFileBlocks(response, expected);
  const byName=new Map();
  for(const block of blocks) {
   if(expected.some(file=>file.name===block.name)&&!byName.has(block.name))byName.set(block.name,block);
