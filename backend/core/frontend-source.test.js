@@ -120,8 +120,8 @@ test("attached-photo background editing calls the authenticated real image-edit 
 
   assert.ok(app.includes('"/api/media/image/edit"'));
   const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
-  assert.match(html, /src="app\.js\?v=2\.0\.25"/, "Deploying a new frontend version must bypass stale cached app.js.");
-  assert.match(html, /href="style\.css\?v=2\.0\.24"/, "Deploying a new frontend version must refresh the related stylesheet.");
+  assert.match(html, /src="app\.js\?v=2\.0\.27"/, "Deploying a new frontend version must bypass stale cached app.js.");
+  assert.match(html, /href="style\.css\?v=2\.0\.26"/, "Deploying a new frontend version must refresh the related stylesheet.");
   assert.ok(app.includes("async function editAttachedImage(prompt, file)"));
   assert.ok(app.includes('[IRHCF IMAGE EDIT ROUTING v2.0.5]'), "The deployed frontend must expose a routing diagnostic so stale frontend code can be distinguished from a failed image-edit API.");
   assert.ok(app.includes("pendingImageEditPrompt"), "A background-edit request made before choosing a photo must be remembered.");
@@ -203,8 +203,8 @@ test("selected image attachments show thumbnails in the composer and refresh fro
   assert.match(app, /attachment-thumbnail/);
   assert.match(app, /Photo preview: /);
   assert.match(app, /URL\.createObjectURL\(file\)/);
-  assert.match(html, /src="app\.js\?v=2\.0\.25"/);
-  assert.match(html, /href="style\.css\?v=2\.0\.24"/);
+  assert.match(html, /src="app\.js\?v=2\.0\.27"/);
+  assert.match(html, /href="style\.css\?v=2\.0\.26"/);
 });
 
 
@@ -224,8 +224,8 @@ test("live camera capture provides preview, still photo, and bounded video recor
   assert.match(camera, /irhcf-photo-/);
   assert.match(camera, /irhcf-video-/);
   assert.match(css, /irhcf-camera-modal/);
-  assert.match(html, /src="app\.js\?v=2\.0\.25"/);
-  assert.match(html, /href="style\.css\?v=2\.0\.24"/);
+  assert.match(html, /src="app\.js\?v=2\.0\.27"/);
+  assert.match(html, /href="style\.css\?v=2\.0\.26"/);
 });
 
 
@@ -260,8 +260,8 @@ test("chat routes explicit build requests to the persistent task executor and an
   assert.match(app, /API_ENDPOINTS\.tasks/);
   assert.match(app, /deliverableRequired: true/);
   assert.match(app, /Build and generate the actual requested deliverable/);
-  assert.match(html, /src="app\.js\?v=2\.0\.25"/);
-  assert.match(html, /href="style\.css\?v=2\.0\.24"/);
+  assert.match(html, /src="app\.js\?v=2\.0\.27"/);
+  assert.match(html, /href="style\.css\?v=2\.0\.26"/);
 });
 
 
@@ -312,7 +312,7 @@ test("live voice fallback follows the selected/device language and preserves rep
   assert.match(voice, /navigator\.languages\?\.\[0\] \|\| navigator\.language/);
   assert.match(voice, /recognition\.lang = languageTag/);
   assert.match(voice, /\.map\(r => r\[0\]\?\.transcript \|\| ""\)\.join\(" "\)/);
-  assert.match(html, /voice-client\.js\?v=2\.0\.24/);
+  assert.match(html, /voice-client\.js\?v=2\.0\.26/);
 });
 
 test("live voice starts browser fallback when WebRTC is unavailable and can stop it", () => {
@@ -322,7 +322,7 @@ test("live voice starts browser fallback when WebRTC is unavailable and can stop
   assert.match(voice, /if \(live \|\| starting \|\| fallbackRecognition\)/);
   assert.match(voice, /if \(!window\.RTCPeerConnection \|\| !navigator\.mediaDevices\?\.getUserMedia\) \{\s*startBrowserFallback\(/);
   assert.match(voice, /cleanupLive\("Live voice conversation ended\."\)/);
-  assert.match(html, /voice-client\.js\?v=2\.0\.24/);
+  assert.match(html, /voice-client\.js\?v=2\.0\.26/);
 });
 
 
@@ -396,6 +396,6 @@ test("dashboard opens as a full-screen app workspace instead of a floating overl
   assert.match(css, /\.capability-dashboard\.open\s*\{\s*display:\s*flex/);
   assert.match(css, /\.capability-dashboard \.dashboard-backdrop\s*\{\s*display:\s*none !important/);
   assert.match(css, /\.capability-dashboard \.dashboard-panel\s*\{[\s\S]*?width:\s*100%/);
-  assert.match(html, /style\.css\?v=2\.0\.24/);
-  assert.match(html, /app\.js\?v=2\.0\.25/);
+  assert.match(html, /style\.css\?v=2\.0\.26/);
+  assert.match(html, /app\.js\?v=2\.0\.27/);
 });
