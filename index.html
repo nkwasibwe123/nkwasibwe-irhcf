@@ -214,6 +214,20 @@
             <button class="dashboard-category-card" type="button" data-dashboard-category="agents"><span class="dashboard-card-icon">🤖</span><strong>Agents & Automation</strong><span>Long tasks, agent teams, capabilities and business research.</span><span class="category-open">Open workspace →</span></button>
             <button class="dashboard-category-card" type="button" data-dashboard-category="settings"><span class="dashboard-card-icon">⚙️</span><strong>Settings</strong><span>Language and interface preferences.</span><span class="category-open">Open settings →</span></button>
           </div>
+          <section id="dashboardActivityCenter" class="dashboard-activity-center" aria-labelledby="activityCenterTitle">
+            <div class="activity-center-heading">
+              <div><p class="dashboard-eyebrow">WORK OVERVIEW</p><h3 id="activityCenterTitle">Activities / Ibikorwa</h3><p>Reba uko imirimo yawe ihagaze. Hitamo icyiciro kugira ngo ufungure ibikorwa birimo.</p></div>
+              <button id="activityRefreshButton" class="task-secondary-button" type="button">Refresh activities</button>
+            </div>
+            <div class="activity-summary-grid">
+              <button type="button" class="activity-summary-card" data-activity-filter="all"><span>🕘</span><strong id="activityRecentCount">—</strong><b>Recent activities</b><small>Ibikorwa byose biheruka</small></button>
+              <button type="button" class="activity-summary-card activity-succeeded" data-activity-filter="succeeded"><span>✅</span><strong id="activitySucceededCount">—</strong><b>Succeeded activities</b><small>Ibikorwa byarangiye neza</small></button>
+              <button type="button" class="activity-summary-card activity-failed" data-activity-filter="failed"><span>⚠️</span><strong id="activityFailedCount">—</strong><b>Failed activities</b><small>Ibikorwa byahuye n'ikibazo</small></button>
+              <button type="button" class="activity-summary-card activity-running" data-activity-filter="running"><span>⏳</span><strong id="activityRunningCount">—</strong><b>Running activities</b><small>Ibikorwa biri gukorwa cyangwa bitegereje</small></button>
+            </div>
+            <div class="recent-activities-heading"><h4>Recent activity</h4><span id="activityLastUpdated">Hategerejwe amakuru…</span></div>
+            <div id="recentActivityList" class="recent-activity-list" aria-live="polite"><p class="task-list-empty">Loading activities…</p></div>
+          </section>
           <div id="dashboardWorkspaceHeading" class="dashboard-workspace-heading" hidden>
             <h3 id="dashboardWorkspaceTitle">Workspace</h3>
             <p id="dashboardWorkspaceDescription"></p>
