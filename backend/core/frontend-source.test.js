@@ -387,3 +387,14 @@ test("dashboard workspace navigation filters services and resets to the main das
   assert.match(app, /dashboardCategories\.querySelectorAll\("\[data-dashboard-category\]"\)/);
   assert.match(app, /if \(open\) showDashboardHome\(\)/);
 });
+
+
+test("dashboard opens as a full-screen app workspace instead of a floating overlay", () => {
+  const root = path.join(__dirname, "..", "..");
+  const css = fs.readFileSync(path.join(root, "style.css"), "utf8");
+  assert.match(css, /\.capability-dashboard\.open\s*\{\s*display:\s*flex/);
+  assert.match(css, /\.capability-dashboard \.dashboard-backdrop\s*\{\s*display:\s*none !important/);
+  assert.match(css, /\.capability-dashboard \.dashboard-panel\s*\{[\s\S]*?width:\s*100%/);
+  assert.match(html, /style\.css\?v=2\.0\.24/);
+  assert.match(html, /app\.js\?v=2\.0\.25/);
+});
