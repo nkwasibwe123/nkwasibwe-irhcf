@@ -283,6 +283,8 @@ test("persistent task progress is shown outside chat with a character-like think
   const css = fs.readFileSync(path.join(root, "style.css"), "utf8");
 
   assert.match(html, /id="taskProgressPanel"/);
+  assert.ok(html.indexOf('id="taskProgressPanel"') > html.indexOf('id="taskManager"'), "Live task progress must live inside the task workspace, not the general conversation.");
+  assert.ok(html.indexOf('id="taskProgressPanel"') < html.indexOf('id="dashboardStatus"'), "Task progress must stay inside the dashboard task manager.");
   assert.match(html, /id="taskProgressStages"/);
   assert.match(html, /id="taskPublishPrompt"/);
   assert.match(app, /async function refreshTaskProgressPanel\(\)/);
