@@ -140,6 +140,30 @@ test("task response string is usable output", () => {
   assert.equal(isUsableTaskResult({ success: true, response: "The task produced a real result." }), true);
 });
 
+
+test("website task gets verified starter artifacts when agent output has no code blocks", () => {
+  const task = "Kora website nto y'ishuri. Kora dosiye za HTML, CSS na JavaScript, uzibike";
+  const result = buildTaskArtifacts({
+    task,
+    taskId: 38,
+    result: { success: true, response: "I will create the website now." }
+  });
+  assert.equal(result.required, true);
+  assert.equal(result.verified, true);
+  assert.equal(result.fallbackUsed, true);
+  assert.deepEqual(result.artifacts.map(file => file.name), [
+    "index.html", "style.css", "script.js", "README.md"
+  ]);
+  assert.match(result.artifacts.find(file => file.name === "index.html").content, /<!doctype html>/i);
+  assert.match(result.artifacts.find(file => file.name === "style.css").content, /@media/);
+  assert.match(result.artifacts.find(file => file.name === "script.js").content, /addEventListener/);
+  assert.equal(isUsableTaskResult({
+    success: true,
+    response: "I will create the website now.",
+    taskAction: result
+  }), true);
+});
+
 test("file-producing task creates a syntax-verified downloadable artifact", () => {
   const task = "Create a JavaScript file named hello.js that prints hello";
   const request = requestedArtifact(task);
