@@ -313,6 +313,9 @@ const taskCreateButton =
 const taskList =
   document.getElementById("taskList");
 const dashboardActivityCenter = document.getElementById("dashboardActivityCenter");
+const workspaceActivityCenter = document.getElementById("workspaceActivityCenter");
+const workspaceRecentActivityList = document.getElementById("workspaceRecentActivityList");
+const workspaceActivityRefresh = document.getElementById("workspaceActivityRefresh");
 const recentActivityList = document.getElementById("recentActivityList");
 const activityRefreshButton = document.getElementById("activityRefreshButton");
 let taskRefreshTimer = null;
@@ -320,6 +323,7 @@ let taskListBusy = false;
 let dashboardActivityBusy = false;
 let cachedTasks = [];
 let taskActivityFilter = "all";
+let activeTaskWorkspaceFilter = null;
 
 const taskProgressPanel = document.getElementById("taskProgressPanel");
 const taskProgressTitle = document.getElementById("taskProgressTitle");
@@ -8179,6 +8183,7 @@ function showDashboardHome() {
   activeDashboardCategory = null;
   if (taskManager) taskManager.hidden = true;
   if (dashboardActivityCenter) dashboardActivityCenter.hidden = false;
+  if (workspaceActivityCenter) workspaceActivityCenter.hidden = true;
   if (dashboardCategories) dashboardCategories.hidden = false;
   if (dashboardGrid) dashboardGrid.hidden = true;
   if (dashboardWorkspaceHeading) dashboardWorkspaceHeading.hidden = true;
@@ -8197,6 +8202,7 @@ function showDashboardWorkspace(category) {
   if (!workspace) return;
   activeDashboardCategory = category;
   if (dashboardActivityCenter) dashboardActivityCenter.hidden = true;
+  if (workspaceActivityCenter) workspaceActivityCenter.hidden = false;
   if (dashboardCategories) dashboardCategories.hidden = true;
   if (dashboardWorkspaceHeading) dashboardWorkspaceHeading.hidden = false;
   if (dashboardWorkspaceTitle) dashboardWorkspaceTitle.textContent = workspace.title;
@@ -8212,6 +8218,7 @@ function showDashboardWorkspace(category) {
   }
   if (taskManager) taskManager.hidden = true;
   setDashboardStatus("Workspace: " + workspace.title);
+  void refreshWorkspaceActivities();
 }
 
 function setDashboardOpen(open) {
@@ -8633,13 +8640,36 @@ function getActivityKind(task) {
   return "running";
 }
 
+function getTaskWorkspaceCategory(task) {
+ const m=taskMetadata(task); const raw=String(m.workspace||m.category||m.originWorkspace||m.service||"").toLowerCase();
+ const map={files:"files","files & projects":"files","file manager":"files",create:"create","create media":"create",media:"create",edit:"edit","media studio":"edit",transcription:"edit",audio:"edit",video:"edit",build:"build","software factory":"build",software:"build",development:"build",research:"research","research & knowledge":"research",search:"research",agents:"agents","agents & automation":"agents",automation:"agents",tasks:"agents",settings:"settings"};
+ if(map[raw])return map[raw]; const s=String(m.source||m.origin||"").toLowerCase();
+ if(/transcri|audio|video|media/.test(s))return "edit";if(/research|search/.test(s))return "research";if(/software|build|code/.test(s))return "build";if(/agent|task/.test(s))return "agents";return null;
+}
 function filterTasksForActivity(tasks) {
-  const source = Array.isArray(tasks) ? tasks : [];
-  if (taskActivityFilter === "all") return source;
-  if (taskActivityFilter === "running") return source.filter((task) => getActivityKind(task) === "running");
-  if (taskActivityFilter === "succeeded") return source.filter((task) => getActivityKind(task) === "succeeded");
-  if (taskActivityFilter === "failed") return source.filter((task) => getActivityKind(task) === "failed");
-  return source;
+ let source=Array.isArray(tasks)?tasks:[]; if(activeTaskWorkspaceFilter)source=source.filter(t=>getTaskWorkspaceCategory(t)===activeTaskWorkspaceFilter);
+ if(taskActivityFilter==="all")return source;
+ if(taskActivityFilter==="running")return source.filter(t=>getActivityKind(t)==="running");
+ if(taskActivityFilter==="succeeded")return source.filter(t=>getActivityKind(t)==="succeeded");
+ if(taskActivityFilter==="failed")return source.filter(t=>getActivityKind(t)==="failed"); return source;
+}
+function renderWorkspaceActivities() {
+ if(!workspaceActivityCenter||!activeDashboardCategory)return;
+ const tasks=cachedTasks.filter(t=>getTaskWorkspaceCategory(t)===activeDashboardCategory);
+ const counts={all:tasks.length,succeeded:tasks.filter(t=>getActivityKind(t)==="succeeded").length,failed:tasks.filter(t=>getActivityKind(t)==="failed").length,running:tasks.filter(t=>getActivityKind(t)==="running").length};
+ const ids={all:"workspaceActivityRecentCount",succeeded:"workspaceActivitySucceededCount",failed:"workspaceActivityFailedCount",running:"workspaceActivityRunningCount"};
+ Object.entries(ids).forEach(([k,id])=>{const e=document.getElementById(id);if(e)e.textContent=String(counts[k]);});
+ [["succeeded","workspaceChartSucceeded"],["running","workspaceChartRunning"],["failed","workspaceChartFailed"]].forEach(([k,id])=>{const f=document.getElementById(id),v=document.getElementById(id+"Value");if(f)f.style.width=(counts.all?counts[k]/counts.all*100:0)+"%";if(v)v.textContent=String(counts[k]);});
+ const u=document.getElementById("workspaceActivityLastUpdated");if(u)u.textContent="Updated "+new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
+ const scope=document.getElementById("workspaceActivityScopeLabel");if(scope)scope.textContent=(DASHBOARD_WORKSPACES[activeDashboardCategory]?.title||activeDashboardCategory)+" only";
+ if(!workspaceRecentActivityList)return;workspaceRecentActivityList.replaceChildren();
+ if(!tasks.length){const p=document.createElement("p");p.className="task-list-empty";p.textContent=authToken?"Nta gikorwa kiraboneka muri iyi service. Ibikorwa utangiriye hano bizajya bigaragara aha.":"Injira muri konti kugira ngo urebe ibikorwa bya service.";workspaceRecentActivityList.appendChild(p);return;}
+ tasks.slice(0,5).forEach(t=>{const row=document.createElement("article");row.className="recent-activity-item";const copy=document.createElement("div");copy.className="recent-activity-copy";const title=document.createElement("strong");title.textContent=String(t.task||"Untitled task").slice(0,180);const meta=document.createElement("p");meta.textContent=String(t.status||"UNKNOWN").replace(/_/g," ")+" · "+Math.max(0,Math.min(100,Number(t.progress)||0))+"%";const msg=document.createElement("small");msg.textContent=String(t.progress_message||t.error||"Nta butumwa bw'inyongera.");copy.append(title,meta,msg);const side=document.createElement("div");side.className="recent-activity-side";const b=document.createElement("button");b.type="button";b.className="task-secondary-button";b.textContent="Open activity";b.addEventListener("click",()=>openTaskManager(getActivityKind(t)==="cancelled"?"all":getActivityKind(t),activeDashboardCategory));side.appendChild(b);row.append(copy,side);workspaceRecentActivityList.appendChild(row);});
+}
+async function refreshWorkspaceActivities() {
+ if(!activeDashboardCategory)return;if(!authToken){renderWorkspaceActivities();return;}
+ try{const d=await apiRequest(API_ENDPOINTS.tasks+"?limit=100",{method:"GET",timeoutMs:20000});if(d?.success&&Array.isArray(d.tasks))cachedTasks=d.tasks.slice().sort((a,b)=>Date.parse(b?.created_at||0)-Date.parse(a?.created_at||0));renderActivityDashboard(cachedTasks);renderWorkspaceActivities();}
+ catch(e){renderWorkspaceActivities();if(workspaceRecentActivityList&&!workspaceRecentActivityList.childElementCount){const p=document.createElement("p");p.className="task-list-empty";p.textContent=String(e?.message||"Ntibyashobotse kuvugurura ibikorwa.");workspaceRecentActivityList.appendChild(p);}}
 }
 
 function getTaskWorkspaceLabel(task) {
@@ -8726,6 +8756,7 @@ async function refreshDashboardActivities() {
     if (!data?.success || !Array.isArray(data.tasks)) throw new Error(data?.error || "Ntibyashobotse kubona activities.");
     cachedTasks = data.tasks.slice().sort((a, b) => Date.parse(b?.created_at || 0) - Date.parse(a?.created_at || 0));
     renderActivityDashboard(cachedTasks);
+    renderWorkspaceActivities();
   } catch (error) {
     if (recentActivityList && !recentActivityList.childElementCount) {
       const message = document.createElement("p");
@@ -9251,7 +9282,8 @@ if (taskProgressPanel) {
   });
 }
 
-function openTaskManager(filter = "all") {
+function openTaskManager(filter = "all", workspaceFilter = activeDashboardCategory || null) {
+  activeTaskWorkspaceFilter = workspaceFilter || null;
   taskActivityFilter = ["all", "running", "succeeded", "failed"].includes(filter) ? filter : "all";
   const taskManagerTitle = document.getElementById("taskManagerTitle");
   if (taskManagerTitle) taskManagerTitle.textContent = ({all:"Recent activities",running:"Running activities",succeeded:"Succeeded activities",failed:"Failed activities"})[taskActivityFilter];
@@ -9782,6 +9814,8 @@ if (dashboardCategories) {
 }
 
 if (activityRefreshButton) activityRefreshButton.addEventListener("click", () => void refreshDashboardActivities());
+if (workspaceActivityRefresh) workspaceActivityRefresh.addEventListener("click", () => void refreshWorkspaceActivities());
+document.querySelectorAll("[data-workspace-activity-filter]").forEach(b=>b.addEventListener("click",()=>openTaskManager(b.dataset.workspaceActivityFilter||"all",activeDashboardCategory)));
 document.querySelectorAll("[data-activity-filter]").forEach((button) => {
   button.addEventListener("click", () => openTaskManager(button.dataset.activityFilter || "all"));
 });
