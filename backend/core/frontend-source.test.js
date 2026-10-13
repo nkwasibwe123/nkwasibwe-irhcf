@@ -120,8 +120,8 @@ test("attached-photo background editing calls the authenticated real image-edit 
 
   assert.ok(app.includes('"/api/media/image/edit"'));
   const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
-  assert.match(html, /src="app\.js\?v=2\.0\.23"/, "Deploying a new frontend version must bypass stale cached app.js.");
-  assert.match(html, /href="style\.css\?v=2\.0\.22"/, "Deploying a new frontend version must refresh the related stylesheet.");
+  assert.match(html, /src="app\.js\?v=2\.0\.24"/, "Deploying a new frontend version must bypass stale cached app.js.");
+  assert.match(html, /href="style\.css\?v=2\.0\.23"/, "Deploying a new frontend version must refresh the related stylesheet.");
   assert.ok(app.includes("async function editAttachedImage(prompt, file)"));
   assert.ok(app.includes('[IRHCF IMAGE EDIT ROUTING v2.0.5]'), "The deployed frontend must expose a routing diagnostic so stale frontend code can be distinguished from a failed image-edit API.");
   assert.ok(app.includes("pendingImageEditPrompt"), "A background-edit request made before choosing a photo must be remembered.");
@@ -203,8 +203,8 @@ test("selected image attachments show thumbnails in the composer and refresh fro
   assert.match(app, /attachment-thumbnail/);
   assert.match(app, /Photo preview: /);
   assert.match(app, /URL\.createObjectURL\(file\)/);
-  assert.match(html, /src="app\.js\?v=2\.0\.23"/);
-  assert.match(html, /href="style\.css\?v=2\.0\.22"/);
+  assert.match(html, /src="app\.js\?v=2\.0\.24"/);
+  assert.match(html, /href="style\.css\?v=2\.0\.23"/);
 });
 
 
@@ -224,8 +224,8 @@ test("live camera capture provides preview, still photo, and bounded video recor
   assert.match(camera, /irhcf-photo-/);
   assert.match(camera, /irhcf-video-/);
   assert.match(css, /irhcf-camera-modal/);
-  assert.match(html, /src="app\.js\?v=2\.0\.23"/);
-  assert.match(html, /href="style\.css\?v=2\.0\.22"/);
+  assert.match(html, /src="app\.js\?v=2\.0\.24"/);
+  assert.match(html, /href="style\.css\?v=2\.0\.23"/);
 });
 
 
@@ -260,8 +260,8 @@ test("chat routes explicit build requests to the persistent task executor and an
   assert.match(app, /API_ENDPOINTS\.tasks/);
   assert.match(app, /deliverableRequired: true/);
   assert.match(app, /Build and generate the actual requested deliverable/);
-  assert.match(html, /src="app\.js\?v=2\.0\.23"/);
-  assert.match(html, /href="style\.css\?v=2\.0\.22"/);
+  assert.match(html, /src="app\.js\?v=2\.0\.24"/);
+  assert.match(html, /href="style\.css\?v=2\.0\.23"/);
 });
 
 
@@ -360,4 +360,30 @@ test("local image routing keeps unsupported prompts eligible for explicitly appr
     "Only prompts mapped to a supported free effect should route to the local engine.");
   assert.ok(server.includes("req.body?.allowPaidProvider !== true"),
     "Unsupported effects must not use a paid provider unless the user explicitly approves it.");
+});
+
+
+test("chat-first layout exposes one main dashboard entry instead of a crowded tool header", () => {
+  const root = path.join(__dirname, "..", "..");
+  const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  const headerStart = html.indexOf('<div class="header-actions">');
+  const headerEnd = html.indexOf("</div>", headerStart);
+  assert.ok(headerStart >= 0 && headerEnd > headerStart, "Main header actions must exist.");
+  const header = html.slice(headerStart, headerEnd);
+  assert.match(header, /id="dashboardButton"/);
+  assert.doesNotMatch(header, /id="actionCenterButton"|id="clearChatButton"|id="headerNewChatButton"|id="languageSelect"/,
+    "Extra service/settings actions must not clutter the chat header.");
+  assert.match(html, /id="dashboardCategories"/, "Main dashboard must group services into workspaces.");
+  assert.match(html, /data-dashboard-category="create"/, "Creation tools must live inside a workspace.");
+  assert.match(html, /id="dashboardServices" hidden/, "Individual services must stay hidden until a workspace is opened.");
+  assert.match(html, /id="dashboardBackButton"/, "Users must be able to return to the main dashboard.");
+});
+
+test("dashboard workspace navigation filters services and resets to the main dashboard on open", () => {
+  const app = fs.readFileSync(path.join(__dirname, "..", "..", "app.js"), "utf8");
+  assert.match(app, /function showDashboardHome\(\)/);
+  assert.match(app, /function showDashboardWorkspace\(category\)/);
+  assert.match(app, /card\.dataset\.dashboardCategory !== category/);
+  assert.match(app, /dashboardCategories\.querySelectorAll\("\[data-dashboard-category\]"\)/);
+  assert.match(app, /if \(open\) showDashboardHome\(\)/);
 });
