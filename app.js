@@ -8901,6 +8901,19 @@ function renderTaskList(tasks) {
         article.appendChild(downloadButton);
       }
 
+      const resultText = typeof task.result === "string" ? task.result : JSON.stringify(task.result, null, 2);
+      if (getActivityKind(task) === "succeeded") {
+        const actions = document.createElement("div"); actions.className = "task-result-action-row";
+        const save = document.createElement("button"); save.type="button"; save.className="task-action-button"; save.textContent="Save result";
+        save.addEventListener("click",()=>{const blob=new Blob([resultText],{type:"application/json;charset=utf-8"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download="nkwasibwe-task-"+taskId+"-result.json";document.body.appendChild(a);a.click();a.remove();window.setTimeout(()=>URL.revokeObjectURL(url),1000);});
+        const edit = document.createElement("button"); edit.type="button"; edit.className="task-action-button"; edit.textContent="Edit result";
+        const box=document.createElement("div");box.className="task-edit-result";box.hidden=true;
+        const editor=document.createElement("textarea");editor.value=resultText;editor.setAttribute("aria-label","Edit task result");
+        const saveEdited=document.createElement("button");saveEdited.type="button";saveEdited.className="task-action-button";saveEdited.textContent="Save edited copy";
+        saveEdited.addEventListener("click",()=>{const blob=new Blob([editor.value],{type:"text/plain;charset=utf-8"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download="nkwasibwe-task-"+taskId+"-edited.txt";document.body.appendChild(a);a.click();a.remove();window.setTimeout(()=>URL.revokeObjectURL(url),1000);saveEdited.textContent="Saved to device";});
+        edit.addEventListener("click",()=>{box.hidden=!box.hidden;edit.textContent=box.hidden?"Edit result":"Close editor";});
+        box.append(editor,saveEdited);actions.append(save,edit);article.append(actions,box);
+      }
       const details = document.createElement("details");
       details.className = "task-result-details";
       const summary = document.createElement("summary");
