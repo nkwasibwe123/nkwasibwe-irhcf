@@ -350,3 +350,14 @@ test("audio transcription validates supported formats and requests automatic lan
   assert.match(app, /Serivisi ya transcription iri kubura cyangwa quota\/credits byarangiye/);
   assert.match(app, /ntitwakwandikira amagambo y'ibihimbano/);
 });
+
+test("local image routing keeps unsupported prompts eligible for explicitly approved provider fallback", () => {
+  const root = path.join(__dirname, "..", "..");
+  const server = fs.readFileSync(path.join(root, "backend", "server.js"), "utf8");
+  assert.ok(server.includes('requestedEffect !== "prompt" && freeLocalEffects.has(requestedEffect)'),
+    "The default prompt effect must not force every prompt into the limited local image engine.");
+  assert.match(server, /requestedMode === "prompt" && promptMapsToFreeEffect/,
+    "Only prompts mapped to a supported free effect should route to the local engine.");
+  assert.ok(server.includes("req.body?.allowPaidProvider !== true"),
+    "Unsupported effects must not use a paid provider unless the user explicitly approves it.");
+});
