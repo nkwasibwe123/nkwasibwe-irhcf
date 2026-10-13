@@ -273,6 +273,24 @@ const dashboardStatus =
 
 const dashboardGrid =
   capabilityDashboard?.querySelector(".dashboard-grid") || null;
+const dashboardCategories = document.getElementById("dashboardCategories");
+const dashboardWorkspaceHeading = document.getElementById("dashboardWorkspaceHeading");
+const dashboardWorkspaceTitle = document.getElementById("dashboardWorkspaceTitle");
+const dashboardWorkspaceDescription = document.getElementById("dashboardWorkspaceDescription");
+const dashboardSubtitle = document.getElementById("dashboardSubtitle");
+const dashboardLanguageSettings = document.getElementById("dashboardLanguageSettings");
+const dashboardBackButton = document.getElementById("dashboardBackButton");
+let activeDashboardCategory = null;
+
+const DASHBOARD_WORKSPACES = Object.freeze({
+  files: { title: "Files & Chat Attachments", description: "Choose only the kind of file you want to add to this conversation." },
+  create: { title: "Create Media", description: "Open a specific creation tool. Only the selected tool is shown here." },
+  edit: { title: "Media Studio", description: "Edit video, process audio or transcribe a recording." },
+  build: { title: "Software Factory", description: "Describe the software you want IRHCF to build and verify." },
+  research: { title: "Research & Knowledge", description: "Research a topic or search available knowledge and sources." },
+  agents: { title: "Agents & Automation", description: "Manage long-running work, agent teams and guarded capability growth." },
+  settings: { title: "Settings", description: "Change the interface language. Other settings remain out of the chat screen." }
+});
 
 const taskManager =
   document.getElementById("taskManager");
@@ -8152,22 +8170,48 @@ document.addEventListener(
 // CAPABILITY DASHBOARD
 // ============================================================
 
-function setDashboardOpen(open) {
-
-  if (!capabilityDashboard) {
-    return;
+function showDashboardHome() {
+  activeDashboardCategory = null;
+  if (dashboardCategories) dashboardCategories.hidden = false;
+  if (dashboardGrid) dashboardGrid.hidden = true;
+  if (dashboardWorkspaceHeading) dashboardWorkspaceHeading.hidden = true;
+  if (dashboardLanguageSettings) dashboardLanguageSettings.hidden = true;
+  if (dashboardBackButton) dashboardBackButton.hidden = true;
+  if (dashboardSubtitle) dashboardSubtitle.textContent = "Choose a workspace. Its services appear only after you enter it.";
+  if (dashboardGrid) {
+    dashboardGrid.querySelectorAll("[data-dashboard-action]").forEach((card) => {
+      card.hidden = false;
+    });
   }
+}
 
-  capabilityDashboard.classList.toggle(
-    "open",
-    Boolean(open)
-  );
+function showDashboardWorkspace(category) {
+  const workspace = DASHBOARD_WORKSPACES[category];
+  if (!workspace) return;
+  activeDashboardCategory = category;
+  if (dashboardCategories) dashboardCategories.hidden = true;
+  if (dashboardWorkspaceHeading) dashboardWorkspaceHeading.hidden = false;
+  if (dashboardWorkspaceTitle) dashboardWorkspaceTitle.textContent = workspace.title;
+  if (dashboardWorkspaceDescription) dashboardWorkspaceDescription.textContent = workspace.description;
+  if (dashboardSubtitle) dashboardSubtitle.textContent = workspace.title;
+  if (dashboardBackButton) dashboardBackButton.hidden = false;
+  if (dashboardLanguageSettings) dashboardLanguageSettings.hidden = category !== "settings";
+  if (dashboardGrid) {
+    dashboardGrid.hidden = category === "settings";
+    dashboardGrid.querySelectorAll("[data-dashboard-action]").forEach((card) => {
+      card.hidden = card.dataset.dashboardCategory !== category;
+    });
+  }
+  if (taskManager) taskManager.hidden = true;
+  setDashboardStatus("Workspace: " + workspace.title);
+}
 
-  capabilityDashboard.setAttribute(
-    "aria-hidden",
-    String(!open)
-  );
-
+function setDashboardOpen(open) {
+  if (!capabilityDashboard) return;
+  if (open) showDashboardHome();
+  capabilityDashboard.classList.toggle("open", Boolean(open));
+  capabilityDashboard.setAttribute("aria-hidden", String(!open));
+  if (open) dashboardCloseButton?.focus();
 }
 
 function setDashboardStatus(message) {
@@ -9103,7 +9147,8 @@ function openTaskManager() {
 
 function closeTaskManager() {
   if (taskManager) taskManager.hidden = true;
-  if (dashboardGrid) dashboardGrid.hidden = false;
+  if (activeDashboardCategory) showDashboardWorkspace(activeDashboardCategory);
+  else showDashboardHome();
   setDashboardStatus("Ready.");
 }
 
@@ -9591,6 +9636,16 @@ if (dashboardCloseButton) {
     "click",
     () => setDashboardOpen(false)
   );
+}
+
+if (dashboardBackButton) {
+  dashboardBackButton.addEventListener("click", showDashboardHome);
+}
+
+if (dashboardCategories) {
+  dashboardCategories.querySelectorAll("[data-dashboard-category]").forEach((button) => {
+    button.addEventListener("click", () => showDashboardWorkspace(button.dataset.dashboardCategory));
+  });
 }
 
 if (taskManagerBackButton) {
