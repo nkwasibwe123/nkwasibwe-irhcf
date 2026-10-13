@@ -20,7 +20,7 @@
 
   <link
     rel="stylesheet"
-    href="style.css?v=2.0.22"
+    href="style.css?v=2.0.23"
   >
 
 </head>
@@ -165,82 +165,16 @@
         <!-- HEADER ACTIONS -->
 
         <div class="header-actions">
-
-          <label class="language-control" for="languageSelect" title="Response language / Ururimi">
-            <span aria-hidden="true">🌐</span>
-            <select id="languageSelect" aria-label="Response language">
-              <option value="auto">Auto / Phone</option>
-              <option value="rw">Kinyarwanda</option>
-              <option value="en">English</option>
-              <option value="fr">Français</option>
-              <option value="sw">Kiswahili</option>
-              <option value="ar">العربية</option>
-              <option value="es">Español</option>
-              <option value="pt">Português</option>
-              <option value="de">Deutsch</option>
-              <option value="zh">中文</option>
-              <option value="hi">हिन्दी</option>
-              <option value="ja">日本語</option>
-              <option value="ko">한국어</option>
-              <option value="it">Italiano</option>
-              <option value="ru">Русский</option>
-              <option value="tr">Türkçe</option>
-              <option value="nl">Nederlands</option>
-              <option value="pl">Polski</option>
-            </select>
-          </label>
-
-
-
-
-          <!-- ACTION CENTER / REQUIREMENTS -->
-          <button
-            id="actionCenterButton"
-            class="icon-button action-center-button"
-            type="button"
-            aria-label="Required actions"
-            title="Ibisabwa / Required actions"
-          >
-            🔔
-            <span id="actionCenterBadge" class="action-center-badge" hidden>0</span>
-          </button>
-
-          <!-- CAPABILITY DASHBOARD -->
           <button
             id="dashboardButton"
-            class="icon-button"
+            class="icon-button dashboard-launch-button"
             type="button"
-            aria-label="Open capability dashboard"
-            title="Capability dashboard"
+            aria-label="Open main dashboard"
+            title="Dashboard — all services"
           >
-            ☷
+            <span aria-hidden="true">▦</span>
+            <span class="dashboard-launch-label">Dashboard</span>
           </button>
-
-          <!-- NEW CONVERSATION -->
-
-          <button
-            id="headerNewChatButton"
-            class="icon-button"
-            type="button"
-            aria-label="New conversation"
-            title="New conversation"
-          >
-            +
-          </button>
-
-
-          <!-- CLEAR -->
-
-          <button
-            id="clearChatButton"
-            class="icon-button"
-            type="button"
-            aria-label="Clear conversation"
-            title="Clear conversation"
-          >
-            🗑
-          </button>
-
         </div>
 
       </header>
@@ -262,12 +196,29 @@
         <div class="dashboard-panel" role="dialog" aria-modal="true" aria-labelledby="dashboardTitle">
           <div class="dashboard-header">
             <div>
-              <h2 id="dashboardTitle">IRHCF Dashboard</h2>
-              <p>Tools, agents, tasks and creation capabilities.</p>
+              <p class="dashboard-eyebrow">NKWASIBWE IRHCF</p>
+              <h2 id="dashboardTitle">Main Dashboard</h2>
+              <p id="dashboardSubtitle">Choose a workspace. Its services appear only after you enter it.</p>
             </div>
-            <button id="dashboardCloseButton" class="icon-button" type="button" aria-label="Close dashboard">×</button>
+            <div class="dashboard-header-actions">
+              <button id="dashboardBackButton" class="task-secondary-button" type="button" hidden>← All workspaces</button>
+              <button id="dashboardCloseButton" class="icon-button" type="button" aria-label="Close dashboard">×</button>
+            </div>
           </div>
-          <section class="dashboard-language-settings" aria-labelledby="languageSettingsTitle">
+          <div id="dashboardCategories" class="dashboard-categories" aria-label="Workspaces">
+            <button class="dashboard-category-card" type="button" data-dashboard-category="files"><span class="dashboard-card-icon">📎</span><strong>Files & Chat Attachments</strong><span>Upload documents, photos, audio or video into your conversation.</span><span class="category-open">Open workspace →</span></button>
+            <button class="dashboard-category-card" type="button" data-dashboard-category="create"><span class="dashboard-card-icon">✨</span><strong>Create Media</strong><span>Create images, videos, music and voice-over.</span><span class="category-open">Open workspace →</span></button>
+            <button class="dashboard-category-card" type="button" data-dashboard-category="edit"><span class="dashboard-card-icon">🎬</span><strong>Media Studio</strong><span>Edit video, process audio and transcribe recordings.</span><span class="category-open">Open workspace →</span></button>
+            <button class="dashboard-category-card" type="button" data-dashboard-category="build"><span class="dashboard-card-icon">💻</span><strong>Software Factory</strong><span>Build and improve websites, applications, APIs and systems.</span><span class="category-open">Open workspace →</span></button>
+            <button class="dashboard-category-card" type="button" data-dashboard-category="research"><span class="dashboard-card-icon">🔎</span><strong>Research & Knowledge</strong><span>Research topics, search knowledge and verify sources.</span><span class="category-open">Open workspace →</span></button>
+            <button class="dashboard-category-card" type="button" data-dashboard-category="agents"><span class="dashboard-card-icon">🤖</span><strong>Agents & Automation</strong><span>Long tasks, agent teams, capabilities and business research.</span><span class="category-open">Open workspace →</span></button>
+            <button class="dashboard-category-card" type="button" data-dashboard-category="settings"><span class="dashboard-card-icon">⚙️</span><strong>Settings</strong><span>Language and interface preferences.</span><span class="category-open">Open settings →</span></button>
+          </div>
+          <div id="dashboardWorkspaceHeading" class="dashboard-workspace-heading" hidden>
+            <h3 id="dashboardWorkspaceTitle">Workspace</h3>
+            <p id="dashboardWorkspaceDescription"></p>
+          </div>
+          <section id="dashboardLanguageSettings" class="dashboard-language-settings" hidden aria-labelledby="languageSettingsTitle">
             <div>
               <h3 id="languageSettingsTitle">🌐 Language settings / Igenamiterere ry'ururimi</h3>
               <p>By default, IRHCF follows your phone language. Choose a language here to override it; select Auto / Phone to return to automatic mode. You can still write to IRHCF in any language.</p>
@@ -296,26 +247,26 @@
               </select>
             </label>
           </section>
-          <div class="dashboard-grid">
-            <button class="dashboard-card" type="button" data-dashboard-action="file"><span class="dashboard-card-icon">📎</span><strong>Add File</strong><span>Documents, PDF, spreadsheets and text.</span></button>
-            <button class="dashboard-card" type="button" data-dashboard-action="photo"><span class="dashboard-card-icon">🖼️</span><strong>Add Photo</strong><span>Images for analysis or creation workflows.</span></button>
-            <button class="dashboard-card" type="button" data-dashboard-action="video"><span class="dashboard-card-icon">🎬</span><strong>Add Video</strong><span>Video analysis and media workflows.</span></button>
-            <button class="dashboard-card" type="button" data-dashboard-action="audio"><span class="dashboard-card-icon">🎧</span><strong>Add Audio</strong><span>Voice, music and audio processing.</span></button>
-            <button class="dashboard-card" type="button" data-dashboard-action="audio-transcribe"><span class="dashboard-card-icon">📝</span><strong>Transcribe Audio</strong><span>Convert an audio file into editable text in supported languages.</span></button>
-            <button class="dashboard-card" type="button" data-dashboard-action="image-create"><span class="dashboard-card-icon">✨</span><strong>Create Image</strong><span>Describe an image to create.</span></button>
-            <button class="dashboard-card" type="button" data-dashboard-action="video-edit"><span class="dashboard-card-icon">🎞️</span><strong>Video Editor</strong><span>Trim a short video and apply real FFmpeg effects.</span></button>
-            <button class="dashboard-card" type="button" data-dashboard-action="audio-studio"><span class="dashboard-card-icon">🎚️</span><strong>Audio Studio</strong><span>Clean, normalize, enhance voice, boost bass, add reverb, trim and export audio locally.</span></button>
-            <button class="dashboard-card" type="button" data-dashboard-action="video-create"><span class="dashboard-card-icon">🎥</span><strong>Create HD Video</strong><span>Generate 720p video clips with Sora; API access and credits required.</span></button>
-            <button class="dashboard-card" type="button" data-dashboard-action="video-from-photo"><span class="dashboard-card-icon">🖼️🎬</span><strong>Animate a Photo</strong><span>Use a photo as a reference for a Sora video clip.</span></button>
-            <button class="dashboard-card" type="button" data-dashboard-action="music-create"><span class="dashboard-card-icon">🎵</span><strong>Create Song</strong><span>Generate an MP3 song with ElevenLabs Music; API key and credits required.</span></button>
-            <button class="dashboard-card" type="button" data-dashboard-action="speech-create"><span class="dashboard-card-icon">🗣️</span><strong>Create Voice-over</strong><span>Generate spoken MP3 narration from text.</span></button>
-            <button class="dashboard-card" type="button" data-dashboard-action="software"><span class="dashboard-card-icon">💻</span><strong>Build Software</strong><span>Applications, websites, APIs and systems.</span></button>
-            <button class="dashboard-card" type="button" data-dashboard-action="research"><span class="dashboard-card-icon">🔎</span><strong>Research</strong><span>Deep research with source verification.</span></button>
-            <button class="dashboard-card" type="button" data-dashboard-action="search"><span class="dashboard-card-icon">🌐</span><strong>IRHCF Search</strong><span>Search the local knowledge index and configured web sources.</span></button>
-            <button class="dashboard-card" type="button" data-dashboard-action="tasks"><span class="dashboard-card-icon">⚙️</span><strong>Long Tasks</strong><span>Persistent tasks and progress tracking.</span></button>
-            <button class="dashboard-card" type="button" data-dashboard-action="agents"><span class="dashboard-card-icon">🤖</span><strong>Agent Teams</strong><span>Specialists collaborating on your work.</span></button>
-            <button class="dashboard-card" type="button" data-dashboard-action="capabilities"><span class="dashboard-card-icon">🧩</span><strong>Capabilities</strong><span>Abilities and controlled capability expansion.</span></button>
-            <button class="dashboard-card" type="button" data-dashboard-action="economy"><span class="dashboard-card-icon">💰</span><strong>Economic Autopilot</strong><span>Research lawful revenue opportunities and build safe proposals.</span></button>
+          <div class="dashboard-grid" id="dashboardServices" hidden>
+            <button class="dashboard-card" type="button" data-dashboard-action="file" data-dashboard-category="files"><span class="dashboard-card-icon">📎</span><strong>Add File</strong><span>Documents, PDF, spreadsheets and text.</span></button>
+            <button class="dashboard-card" type="button" data-dashboard-action="photo" data-dashboard-category="files"><span class="dashboard-card-icon">🖼️</span><strong>Add Photo</strong><span>Images for analysis or creation workflows.</span></button>
+            <button class="dashboard-card" type="button" data-dashboard-action="video" data-dashboard-category="files"><span class="dashboard-card-icon">🎬</span><strong>Add Video</strong><span>Video analysis and media workflows.</span></button>
+            <button class="dashboard-card" type="button" data-dashboard-action="audio" data-dashboard-category="files"><span class="dashboard-card-icon">🎧</span><strong>Add Audio</strong><span>Voice, music and audio processing.</span></button>
+            <button class="dashboard-card" type="button" data-dashboard-action="audio-transcribe" data-dashboard-category="edit"><span class="dashboard-card-icon">📝</span><strong>Transcribe Audio</strong><span>Convert an audio file into editable text in supported languages.</span></button>
+            <button class="dashboard-card" type="button" data-dashboard-action="image-create" data-dashboard-category="create"><span class="dashboard-card-icon">✨</span><strong>Create Image</strong><span>Describe an image to create.</span></button>
+            <button class="dashboard-card" type="button" data-dashboard-action="video-edit" data-dashboard-category="edit"><span class="dashboard-card-icon">🎞️</span><strong>Video Editor</strong><span>Trim a short video and apply real FFmpeg effects.</span></button>
+            <button class="dashboard-card" type="button" data-dashboard-action="audio-studio" data-dashboard-category="edit"><span class="dashboard-card-icon">🎚️</span><strong>Audio Studio</strong><span>Clean, normalize, enhance voice, boost bass, add reverb, trim and export audio locally.</span></button>
+            <button class="dashboard-card" type="button" data-dashboard-action="video-create" data-dashboard-category="create"><span class="dashboard-card-icon">🎥</span><strong>Create HD Video</strong><span>Generate 720p video clips with Sora; API access and credits required.</span></button>
+            <button class="dashboard-card" type="button" data-dashboard-action="video-from-photo" data-dashboard-category="create"><span class="dashboard-card-icon">🖼️🎬</span><strong>Animate a Photo</strong><span>Use a photo as a reference for a Sora video clip.</span></button>
+            <button class="dashboard-card" type="button" data-dashboard-action="music-create" data-dashboard-category="create"><span class="dashboard-card-icon">🎵</span><strong>Create Song</strong><span>Generate an MP3 song with ElevenLabs Music; API key and credits required.</span></button>
+            <button class="dashboard-card" type="button" data-dashboard-action="speech-create" data-dashboard-category="create"><span class="dashboard-card-icon">🗣️</span><strong>Create Voice-over</strong><span>Generate spoken MP3 narration from text.</span></button>
+            <button class="dashboard-card" type="button" data-dashboard-action="software" data-dashboard-category="build"><span class="dashboard-card-icon">💻</span><strong>Build Software</strong><span>Applications, websites, APIs and systems.</span></button>
+            <button class="dashboard-card" type="button" data-dashboard-action="research" data-dashboard-category="research"><span class="dashboard-card-icon">🔎</span><strong>Research</strong><span>Deep research with source verification.</span></button>
+            <button class="dashboard-card" type="button" data-dashboard-action="search" data-dashboard-category="research"><span class="dashboard-card-icon">🌐</span><strong>IRHCF Search</strong><span>Search the local knowledge index and configured web sources.</span></button>
+            <button class="dashboard-card" type="button" data-dashboard-action="tasks" data-dashboard-category="agents"><span class="dashboard-card-icon">⚙️</span><strong>Long Tasks</strong><span>Persistent tasks and progress tracking.</span></button>
+            <button class="dashboard-card" type="button" data-dashboard-action="agents" data-dashboard-category="agents"><span class="dashboard-card-icon">🤖</span><strong>Agent Teams</strong><span>Specialists collaborating on your work.</span></button>
+            <button class="dashboard-card" type="button" data-dashboard-action="capabilities" data-dashboard-category="agents"><span class="dashboard-card-icon">🧩</span><strong>Capabilities</strong><span>Abilities and controlled capability expansion.</span></button>
+            <button class="dashboard-card" type="button" data-dashboard-action="economy" data-dashboard-category="agents"><span class="dashboard-card-icon">💰</span><strong>Economic Autopilot</strong><span>Research lawful revenue opportunities and build safe proposals.</span></button>
           </div>
           <section id="videoEditorPanel" class="video-editor-panel" hidden aria-labelledby="videoEditorTitle">
             <div class="task-manager-header">
