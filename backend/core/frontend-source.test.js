@@ -392,6 +392,7 @@ test("dashboard workspace navigation filters services and resets to the main das
 test("dashboard opens as a full-screen app workspace instead of a floating overlay", () => {
   const root = path.join(__dirname, "..", "..");
   const css = fs.readFileSync(path.join(root, "style.css"), "utf8");
+  const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
   assert.match(css, /\.capability-dashboard\.open\s*\{\s*display:\s*flex/);
   assert.match(css, /\.capability-dashboard \.dashboard-backdrop\s*\{\s*display:\s*none !important/);
   assert.match(css, /\.capability-dashboard \.dashboard-panel\s*\{[\s\S]*?width:\s*100%/);
