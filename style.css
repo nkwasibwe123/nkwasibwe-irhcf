@@ -2466,3 +2466,106 @@ body { background: #fff; color: var(--text); }
   #dashboardBackButton { padding: 8px 10px; font-size: 11px; }
   .chat { padding-left: 12px; padding-right: 12px; }
 }
+
+
+/* ============================================================
+   APP-LIKE FULL-SCREEN WORKSPACES
+   Keep each tool area clear and separate from the main chat.
+   ============================================================ */
+.capability-dashboard {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: none;
+  align-items: stretch;
+  justify-content: stretch;
+  background: #f7f8fc;
+  color: #172033;
+}
+.capability-dashboard.open { display: flex; }
+.capability-dashboard .dashboard-backdrop { display: none !important; }
+.capability-dashboard .dashboard-panel {
+  position: relative;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  overflow-y: auto;
+  margin: 0;
+  padding: clamp(16px, 3vw, 36px);
+  border: 0;
+  border-radius: 0;
+  background: #f7f8fc;
+  color: #172033;
+  box-shadow: none;
+}
+.capability-dashboard .dashboard-header {
+  position: sticky;
+  top: calc(-1 * clamp(16px, 3vw, 36px));
+  z-index: 3;
+  margin: calc(-1 * clamp(16px, 3vw, 36px)) calc(-1 * clamp(16px, 3vw, 36px)) 24px;
+  padding: clamp(16px, 3vw, 36px);
+  border-bottom: 1px solid #e3e7ef;
+  background: rgba(247, 248, 252, .96);
+  backdrop-filter: blur(12px);
+}
+.capability-dashboard .dashboard-eyebrow { color: #5367ad; font-size: 11px; font-weight: 800; letter-spacing: .12em; }
+.capability-dashboard .dashboard-header h2,
+.capability-dashboard .dashboard-workspace-heading h3 { color: #172033; }
+.capability-dashboard .dashboard-header p,
+.capability-dashboard .dashboard-workspace-heading p { color: #667085; }
+.capability-dashboard .dashboard-category-card,
+.capability-dashboard .dashboard-card {
+  border: 1px solid #e0e5ef;
+  border-radius: 18px;
+  background: #fff;
+  color: #172033;
+  box-shadow: 0 5px 20px rgba(21, 34, 66, .04);
+}
+.capability-dashboard .dashboard-category-card:hover,
+.capability-dashboard .dashboard-card:hover {
+  border-color: #7b8ef4;
+  background: #fff;
+  box-shadow: 0 10px 28px rgba(21, 34, 66, .09);
+}
+.capability-dashboard .dashboard-category-card > span:not(.dashboard-card-icon),
+.capability-dashboard .dashboard-card > span:last-child { color: #667085; }
+.capability-dashboard .category-open { color: #4359cf !important; font-weight: 700; }
+.capability-dashboard .dashboard-workspace-heading {
+  max-width: 1100px;
+  margin: 0 auto 18px;
+  padding: 0 2px;
+}
+.capability-dashboard .dashboard-categories,
+.capability-dashboard .dashboard-grid,
+.capability-dashboard .dashboard-language-settings,
+.capability-dashboard .task-manager,
+.capability-dashboard #videoEditorPanel,
+.capability-dashboard #audioStudioPanel {
+  max-width: 1100px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.capability-dashboard .dashboard-status {
+  max-width: 1100px;
+  margin: 24px auto 0;
+  padding: 12px 14px;
+  border: 1px solid #e0e5ef;
+  background: #fff;
+  color: #475467;
+}
+.capability-dashboard .task-secondary-button {
+  border-color: #d7ddea;
+  background: #fff;
+  color: #27324a;
+}
+.capability-dashboard .dashboard-close-button,
+.capability-dashboard #dashboardCloseButton { color: #344054; }
+@media (max-width: 700px) {
+  .capability-dashboard .dashboard-header { align-items: flex-start; gap: 10px; }
+  .capability-dashboard .dashboard-header h2 { font-size: 20px; }
+  .capability-dashboard .dashboard-header-actions { flex-wrap: wrap; justify-content: flex-end; }
+  .capability-dashboard .dashboard-categories { grid-template-columns: 1fr; }
+  .capability-dashboard .dashboard-grid { grid-template-columns: 1fr; }
+  .capability-dashboard .dashboard-category-card { min-height: 120px; }
+}
