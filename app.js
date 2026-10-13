@@ -8216,10 +8216,8 @@ function showDashboardWorkspace(category) {
 
 function setDashboardOpen(open) {
   if (!capabilityDashboard) return;
-  if (open) {
-    showDashboardHome();
-    if (authToken) void refreshDashboardActivities();
-  }
+  if (open) showDashboardHome();
+  if (open && authToken) void refreshDashboardActivities();
   capabilityDashboard.classList.toggle("open", Boolean(open));
   capabilityDashboard.setAttribute("aria-hidden", String(!open));
   if (open) dashboardCloseButton?.focus();
