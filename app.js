@@ -8177,6 +8177,7 @@ document.addEventListener(
 
 function showDashboardHome() {
   activeDashboardCategory = null;
+  if (taskManager) taskManager.hidden = true;
   if (dashboardActivityCenter) dashboardActivityCenter.hidden = false;
   if (dashboardCategories) dashboardCategories.hidden = false;
   if (dashboardGrid) dashboardGrid.hidden = true;
@@ -9254,6 +9255,8 @@ if (taskProgressPanel) {
 
 function openTaskManager(filter = "all") {
   taskActivityFilter = ["all", "running", "succeeded", "failed"].includes(filter) ? filter : "all";
+  const taskManagerTitle = document.getElementById("taskManagerTitle");
+  if (taskManagerTitle) taskManagerTitle.textContent = ({all:"Recent activities",running:"Running activities",succeeded:"Succeeded activities",failed:"Failed activities"})[taskActivityFilter];
   if (!authToken) {
     setDashboardStatus("Banza winjire muri konti kugira ngo ukoreshe Long Tasks.");
     showAuthenticationDialog();
@@ -9326,7 +9329,7 @@ async function createLongRunningTask(event) {
       body: JSON.stringify({
         task: taskText,
         sessionId: sessionId || null,
-        metadata: { source: "irhcf_dashboard" }
+        metadata: { source: "irhcf_dashboard", workspace: activeDashboardCategory || "agents" }
       }),
       timeoutMs: 20000
     });
