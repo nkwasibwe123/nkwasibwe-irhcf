@@ -2,9 +2,9 @@ name: IRHCF CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'feat/irhcf-self-hosted-image-service', 'fix/image-rembg-return-type-502']
   pull_request:
-    branches: [main]
+    branches: [main, 'feat/irhcf-self-hosted-image-service']
 
 permissions:
   contents: read
@@ -29,3 +29,20 @@ jobs:
         run: npm install
       - name: Run syntax checks and automated tests
         run: npm test
+
+  image-service-tests:
+    name: Image service regression tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install minimal test dependencies
+        run: python -m pip install fastapi==0.115.12 Pillow==11.1.0
+      - name: Run image service regression tests
+        working-directory: image-service
+        run: python -m unittest -v test_image_service.py
