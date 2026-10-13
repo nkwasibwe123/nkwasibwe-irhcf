@@ -651,6 +651,20 @@ class TaskEngine {
     let executionStep = null;
 
     try {
+      // Persist visible progress before creating run/agent records. If the
+      // database rejects a run insert, the user must still see the real error
+      // instead of a task stuck at 0% with only "Worker claimed task".
+      await this.updateProgress(task.id, {
+        progress: 5,
+        message: "Worker claimed task; initializing execution records.",
+        checkpoint: {
+          phase: "INITIALIZE",
+          workerId: this.workerId,
+          taskRunId: null,
+          agentRunId: null
+        }
+      });
+
       taskRun = await this.createTaskRun(task);
       agentRun = await this.createAgentRun(task, taskRun);
 
@@ -665,7 +679,9 @@ class TaskEngine {
         message: "Task execution started.",
         checkpoint: {
           phase: "EXECUTE",
-          workerId: this.workerId
+          workerId: this.workerId,
+          taskRunId: taskRun.id,
+          agentRunId: agentRun.id
         }
       });
 
@@ -965,6 +981,9 @@ class TaskEngine {
        SET
          status = $2,
          error = $3,
+         progress_message = $4,
+         progress = GREATEST(COALESCE(progress, 0), 5),
+         metadata = COALESCE(metadata, '{}'::jsonb) || $5::jsonb,
          worker_id = NULL,
          locked_at = NULL,
          completed_at = CURRENT_TIMESTAMP,
@@ -974,7 +993,17 @@ class TaskEngine {
       [
         task.id,
         TASK_STATES.FAILED,
-        message
+        message,
+        `Failed during attempt ${attempts} of ${maxAttempts}: ${message}`,
+        safeJson({
+          failure: {
+            message,
+            attempts,
+            maxAttempts,
+            failedAt: nowIso(),
+            phase: task?.checkpoint?.phase || "INITIALIZE"
+          }
+        })
       ]
     );
 
