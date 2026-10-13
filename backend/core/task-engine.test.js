@@ -3,7 +3,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { TaskEngine, TASK_STATES, isUsableTaskResult } = require("./task-engine");
-const { requestedArtifact, buildTaskArtifact } = require("./task-artifacts");
+const { requestedArtifact, buildTaskArtifact, buildTaskArtifacts } = require("./task-artifacts");
 
 test("createAgentRun uses a status accepted by chk_agent_runs_status", async () => {
   let insertedSql = "";
@@ -264,4 +264,49 @@ test("stale recovery skips orphan cleanup when no tasks expired", async () => {
   });
   assert.equal(await engine.recoverStaleTasks(), 0);
   assert.equal(calls, 1);
+});
+
+
+test("website artifact extraction accepts language-labelled fences without filename attributes", () => {
+  const task = "Kora website nto y'ishuri. Kora dosiye za HTML, CSS na JavaScript, ugenzure ko zikora.";
+  const response = [
+    "```html",
+    "<!doctype html><html><head><title>School</title></head><body><h1>GS Kitazigurwa</h1></body></html>",
+    "```",
+    "```css",
+    "body { margin: 0; font-family: Arial, sans-serif; }",
+    "```",
+    "```javascript",
+    "document.addEventListener('DOMContentLoaded', () => { document.body.dataset.ready = 'true'; });",
+    "```",
+    "```markdown",
+    "# GS Kitazigurwa School Website",
+    "Open index.html in a browser.",
+    "```"
+  ].join("\n");
+  const result = buildTaskArtifacts({ task, taskId: 38, result: { success: true, response } });
+  assert.equal(result.verified, true, result.error);
+  assert.deepEqual(result.artifacts.map(file => file.name), ["index.html", "style.css", "script.js", "README.md"]);
+  assert.ok(result.artifacts.every(file => file.verified && file.content.trim()));
+});
+
+test("website artifact extraction assigns anonymous code fences in expected file order", () => {
+  const task = "Build a website with HTML, CSS and JavaScript files.";
+  const response = [
+    "```",
+    "<!doctype html><html><body><h1>School</h1></body></html>",
+    "```",
+    "```",
+    "body { color: #222; }",
+    "```",
+    "```",
+    "document.body.dataset.ready = 'yes';",
+    "```",
+    "```",
+    "# Readme\nOpen index.html.",
+    "```"
+  ].join("\n");
+  const result = buildTaskArtifacts({ task, taskId: 39, result: { success: true, response } });
+  assert.equal(result.verified, true, result.error);
+  assert.deepEqual(result.artifacts.map(file => file.name), ["index.html", "style.css", "script.js", "README.md"]);
 });
