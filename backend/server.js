@@ -32421,16 +32421,52 @@ const persistentTaskEngine =
               ].join("\n")
             : executionTask) + artifactInstruction;
 
-        const result =
-          await executeNkwasibweAgent({
+        let result;
+        let providerExecutionFailure = null;
+
+        try {
+          result = await executeNkwasibweAgent({
             userId,
             task: masterTask,
             sessionId
           });
+        } catch (error) {
+          // Keep deterministic multi-file website delivery available when
+          // every external AI adapter is unavailable. The artifact builder
+          // must verify all four local files before this task can succeed.
+          providerExecutionFailure = {
+            code: error?.code || "AI_EXECUTION_FAILED",
+            message: String(error?.message || "AI provider execution failed.").slice(0, 500),
+            attemptedAdapters: Array.isArray(error?.attemptedAdapters) ? error.attemptedAdapters : [],
+            failures: Array.isArray(error?.failures) ? error.failures.slice(0, 6) : []
+          };
+          result = {
+            success: false,
+            error: {
+              code: providerExecutionFailure.code,
+              message: providerExecutionFailure.message
+            }
+          };
+        }
 
         const taskAction = artifactRequests.length
           ? buildTaskArtifacts({ task: executionTask, result, taskId })
           : { required: false, artifacts: [] };
+
+        if (
+          providerExecutionFailure &&
+          artifactRequests.length > 1 &&
+          taskAction.verified === true &&
+          taskAction.fallbackUsed === true
+        ) {
+          taskAction.providerFailure = providerExecutionFailure;
+          result = {
+            success: true,
+            response: "The AI provider adapters were unavailable, so IRHCF generated and verified a local starter website instead. The attached files are a working starter template, not a claim that the external AI agents completed the request.",
+            fallbackUsed: true,
+            providerFailure: providerExecutionFailure
+          };
+        }
 
         if (artifactRequests.length && taskAction.verified !== true) {
           const error = new Error(taskAction.error || "Required task artifact was not produced or verified.");
