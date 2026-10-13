@@ -334,3 +334,67 @@ test("website artifact extraction assigns anonymous code fences in expected file
   assert.equal(result.verified, true, result.error);
   assert.deepEqual(result.artifacts.map(file => file.name), ["index.html", "style.css", "script.js", "README.md"]);
 });
+
+
+test("website task falls back to verified local files when all AI adapters throw", async () => {
+  let verifiedResult = null;
+  const taskText = "Kora website nto y'ishuri ikora koko. Kora index.html, style.css, script.js na README.md.";
+  const engine = new TaskEngine({
+    pool: {
+      async query(sql) {
+        if (/SET status = \$2, updated_at = CURRENT_TIMESTAMP/.test(sql)) return { rows: [{ id: 91 }] };
+        if (/SET\s+status = \$2,\s+progress = 100/.test(sql)) return { rows: [{ id: 91, status: TASK_STATES.COMPLETED }] };
+        return { rows: [] };
+      }
+    },
+    workerId: "worker-fallback-test",
+    executor: async () => {
+      const error = new Error("All configured execution adapters failed.");
+      error.code = "ALL_ADAPTERS_FAILED";
+      throw error;
+    },
+    verifier: async ({ result }) => {
+      verifiedResult = result;
+      return { verified: isUsableTaskResult(result), reason: "Task result and required files verified." };
+    }
+  });
+  engine.createTaskRun = async () => ({ id: 901 });
+  engine.createAgentRun = async () => ({ id: 902 });
+  engine.createAgentStep = async () => ({ id: 903 });
+  engine.updateProgress = async () => ({ id: 91 });
+  engine.assertTaskStillOwned = async () => ({ id: 91, status: TASK_STATES.RUNNING, worker_id: engine.workerId });
+  engine.finishAgentStep = async () => {};
+  engine.finishTaskRun = async () => {};
+  engine.finishAgentRun = async () => {};
+
+  const result = await engine.executeClaimedTask({
+    id: 91,
+    user_id: 1,
+    session_id: null,
+    task: taskText,
+    attempts: 1,
+    max_attempts: 3,
+    checkpoint: {}
+  });
+
+  assert.equal(result.status, TASK_STATES.COMPLETED);
+  assert.equal(verifiedResult.fallbackUsed, true);
+  assert.equal(verifiedResult.providerFailure.code, "ALL_ADAPTERS_FAILED");
+  assert.equal(verifiedResult.taskAction.verified, true);
+  assert.deepEqual(verifiedResult.taskAction.artifacts.map(file => file.name), [
+    "index.html", "style.css", "script.js", "README.md"
+  ]);
+  assert.ok(verifiedResult.taskAction.artifacts.every(file => file.verified && file.content.trim()));
+});
+
+test("website artifact builder records provider failure while returning verified fallback files", () => {
+  const result = buildTaskArtifacts({
+    task: "Build a website for a school and create index.html, style.css, script.js and README.md",
+    taskId: 92,
+    result: { success: false, error: { code: "ALL_ADAPTERS_FAILED", message: "No provider succeeded" } }
+  });
+  assert.equal(result.verified, true);
+  assert.equal(result.fallbackUsed, true);
+  assert.equal(result.providerFailure.code, "ALL_ADAPTERS_FAILED");
+  assert.equal(result.artifacts.length, 4);
+});

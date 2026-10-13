@@ -20,7 +20,7 @@
 
 const crypto = require("crypto");
 const express = require("express");
-const { buildTaskArtifact } = require("./task-artifacts");
+const { buildTaskArtifacts, requestedArtifacts } = require("./task-artifacts");
 
 const TASK_STATES = Object.freeze({
   PLANNED: "PLANNED",
@@ -694,16 +694,68 @@ class TaskEngine {
         throw error;
       }
 
-      const executionResult = await this.executor({
-        task: task.task,
-        userId: task.user_id,
-        sessionId: task.session_id,
-        taskId: task.id,
-        taskRunId: taskRun.id,
-        checkpoint: task.checkpoint || {},
-        updateProgress: async (update) =>
-          this.updateProgress(task.id, update)
-      });
+      let executionResult;
+      try {
+        executionResult = await this.executor({
+          task: task.task,
+          userId: task.user_id,
+          sessionId: task.session_id,
+          taskId: task.id,
+          taskRunId: taskRun.id,
+          checkpoint: task.checkpoint || {},
+          updateProgress: async (update) =>
+            this.updateProgress(task.id, update)
+        });
+      } catch (executionError) {
+        // Deterministic website scaffolding is safe to complete locally when
+        // every AI provider fails. Never disguise the provider failure: attach
+        // its code/message and mark that the verified fallback was used.
+        const expectedArtifacts = requestedArtifacts(task.task);
+        const isWebsiteBundle = expectedArtifacts.length > 1 &&
+          expectedArtifacts.some(item => item.name === "index.html") &&
+          expectedArtifacts.some(item => item.name === "style.css") &&
+          expectedArtifacts.some(item => item.name === "script.js");
+        if (!isWebsiteBundle) throw executionError;
+
+        const taskAction = buildTaskArtifacts({
+          task: task.task,
+          taskId: task.id,
+          result: {
+            success: false,
+            error: {
+              code: executionError?.code || "AI_EXECUTION_FAILED",
+              message: String(executionError?.message || executionError || "AI execution failed").slice(0, 500)
+            }
+          }
+        });
+        if (taskAction.verified !== true || !Array.isArray(taskAction.artifacts) ||
+            taskAction.artifacts.length !== expectedArtifacts.length) {
+          const fallbackError = new Error(taskAction.error || "Local website fallback failed verification.");
+          fallbackError.code = "TASK_ARTIFACT_VERIFICATION_FAILED";
+          fallbackError.taskAction = taskAction;
+          throw fallbackError;
+        }
+        executionResult = {
+          success: true,
+          response: "AI providers failed before generating website files. A local starter website was generated and its files passed verification.",
+          taskAction,
+          providerFailure: {
+            code: executionError?.code || "AI_EXECUTION_FAILED",
+            message: String(executionError?.message || executionError || "AI execution failed").slice(0, 500)
+          },
+          fallbackUsed: true
+        };
+        await this.updateProgress(task.id, {
+          progress: 62,
+          message: "AI providers failed; a local website starter was generated and verified. Provider failure is recorded.",
+          checkpoint: {
+            phase: "LOCAL_ARTIFACT_FALLBACK",
+            fallbackUsed: true,
+            providerFailure: executionResult.providerFailure,
+            expectedFiles: taskAction.expectedFiles
+          }
+        });
+      }
 
       // Cancellation or pause may happen while the executor is running.
       await this.assertTaskStillOwned(task.id);

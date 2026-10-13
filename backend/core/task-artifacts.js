@@ -245,8 +245,9 @@ function buildTaskArtifacts({task,result,taskId}={}) {
  const expected=requestedArtifacts(task);
  if(!expected.length)return {required:false,artifacts:[]};
  if(expected.length===1)return buildTaskArtifact({task,result,taskId});
- if(!result||result.success===false)return {required:true,verified:false,expectedFiles:expected.map(f=>f.name),artifacts:[],error:"Agent execution failed; no website files were created."};
- const response=getResponseText(result);
+ const executionFailed=!result||result.success===false;
+ if(executionFailed&&expected.length===1)return {required:true,verified:false,expectedFiles:expected.map(f=>f.name),artifacts:[],error:"Agent execution failed; no artifact was created."};
+ const response=executionFailed?"":getResponseText(result);
  const blocks=extractNamedFileBlocks(response, expected);
  // If the agent returned no parseable file blocks at all, deliver a real,
  // syntax-checked starter site rather than leaving the task failed with four
@@ -264,7 +265,10 @@ function buildTaskArtifacts({task,result,taskId}={}) {
   }
   const verified=errors.length===0&&artifacts.length===expected.length;
   return {required:true,verified,expectedFiles:expected.map(f=>f.name),artifacts,
-   fallbackUsed:true,verification:verified?"All fallback website files passed their content checks.":null,
+   fallbackUsed:true,
+   fallbackReason:executionFailed?"AI provider execution failed; used a verified local website starter instead.":"AI response did not contain the required website source files.",
+   providerFailure:executionFailed?{code:result?.error?.code||result?.code||"AI_EXECUTION_FAILED",message:String(result?.error?.message||result?.error||"The AI execution adapter failed before returning website files.").slice(0,500)}:null,
+   verification:verified?"All fallback website files passed their content checks.":null,
    error:verified?null:errors.join(" ").slice(0,1500)};
  }
  const byName=new Map();
