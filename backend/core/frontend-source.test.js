@@ -312,7 +312,7 @@ test("live voice fallback follows the selected/device language and preserves rep
   assert.match(voice, /navigator\.languages\?\.\[0\] \|\| navigator\.language/);
   assert.match(voice, /recognition\.lang = languageTag/);
   assert.match(voice, /\.map\(r => r\[0\]\?\.transcript \|\| ""\)\.join\(" "\)/);
-  assert.match(html, /voice-client\.js\?v=2\.0\.26/);
+  assert.match(html, /voice-client\.js\?v=2\.0\.24/);
 });
 
 test("live voice starts browser fallback when WebRTC is unavailable and can stop it", () => {
@@ -322,7 +322,7 @@ test("live voice starts browser fallback when WebRTC is unavailable and can stop
   assert.match(voice, /if \(live \|\| starting \|\| fallbackRecognition\)/);
   assert.match(voice, /if \(!window\.RTCPeerConnection \|\| !navigator\.mediaDevices\?\.getUserMedia\) \{\s*startBrowserFallback\(/);
   assert.match(voice, /cleanupLive\("Live voice conversation ended\."\)/);
-  assert.match(html, /voice-client\.js\?v=2\.0\.26/);
+  assert.match(html, /voice-client\.js\?v=2\.0\.24/);
 });
 
 
