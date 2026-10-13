@@ -2569,3 +2569,98 @@ body { background: #fff; color: var(--text); }
   .capability-dashboard .dashboard-grid { grid-template-columns: 1fr; }
   .capability-dashboard .dashboard-category-card { min-height: 120px; }
 }
+
+
+/* ============================================================
+   ORGANIZED MAIN DASHBOARD — ACTIVITY CENTER
+   ============================================================ */
+.dashboard-activity-center {
+  margin: 22px 0 8px;
+  padding: 18px;
+  border: 1px solid var(--border, #26304a);
+  border-radius: 18px;
+  background: var(--panel, #11182b);
+}
+.dashboard-activity-center[hidden] { display: none !important; }
+.activity-center-heading,
+.recent-activities-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+.activity-center-heading { margin-bottom: 16px; }
+.activity-center-heading h3 { margin: 3px 0 6px; font-size: 20px; }
+.activity-center-heading p:not(.dashboard-eyebrow) {
+  color: var(--text-secondary, #aab5cf);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.activity-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+.activity-summary-card {
+  display: flex;
+  min-width: 0;
+  min-height: 142px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 15px;
+  text-align: left;
+  color: var(--text, #fff);
+  background: var(--panel-light, #182139);
+  border: 1px solid var(--border, #26304a);
+  border-radius: 14px;
+  cursor: pointer;
+  transition: transform .15s ease, border-color .15s ease, background .15s ease;
+}
+.activity-summary-card:hover,
+.activity-summary-card:focus-visible {
+  transform: translateY(-2px);
+  border-color: var(--primary, #4f7cff);
+  outline: none;
+}
+.activity-summary-card > span { font-size: 20px; }
+.activity-summary-card > strong { font-size: 27px; line-height: 1.1; }
+.activity-summary-card > b { font-size: 13px; line-height: 1.35; }
+.activity-summary-card > small { color: var(--text-secondary, #aab5cf); font-size: 11px; line-height: 1.4; }
+.activity-summary-card.activity-succeeded > strong { color: var(--success, #32c48d); }
+.activity-summary-card.activity-failed > strong { color: var(--danger, #f05d5e); }
+.activity-summary-card.activity-running > strong { color: var(--warning, #f4b942); }
+.recent-activities-heading { margin: 22px 0 10px; }
+.recent-activities-heading h4 { font-size: 15px; }
+.recent-activities-heading span { color: var(--text-muted, #7f8ba7); font-size: 11px; }
+.recent-activity-list { display: grid; gap: 9px; }
+.recent-activity-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 13px;
+  border: 1px solid var(--border, #26304a);
+  border-radius: 12px;
+  background: var(--panel-light, #182139);
+}
+.recent-activity-copy { min-width: 0; display: grid; gap: 5px; }
+.recent-activity-copy strong { font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
+.recent-activity-copy p { color: var(--text-secondary, #aab5cf); font-size: 11px; }
+.recent-activity-copy small { color: var(--text-muted, #7f8ba7); font-size: 11px; line-height: 1.45; overflow-wrap: anywhere; }
+.recent-activity-side { display: flex; flex-shrink: 0; align-items: flex-end; flex-direction: column; gap: 8px; }
+.recent-activity-side > b { font-size: 13px; }
+@media (max-width: 760px) {
+  .dashboard-activity-center { padding: 13px; }
+  .activity-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+  .activity-summary-card { min-height: 125px; padding: 12px; }
+  .activity-summary-card > strong { font-size: 24px; }
+  .activity-center-heading { align-items: flex-start; }
+  .activity-center-heading .task-secondary-button { flex-shrink: 0; font-size: 11px; }
+}
+@media (max-width: 420px) {
+  .activity-center-heading { flex-direction: column; }
+  .activity-center-heading .task-secondary-button { width: 100%; }
+  .recent-activity-item { align-items: flex-start; }
+  .recent-activity-side .task-secondary-button { max-width: 105px; white-space: normal; font-size: 11px; }
+}
