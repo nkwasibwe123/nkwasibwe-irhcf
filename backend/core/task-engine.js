@@ -710,7 +710,8 @@ class TaskEngine {
         // Deterministic website scaffolding is safe to complete locally when
         // every AI provider fails. Never disguise the provider failure: attach
         // its code/message and mark that the verified fallback was used.
-        const expectedArtifacts = requestedArtifacts(task.task);
+        const artifactTaskText = String(task.metadata?.requestedTask || task.metadata?.originalUserRequest || task.task || "");
+        const expectedArtifacts = requestedArtifacts(artifactTaskText);
         const isWebsiteBundle = expectedArtifacts.length > 1 &&
           expectedArtifacts.some(item => item.name === "index.html") &&
           expectedArtifacts.some(item => item.name === "style.css") &&
@@ -718,7 +719,7 @@ class TaskEngine {
         if (!isWebsiteBundle) throw executionError;
 
         const taskAction = buildTaskArtifacts({
-          task: task.task,
+          task: artifactTaskText,
           taskId: task.id,
           result: {
             success: false,
@@ -755,6 +756,47 @@ class TaskEngine {
             expectedFiles: taskAction.expectedFiles
           }
         });
+      }
+
+      // Some adapters return { success:false } instead of throwing. Use the same
+      // verified local website fallback for that failure shape, too.
+      if (executionResult?.success === false) {
+        const artifactTaskText = String(task.metadata?.requestedTask || task.metadata?.originalUserRequest || task.task || "");
+        const expectedArtifacts = requestedArtifacts(artifactTaskText);
+        const isWebsiteBundle = expectedArtifacts.length > 1 &&
+          expectedArtifacts.some(item => item.name === "index.html") &&
+          expectedArtifacts.some(item => item.name === "style.css") &&
+          expectedArtifacts.some(item => item.name === "script.js");
+        if (isWebsiteBundle) {
+          const providerFailure = {
+            code: executionResult.code || executionResult.error?.code || "AI_EXECUTION_FAILED",
+            message: String(executionResult.error?.message || executionResult.error || executionResult.message || "The execution adapter failed before returning website files.").slice(0, 500)
+          };
+          const taskAction = buildTaskArtifacts({
+            task: artifactTaskText,
+            taskId: task.id,
+            result: { success: false, error: providerFailure }
+          });
+          if (taskAction.verified === true && taskAction.artifacts?.length === expectedArtifacts.length) {
+            executionResult = {
+              success: true,
+              response: "The AI execution adapter failed, so a local starter website was generated and every file passed verification.",
+              taskAction,
+              providerFailure,
+              fallbackUsed: true
+            };
+            await this.updateProgress(task.id, {
+              progress: 62,
+              message: "AI adapter returned failure; local website files were generated and verified.",
+              checkpoint: { phase: "LOCAL_ARTIFACT_FALLBACK", fallbackUsed: true, providerFailure, expectedFiles: taskAction.expectedFiles }
+            });
+          } else {
+            const fallbackError = new Error(taskAction.error || "Local website fallback failed verification.");
+            fallbackError.code = "TASK_ARTIFACT_VERIFICATION_FAILED";
+            fallbackError.taskAction = taskAction;
+            throw fallbackError;
+          }
+        }
       }
 
       // Cancellation or pause may happen while the executor is running.
