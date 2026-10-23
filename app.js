@@ -9222,6 +9222,52 @@ function renderTaskArtifactButtons(task) {
     artifact.downloadUrl.startsWith(`/api/tasks/${Number(task.id)}/artifacts/`)
   );
   if (verified.length) {
+    const htmlArtifact = verified.find(item => item.name.toLowerCase() === "index.html");
+    if (htmlArtifact) {
+      const previewButton = document.createElement("button");
+      previewButton.type = "button";
+      previewButton.className = "task-action-button task-preview-button";
+      previewButton.textContent = "👁 Preview website / app";
+      previewButton.addEventListener("click", async () => {
+        previewButton.disabled = true;
+        previewButton.textContent = "Loading preview…";
+        try {
+          const sourceByName = new Map();
+          await Promise.all(verified.filter(item => ["index.html", "style.css", "script.js"].includes(item.name.toLowerCase())).map(async item => {
+            const response = await fetch(item.downloadUrl, { headers: { Authorization: `Bearer ${authToken}` } });
+            if (!response.ok) throw new Error(`Preview file ${item.name} failed (HTTP ${response.status}).`);
+            sourceByName.set(item.name.toLowerCase(), await response.text());
+          }));
+          let page = sourceByName.get("index.html");
+          if (!page) throw new Error("index.html is missing.");
+          const cssSource = sourceByName.get("style.css") || "";
+          const jsSource = sourceByName.get("script.js") || "";
+          page = page.replace(/<link\b[^>]*href=["']style\.css["'][^>]*>/i, "");
+          page = page.replace(/<script\b[^>]*src=["']script\.js["'][^>]*><\/script>/i, "");
+          page = page.replace("</head>", `<style>\n${cssSource.replace(/<\/style/gi, "<\\/style")}\n</style></head>`);
+          page = page.replace("</body>", `<script>\n${jsSource.replace(/<\/script/gi, "<\\/script")}\n<\/script></body>`);
+          let dialog = document.getElementById("irhcfArtifactPreviewDialog");
+          if (!dialog) {
+            dialog = document.createElement("dialog");
+            dialog.id = "irhcfArtifactPreviewDialog";
+            dialog.className = "irhcf-artifact-preview-dialog";
+            dialog.innerHTML = '<div class="irhcf-preview-toolbar"><strong>Live preview · sandboxed</strong><button type="button" class="task-action-button" data-preview-close>Close preview</button></div><iframe title="Website preview" sandbox="allow-scripts" referrerpolicy="no-referrer"></iframe>';
+            document.body.appendChild(dialog);
+            dialog.querySelector("[data-preview-close]").addEventListener("click", () => dialog.close());
+            dialog.addEventListener("click", event => { if (event.target === dialog) dialog.close(); });
+          }
+          dialog.querySelector("iframe").srcdoc = page;
+          if (typeof dialog.showModal === "function") dialog.showModal();
+          else dialog.setAttribute("open", "");
+        } catch (error) {
+          showToast(String(error?.message || "Could not load preview").slice(0, 180), "warning");
+        } finally {
+          previewButton.disabled = false;
+          previewButton.textContent = "👁 Preview website / app";
+        }
+      });
+      taskProgressResult.appendChild(previewButton);
+    }
     const title = document.createElement("strong");
     title.textContent = "Dosiye zagenzuwe zo gukuramo:";
     taskProgressResult.appendChild(title);
