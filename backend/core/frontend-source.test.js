@@ -66,6 +66,8 @@ test("voice note and live voice controls use the existing authenticated IRHCF AP
   assert.match(app, /composerState\.speechRecognition/, "The browser recognition session must be stoppable from the existing microphone button.");
   assert.match(app, /function speakAssistantResponse\(/, "Assistant replies must use built-in browser speech when available.");
   assert.match(app, /speakAssistantResponse\(aiResponse\)/, "The actual assistant answer must trigger speech playback.");
+  assert.match(app, /irhcf:assistant-speech-start/, "Speaking an answer must signal voice mode to pause recognition.");
+  assert.match(app, /irhcf:assistant-speech-end/, "Speaking an answer must signal voice mode to resume recognition.");
   assert.match(app, /if \(voiceButton\) \{\s*voiceButton\.addEventListener\(\s*"click",\s*toggleVoiceRecording/s, "Voice-note recording must be bound regardless of browser SpeechRecognition support.");
   assert.match(app, /async function transcribeAudioFile\(/, "Voice notes must use the existing transcription flow.");
   assert.doesNotMatch(voice, /getElementById\(["']voiceButton["']\)/, "The live voice module must not register a duplicate voice-note handler.");
@@ -317,9 +319,11 @@ test("live voice fallback follows the selected/device language and preserves rep
   assert.match(voice, /recognition\.lang = languageTag/);
   assert.match(voice, /\.map\(r => r\[0\]\?\.transcript \|\| ""\)\.join\(" "\)/);
   assert.match(voice, /recognition\.continuous = true/, "Fallback voice must stay active for multiple utterances.");
+  assert.match(voice, /irhcf:assistant-speech-start/, "Recognition must pause while assistant audio is playing.");
+  assert.match(voice, /irhcf:assistant-speech-end/, "Recognition must resume after assistant audio ends.");
   assert.match(voice, /lastProcessedResultIndex/, "Speech results must be processed as individual final segments.");
   assert.match(voice, /irhcf_reply_in_voice/, "Voice-originated requests must enable spoken replies.");
-  assert.match(html, /voice-client\.js\?v=2\.0\.26/);
+  assert.match(html, /voice-client\.js\?v=2\.0\.27/);
 });
 
 test("live voice starts browser fallback when WebRTC is unavailable and can stop it", () => {
@@ -330,9 +334,11 @@ test("live voice starts browser fallback when WebRTC is unavailable and can stop
   assert.match(voice, /if \(!window\.RTCPeerConnection \|\| !navigator\.mediaDevices\?\.getUserMedia\) \{\s*startBrowserFallback\(/);
   assert.match(voice, /cleanupLive\("Live voice conversation ended\."\)/);
   assert.match(voice, /recognition\.continuous = true/, "Fallback voice must stay active for multiple utterances.");
+  assert.match(voice, /irhcf:assistant-speech-start/, "Recognition must pause while assistant audio is playing.");
+  assert.match(voice, /irhcf:assistant-speech-end/, "Recognition must resume after assistant audio ends.");
   assert.match(voice, /lastProcessedResultIndex/, "Speech results must be processed as individual final segments.");
   assert.match(voice, /irhcf_reply_in_voice/, "Voice-originated requests must enable spoken replies.");
-  assert.match(html, /voice-client\.js\?v=2\.0\.26/);
+  assert.match(html, /voice-client\.js\?v=2\.0\.27/);
 });
 
 
