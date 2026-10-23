@@ -9317,6 +9317,7 @@ function openTaskManager(filter = "all", workspaceFilter = activeDashboardCatego
   }
   if (dashboardCategories) dashboardCategories.hidden = true;
   if (dashboardActivityCenter) dashboardActivityCenter.hidden = true;
+  if (workspaceActivityCenter) workspaceActivityCenter.hidden = true;
   if (dashboardGrid) dashboardGrid.hidden = true;
   if (taskManager) taskManager.hidden = false;
   if (taskInput) taskInput.focus();
