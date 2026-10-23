@@ -8711,6 +8711,19 @@ function renderWorkspaceActivities() {
    edit.addEventListener("click",()=>{editorWrap.hidden=!editorWrap.hidden;edit.textContent=editorWrap.hidden?"Edit":"Close editor";});
    editorWrap.append(editor,saveEdited);
    side.append(download,save,edit);
+   let parsedResult=null;try{parsedResult=typeof t.result==="string"?JSON.parse(t.result):t.result;}catch{}
+   const artifacts=Array.isArray(parsedResult?.taskAction?.artifacts)?parsedResult.taskAction.artifacts:[];
+   artifacts.forEach(artifact=>{
+    if(!artifact?.verified||typeof artifact.name!=="string"||typeof artifact.downloadUrl!=="string"||!artifact.downloadUrl.startsWith(`/api/tasks/${taskId}/artifacts/`))return;
+    const artifactButton=document.createElement("button");artifactButton.type="button";artifactButton.className="task-secondary-button";artifactButton.textContent="Download "+artifact.name;
+    artifactButton.addEventListener("click",async()=>{
+     artifactButton.disabled=true;const original=artifactButton.textContent;artifactButton.textContent="Downloading…";
+     try{const response=await fetch(artifact.downloadUrl,{headers:{Authorization:"Bearer "+authToken}});if(!response.ok)throw new Error("Download failed (HTTP "+response.status+").");const objectUrl=URL.createObjectURL(await response.blob());const link=document.createElement("a");link.href=objectUrl;link.download=artifact.name;document.body.appendChild(link);link.click();link.remove();window.setTimeout(()=>URL.revokeObjectURL(objectUrl),1000);artifactButton.textContent="Downloaded "+artifact.name;}
+     catch(error){artifactButton.textContent=String(error?.message||"Download failed").slice(0,90);}
+     finally{artifactButton.disabled=false;if(artifactButton.textContent==="Downloading…")artifactButton.textContent=original;}
+    });
+    side.appendChild(artifactButton);
+   });
    row.append(copy,side,editorWrap);
   } else row.append(copy,side);
   workspaceRecentActivityList.appendChild(row);
