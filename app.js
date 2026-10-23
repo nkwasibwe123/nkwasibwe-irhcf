@@ -6567,6 +6567,9 @@ function startBrowserSpeechRecognition() {
       updateVoiceButton();
       if (userInput && finalTranscript.trim()) {
         userInput.value = finalTranscript.trim();
+        // Remember that this message came from speech. The reply should be
+        // spoken only for voice-originated messages, never for ordinary typing.
+        try { sessionStorage.setItem("irhcf_reply_in_voice", "1"); } catch (_) {}
         autoResizeInput();
         userInput.focus();
         userInput.setSelectionRange(userInput.value.length, userInput.value.length);
@@ -7644,8 +7647,14 @@ async function sendMessage() {
       "ai"
     );
 
-    // Speak the real assistant answer without requiring a paid TTS API.
-    speakAssistantResponse(aiResponse);
+    // Match the response channel to the user's input: typed messages get
+    // text only; speech-dictated messages also get spoken output.
+    let replyInVoice = false;
+    try {
+      replyInVoice = sessionStorage.getItem("irhcf_reply_in_voice") === "1";
+      sessionStorage.removeItem("irhcf_reply_in_voice");
+    } catch (_) {}
+    if (replyInVoice) speakAssistantResponse(aiResponse);
 
 
     // --------------------------------------------------------
