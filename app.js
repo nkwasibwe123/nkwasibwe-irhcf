@@ -8657,18 +8657,64 @@ function filterTasksForActivity(tasks) {
  if(taskActivityFilter==="succeeded")return source.filter(t=>getActivityKind(t)==="succeeded");
  if(taskActivityFilter==="failed")return source.filter(t=>getActivityKind(t)==="failed"); return source;
 }
+let activeWorkspaceActivityFilter = "all";
+function downloadWorkspaceText(text, filename, mime = "text/plain;charset=utf-8") {
+ const blob = new Blob([text], {type:mime});
+ const url = URL.createObjectURL(blob);
+ const link = document.createElement("a");
+ link.href = url; link.download = filename;
+ document.body.appendChild(link); link.click(); link.remove();
+ window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
 function renderWorkspaceActivities() {
  if(!workspaceActivityCenter||!activeDashboardCategory)return;
- const tasks=cachedTasks.filter(t=>getTaskWorkspaceCategory(t)===activeDashboardCategory);
- const counts={all:tasks.length,succeeded:tasks.filter(t=>getActivityKind(t)==="succeeded").length,failed:tasks.filter(t=>getActivityKind(t)==="failed").length,running:tasks.filter(t=>getActivityKind(t)==="running").length};
+ const allTasks=cachedTasks.filter(t=>getTaskWorkspaceCategory(t)===activeDashboardCategory);
+ const counts={all:allTasks.length,succeeded:allTasks.filter(t=>getActivityKind(t)==="succeeded").length,failed:allTasks.filter(t=>getActivityKind(t)==="failed").length,running:allTasks.filter(t=>getActivityKind(t)==="running").length};
  const ids={all:"workspaceActivityRecentCount",succeeded:"workspaceActivitySucceededCount",failed:"workspaceActivityFailedCount",running:"workspaceActivityRunningCount"};
  Object.entries(ids).forEach(([k,id])=>{const e=document.getElementById(id);if(e)e.textContent=String(counts[k]);});
  [["succeeded","workspaceChartSucceeded"],["running","workspaceChartRunning"],["failed","workspaceChartFailed"]].forEach(([k,id])=>{const f=document.getElementById(id),v=document.getElementById(id+"Value");if(f)f.style.width=(counts.all?counts[k]/counts.all*100:0)+"%";if(v)v.textContent=String(counts[k]);});
  const u=document.getElementById("workspaceActivityLastUpdated");if(u)u.textContent="Updated "+new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
- const scope=document.getElementById("workspaceActivityScopeLabel");if(scope)scope.textContent=(DASHBOARD_WORKSPACES[activeDashboardCategory]?.title||activeDashboardCategory)+" only";
- if(!workspaceRecentActivityList)return;workspaceRecentActivityList.replaceChildren();
- if(!tasks.length){const p=document.createElement("p");p.className="task-list-empty";p.textContent=authToken?"Nta gikorwa kiraboneka muri iyi service. Ibikorwa utangiriye hano bizajya bigaragara aha.":"Injira muri konti kugira ngo urebe ibikorwa bya service.";workspaceRecentActivityList.appendChild(p);return;}
- tasks.slice(0,5).forEach(t=>{const row=document.createElement("article");row.className="recent-activity-item";const copy=document.createElement("div");copy.className="recent-activity-copy";const title=document.createElement("strong");title.textContent=String(t.task||"Untitled task").slice(0,180);const meta=document.createElement("p");meta.textContent=String(t.status||"UNKNOWN").replace(/_/g," ")+" · "+Math.max(0,Math.min(100,Number(t.progress)||0))+"%";const msg=document.createElement("small");msg.textContent=String(t.progress_message||t.error||"Nta butumwa bw'inyongera.");copy.append(title,meta,msg);const side=document.createElement("div");side.className="recent-activity-side";const b=document.createElement("button");b.type="button";b.className="task-secondary-button";b.textContent="Open activity";b.addEventListener("click",()=>openTaskManager(getActivityKind(t)==="cancelled"?"all":getActivityKind(t),activeDashboardCategory));side.appendChild(b);row.append(copy,side);workspaceRecentActivityList.appendChild(row);});
+ const scope=document.getElementById("workspaceActivityScopeLabel");if(scope)scope.textContent=(DASHBOARD_WORKSPACES[activeDashboardCategory]?.title||activeDashboardCategory)+" · "+({all:"Recent",succeeded:"Succeeded",failed:"Failed",running:"Running"}[activeWorkspaceActivityFilter]||"Recent");
+ document.querySelectorAll("[data-workspace-activity-filter]").forEach(button=>{
+  const active=button.dataset.workspaceActivityFilter===activeWorkspaceActivityFilter;
+  button.setAttribute("aria-pressed",String(active));
+  button.classList.toggle("activity-filter-active",active);
+ });
+ if(!workspaceRecentActivityList)return;
+ workspaceRecentActivityList.replaceChildren();
+ const tasks=allTasks.filter(t=>activeWorkspaceActivityFilter==="all"||getActivityKind(t)===activeWorkspaceActivityFilter);
+ if(!tasks.length){const p=document.createElement("p");p.className="task-list-empty";p.textContent=allTasks.length?"Nta gikorwa gihuye n'iyi filter.":(authToken?"Nta gikorwa kiraboneka muri iyi service. Ibikorwa utangiriye hano bizajya bigaragara aha.":"Injira muri konti kugira ngo urebe ibikorwa bya service.");workspaceRecentActivityList.appendChild(p);return;}
+ tasks.slice(0,10).forEach(t=>{
+  const row=document.createElement("article");row.className="recent-activity-item";
+  const copy=document.createElement("div");copy.className="recent-activity-copy";
+  const title=document.createElement("strong");title.textContent=String(t.task||"Untitled task").slice(0,180);
+  const kind=getActivityKind(t);const progress=Math.max(0,Math.min(100,Number(t.progress)||0));
+  const meta=document.createElement("p");meta.textContent=String(t.status||"UNKNOWN").replace(/_/g," ")+" · "+progress+"%";
+  const msg=document.createElement("small");msg.textContent=String(t.progress_message||t.error||"Nta butumwa bw'inyongera.");
+  copy.append(title,meta,msg);
+  const side=document.createElement("div");side.className="recent-activity-side";
+  const open=document.createElement("button");open.type="button";open.className="task-secondary-button";open.textContent="Open details";
+  open.addEventListener("click",()=>openTaskManager(kind==="cancelled"?"all":kind,activeDashboardCategory));
+  side.appendChild(open);
+  if(kind==="succeeded"){
+   const taskId=String(t.id||t.task_id||"task");
+   const resultText=typeof t.result==="string"?t.result:JSON.stringify(t.result??{},null,2);
+   const download=document.createElement("button");download.type="button";download.className="task-secondary-button";download.textContent="Download result";
+   download.addEventListener("click",()=>downloadWorkspaceText(resultText,"nkwasibwe-"+activeDashboardCategory+"-"+taskId+"-result.json","application/json;charset=utf-8"));
+   const save=document.createElement("button");save.type="button";save.className="task-secondary-button";save.textContent="Save result";
+   save.addEventListener("click",()=>{try{const key="nkwasibwe_workspace_result_"+activeDashboardCategory+"_"+taskId;localStorage.setItem(key,JSON.stringify({taskId,workspace:activeDashboardCategory,title:String(t.task||"Task result"),result:resultText,savedAt:new Date().toISOString()}));save.textContent="Saved on this device";showToast("Result saved in this browser on this device.","success");}catch(e){showToast("Could not save locally. Use Download result instead.","warning");}});
+   const edit=document.createElement("button");edit.type="button";edit.className="task-secondary-button";edit.textContent="Edit";
+   const editorWrap=document.createElement("div");editorWrap.className="task-edit-result";editorWrap.hidden=true;
+   const editor=document.createElement("textarea");editor.value=resultText;editor.setAttribute("aria-label","Edit successful task result");
+   const saveEdited=document.createElement("button");saveEdited.type="button";saveEdited.className="task-secondary-button";saveEdited.textContent="Save edited copy";
+   saveEdited.addEventListener("click",()=>downloadWorkspaceText(editor.value,"nkwasibwe-"+activeDashboardCategory+"-"+taskId+"-edited.txt"));
+   edit.addEventListener("click",()=>{editorWrap.hidden=!editorWrap.hidden;edit.textContent=editorWrap.hidden?"Edit":"Close editor";});
+   editorWrap.append(editor,saveEdited);
+   side.append(download,save,edit);
+   row.append(copy,side,editorWrap);
+  } else row.append(copy,side);
+  workspaceRecentActivityList.appendChild(row);
+ });
 }
 async function refreshWorkspaceActivities() {
  if(!activeDashboardCategory)return;if(!authToken){renderWorkspaceActivities();return;}
@@ -9838,7 +9884,7 @@ if (dashboardCategories) {
 
 if (activityRefreshButton) activityRefreshButton.addEventListener("click", () => void refreshDashboardActivities());
 if (workspaceActivityRefresh) workspaceActivityRefresh.addEventListener("click", () => void refreshWorkspaceActivities());
-document.querySelectorAll("[data-workspace-activity-filter]").forEach(b=>b.addEventListener("click",()=>openTaskManager(b.dataset.workspaceActivityFilter||"all",activeDashboardCategory)));
+document.querySelectorAll("[data-workspace-activity-filter]").forEach(b=>b.addEventListener("click",()=>{activeWorkspaceActivityFilter=["all","succeeded","failed","running"].includes(b.dataset.workspaceActivityFilter)?b.dataset.workspaceActivityFilter:"all";renderWorkspaceActivities();}));
 document.querySelectorAll("[data-activity-filter]").forEach((button) => {
   button.addEventListener("click", () => openTaskManager(button.dataset.activityFilter || "all"));
 });
