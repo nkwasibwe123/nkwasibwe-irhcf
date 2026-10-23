@@ -2688,3 +2688,27 @@ body { background: #fff; color: var(--text); }
  .workspace-chart-row { grid-template-columns:70px minmax(40px,1fr) 24px; gap:7px; }
  .workspace-chart-heading,.workspace-activity-list-heading { align-items:flex-start; flex-direction:column; }
 }
+
+/* Service-specific activity dashboards: compact, readable, responsive. */
+.workspace-activity-center { margin: 0 0 18px; color: var(--text); }
+.workspace-activity-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.workspace-activity-center .activity-summary-card { min-width: 0; text-align: left; }
+.workspace-activity-chart { margin: 16px 0; padding: 16px; border: 1px solid var(--border); border-radius: 14px; background: var(--panel); }
+.workspace-chart-heading, .workspace-activity-list-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:14px; }
+.workspace-chart-heading span, .workspace-activity-list-heading span { color:var(--text-muted); font-size:12px; }
+.workspace-chart-bars { display:grid; gap:12px; }
+.workspace-chart-row { display:grid; grid-template-columns:82px minmax(50px,1fr) 28px; align-items:center; gap:10px; font-size:13px; }
+.workspace-chart-track { height:10px; border-radius:999px; overflow:hidden; background:var(--panel-light); }
+.workspace-chart-fill { height:100%; width:0; border-radius:inherit; transition:width .25s ease; }
+.chart-success { background:#16803c; } .chart-running { background:var(--primary); } .chart-failed { background:#c53030; }
+.workspace-activity-list-heading { margin-top:18px; }
+.workspace-activity-list-heading h4 { font-size:15px; }
+.workspace-activity-center .recent-activity-item { margin-bottom:8px; }
+.task-edit-result { display:grid; gap:8px; width:100%; margin-top:10px; }
+.task-edit-result textarea { width:100%; min-height:150px; padding:12px; border:1px solid var(--border-light); border-radius:10px; color:var(--text); background:var(--panel); font:inherit; }
+.task-result-action-row { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+@media (max-width:720px) {
+ .workspace-activity-summary { grid-template-columns:repeat(2,minmax(0,1fr)); }
+ .workspace-chart-row { grid-template-columns:70px minmax(40px,1fr) 24px; gap:7px; }
+ .workspace-chart-heading,.workspace-activity-list-heading { align-items:flex-start; flex-direction:column; }
+}
