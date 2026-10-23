@@ -114,6 +114,27 @@
     }
   }
 
+  function waitForIceGathering(connection, timeoutMs = 4000) {
+    if (!connection || connection.iceGatheringState === "complete") return Promise.resolve();
+    return new Promise(resolve => {
+      let settled = false;
+      let timer;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        connection.removeEventListener("icegatheringstatechange", check);
+        resolve();
+      };
+      const check = () => {
+        if (connection.iceGatheringState === "complete") finish();
+      };
+      connection.addEventListener("icegatheringstatechange", check);
+      timer = setTimeout(finish, timeoutMs);
+      check();
+    });
+  }
+
   liveButton.addEventListener("click", async () => {
     // The button also controls browser fallback recording. Stop it on the
     // next tap rather than launching a second recognition session.
@@ -177,11 +198,16 @@
       micStream.getTracks().forEach(track => peer.addTrack(track, micStream));
       const offer = await peer.createOffer();
       await peer.setLocalDescription(offer);
-
+      // Send the final local description after ICE gathering, not the stale
+      // pre-gathering offer. This avoids empty/truncated SDP offers rejected
+      // by the Realtime Calls API with invalid_offer / SDP EOF.
+      await waitForIceGathering(peer);
+      const localSdp = String(peer.localDescription?.sdp || offer.sdp || "").trim();
+      if (!localSdp.startsWith("v=0")) throw new Error("The browser did not create a valid WebRTC offer.");
       const response = await fetch(API_BASE + "/api/voice/realtime", {
         method: "POST",
         headers: { "Content-Type": "application/sdp", ...authHeaders() },
-        body: offer.sdp
+        body: localSdp
       });
       if (!response.ok) {
         const error = await response.json().catch(() => ({}));
