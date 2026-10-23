@@ -7507,7 +7507,7 @@ async function sendMessage() {
         body: JSON.stringify({
           task: executableTask,
           sessionId: activeSessionId,
-          metadata: { source: "irhcf_chat_build_request", deliverableRequired: true }
+          metadata: { source: "irhcf_chat_build_request", workspace: activeDashboardCategory || "build", deliverableRequired: true }
         }),
         timeoutMs: 30000
       });
@@ -8644,7 +8644,11 @@ function getTaskWorkspaceCategory(task) {
  const m=taskMetadata(task); const raw=String(m.workspace||m.category||m.originWorkspace||m.service||"").toLowerCase();
  const map={files:"files","files & projects":"files","file manager":"files",create:"create","create media":"create",media:"create",edit:"edit","media studio":"edit",transcription:"edit",audio:"edit",video:"edit",build:"build","software factory":"build",software:"build",development:"build",research:"research","research & knowledge":"research",search:"research",agents:"agents","agents & automation":"agents",automation:"agents",tasks:"agents",settings:"settings"};
  if(map[raw])return map[raw]; const s=String(m.source||m.origin||"").toLowerCase();
- if(/transcri|audio|video|media/.test(s))return "edit";if(/research|search/.test(s))return "research";if(/software|build|code/.test(s))return "build";if(/agent|task/.test(s))return "agents";return null;
+ if(s.includes("irhcf_chat_build_request")||/software|build|code|website/.test(s))return "build";
+ if(/transcri|audio|video|media/.test(s))return "edit";
+ if(/research|search/.test(s))return "research";
+ if(/agent|task|dashboard/.test(s))return "agents";
+ return null;
 }
 function filterTasksForActivity(tasks) {
  let source=Array.isArray(tasks)?tasks:[]; if(activeTaskWorkspaceFilter)source=source.filter(t=>getTaskWorkspaceCategory(t)===activeTaskWorkspaceFilter);
@@ -8959,6 +8963,7 @@ async function refreshTaskList() {
     }
     cachedTasks = data.tasks.slice().sort((a, b) => Date.parse(b?.created_at || 0) - Date.parse(a?.created_at || 0));
     renderActivityDashboard(cachedTasks);
+    renderWorkspaceActivities();
     renderTaskList(cachedTasks);
     setDashboardStatus(`Loaded ${data.tasks.length} task(s). Progress refreshes automatically.`);
   } catch (error) {
@@ -9306,6 +9311,10 @@ function openTaskManager(filter = "all", workspaceFilter = activeDashboardCatego
     return;
   }
   setDashboardOpen(true);
+  if (workspaceFilter && DASHBOARD_WORKSPACES[workspaceFilter]) {
+    showDashboardWorkspace(workspaceFilter);
+    activeTaskWorkspaceFilter = workspaceFilter;
+  }
   if (dashboardCategories) dashboardCategories.hidden = true;
   if (dashboardActivityCenter) dashboardActivityCenter.hidden = true;
   if (dashboardGrid) dashboardGrid.hidden = true;
