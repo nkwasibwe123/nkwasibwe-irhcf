@@ -110,7 +110,7 @@
       if (fallbackRecognition !== recognition) return;
       setTimeout(() => {
         if (fallbackRecognition !== recognition) return;
-        try { recognition.start(); }
+        try { lastProcessedResultIndex = -1; recognition.start(); }
         catch (_) { setStatus("Voice listening paused. Tap 🔊 to resume or type your message."); }
       }, 250);
     };
