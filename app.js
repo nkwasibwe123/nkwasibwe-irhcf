@@ -8233,7 +8233,7 @@ if(workspaceChatForm)workspaceChatForm.addEventListener("submit",async event=>{
     "Use the current workspace conversation context when available. Never claim success without verification.",
     "User request:",message
    ].join("\\n\\n");
-   const queued=await apiRequest(API_ENDPOINTS.tasks,{method:"POST",body:JSON.stringify({task:executableTask,sessionId,metadata:{source:"irhcf_chat_build_request",workspace:category,deliverableRequired:true}}),timeoutMs:30000});
+   const queued=await apiRequest(API_ENDPOINTS.tasks,{method:"POST",body:JSON.stringify({task:executableTask,sessionId,metadata:{source:"irhcf_chat_build_request",workspace:category,deliverableRequired:true,requestedTask:message}}),timeoutMs:30000});
    if(!queued?.success||!queued.task)throw new Error(queued?.error||"Ntibyashobotse gushyira igikorwa muri task queue.");
    items.push({role:"assistant",text:"Natangiye gukora igikorwa muri "+(workspace?.title||category)+". Task #"+queued.task.id+" yashyizwe ku murongo; si ukuvuga ko yarangiye. Reba ibikorwa byo kuri iyi page kugira ngo ukurikirane progress n'amadosiye yagenzuwe.",at:new Date().toISOString()});
    saveWorkspaceChat(items);renderWorkspaceChat();void refreshWorkspaceActivities();return;
