@@ -8182,7 +8182,8 @@ document.addEventListener(
 function showDashboardHome() {
   activeDashboardCategory = null;
   if (taskManager) taskManager.hidden = true;
-  if (dashboardActivityCenter) dashboardActivityCenter.hidden = false;\n  if (workspaceChatPanel) workspaceChatPanel.hidden = true;
+  if (dashboardActivityCenter) dashboardActivityCenter.hidden = false;
+  if (workspaceChatPanel) workspaceChatPanel.hidden = true;
   if (workspaceActivityCenter) workspaceActivityCenter.hidden = true;
   if (dashboardCategories) dashboardCategories.hidden = false;
   if (dashboardGrid) dashboardGrid.hidden = true;
@@ -8237,7 +8238,9 @@ function showDashboardWorkspace(category) {
   if (!workspace) return;
   activeDashboardCategory = category;
   if (dashboardActivityCenter) dashboardActivityCenter.hidden = true;
-  if (workspaceActivityCenter) workspaceActivityCenter.hidden = false;\n  if (workspaceChatPanel) workspaceChatPanel.hidden = false;\n  const workspaceChatTitle = document.getElementById("workspaceChatTitle");\n  const workspaceChatDescription = document.getElementById("workspaceChatDescription");\n  if (workspaceChatTitle) workspaceChatTitle.textContent = "Ganira na " + workspace.title;\n  if (workspaceChatDescription) workspaceChatDescription.textContent = "Baza ibibazo kandi saba ubufasha bijyanye na " + workspace.title + " hano.";\n  renderWorkspaceChat();
+  if (workspaceActivityCenter) workspaceActivityCenter.hidden = false;
+  if (workspaceChatPanel) workspaceChatPanel.hidden = false;
+  const workspaceChatTitle = document.getElementById("workspaceChatTitle");\n  const workspaceChatDescription = document.getElementById("workspaceChatDescription");\n  if (workspaceChatTitle) workspaceChatTitle.textContent = "Ganira na " + workspace.title;\n  if (workspaceChatDescription) workspaceChatDescription.textContent = "Baza ibibazo kandi saba ubufasha bijyanye na " + workspace.title + " hano.";\n  renderWorkspaceChat();
   if (dashboardCategories) dashboardCategories.hidden = true;
   if (dashboardWorkspaceHeading) dashboardWorkspaceHeading.hidden = false;
   if (dashboardWorkspaceTitle) dashboardWorkspaceTitle.textContent = workspace.title;
