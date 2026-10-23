@@ -398,8 +398,8 @@ test("dashboard opens as a full-screen app workspace instead of a floating overl
   assert.match(css, /\.capability-dashboard\.open\s*\{\s*display:\s*flex/);
   assert.match(css, /\.capability-dashboard \.dashboard-backdrop\s*\{\s*display:\s*none !important/);
   assert.match(css, /\.capability-dashboard \.dashboard-panel\s*\{[\s\S]*?width:\s*100%/);
-  assert.match(html, /style\\.css\\?v=2\\.0\\.30/);
-  assert.match(html, /app\\.js\\?v=2\\.0\\.29/);
+  assert.ok(html.includes("style.css?v=2.0.30"));
+  assert.ok(html.includes("app.js?v=2.0.29"));
 });
 
 
