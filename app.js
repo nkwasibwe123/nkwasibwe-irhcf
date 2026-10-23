@@ -8223,7 +8223,22 @@ if(workspaceChatForm)workspaceChatForm.addEventListener("submit",async event=>{
  try{
   const sessionKey="irhcf_workspace_session_"+category;let sessionId=localStorage.getItem(sessionKey);
   if(!sessionId){sessionId="workspace-"+category+"-"+(crypto.randomUUID?crypto.randomUUID():Date.now()+"-"+Math.random().toString(36).slice(2));localStorage.setItem(sessionKey,sessionId);}
-  const contextualMessage="You are the dedicated assistant for the Nkwasibwe IRHCF workspace: "+(workspace?.title||category)+". Workspace description: "+(workspace?.description||"")+"\nAnswer questions and help with tasks relevant to this workspace. Keep this workspace conversation separate from the general conversation. If the user requests an action, use the available task execution workflow where appropriate; never claim a task succeeded without evidence.\n\nUser message: "+message;
+  // Requests that ask for an actual website/app/code deliverable must use the persistent task queue,
+  // scoped to this workspace, rather than receiving chat-only instructions.
+  if(typeof isExplicitBuildTask==="function"&&isExplicitBuildTask(message)){
+   const executableTask=[
+    "Build and generate the actual requested deliverable; do not respond with instructions or a plan only.",
+    "Create complete file contents, run available verification, and attach downloadable verified artifacts.",
+    "Keep all task metadata scoped to workspace: "+category+" ("+(workspace?.title||category)+").",
+    "Use the current workspace conversation context when available. Never claim success without verification.",
+    "User request:",message
+   ].join("\\n\\n");
+   const queued=await apiRequest(API_ENDPOINTS.tasks,{method:"POST",body:JSON.stringify({task:executableTask,sessionId,metadata:{source:"irhcf_chat_build_request",workspace:category,deliverableRequired:true}}),timeoutMs:30000});
+   if(!queued?.success||!queued.task)throw new Error(queued?.error||"Ntibyashobotse gushyira igikorwa muri task queue.");
+   items.push({role:"assistant",text:"Natangiye gukora igikorwa muri "+(workspace?.title||category)+". Task #"+queued.task.id+" yashyizwe ku murongo; si ukuvuga ko yarangiye. Reba ibikorwa byo kuri iyi page kugira ngo ukurikirane progress n'amadosiye yagenzuwe.",at:new Date().toISOString()});
+   saveWorkspaceChat(items);renderWorkspaceChat();void refreshWorkspaceActivities();return;
+  }
+  const contextualMessage="You are the dedicated assistant for the Nkwasibwe IRHCF workspace: "+(workspace?.title||category)+". Workspace description: "+(workspace?.description||"")+"\\nAnswer questions and help with tasks relevant to this workspace. Keep this workspace conversation separate from the general conversation. If the user requests an action, use the available task execution workflow where appropriate; never claim a task succeeded without evidence.\\n\\nUser message: "+message;
   const data=await apiRequest(API_ENDPOINTS.chat,{method:"POST",body:JSON.stringify({message:contextualMessage,sessionId,session_id:sessionId,responseLanguage:"auto",languagePreference:"auto"})});
   let answer=data?.response??data?.reply??data?.result??data?.answer??data?.output??data?.message?.content??data?.data?.response??data?.data?.reply??data?.data?.result??data?.data?.answer??data?.data?.output??data?.data?.message?.content??data?.message;
   if(answer&&typeof answer==="object")answer=answer.content??answer.text??JSON.stringify(answer,null,2);
