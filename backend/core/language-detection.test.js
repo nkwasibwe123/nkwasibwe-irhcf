@@ -7,6 +7,8 @@ const { detectAgentLanguage } = require("./language-detection");
 test("detects Kinyarwanda tasks", () => {
   assert.equal(detectAgentLanguage("Muraho, ndashaka ko umfasha"), "rw");
   assert.equal(detectAgentLanguage("Mbwira uko iki kibazo cyakemuka"), "rw");
+  assert.equal(detectAgentLanguage("Komeza mpaka dusoje byose. Ntabwo nshaka ko umbaza, bikore neza."), "rw");
+  assert.equal(detectAgentLanguage("Ndi Nkwasibwe IRHCF, ncaka ko tasks zose zikora"), "rw");
   assert.equal(detectAgentLanguage("Mbwira uko nakwigarurira umutima wa Chanella?\\n\\n[Response language preference: English.]"), "rw");
 });
 
