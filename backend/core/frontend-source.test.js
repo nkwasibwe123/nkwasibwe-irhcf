@@ -412,8 +412,8 @@ test("dashboard opens as a full-screen app workspace instead of a floating overl
   assert.match(css, /\.capability-dashboard\.open\s*\{\s*display:\s*flex/);
   assert.match(css, /\.capability-dashboard \.dashboard-backdrop\s*\{\s*display:\s*none !important/);
   assert.match(css, /\.capability-dashboard \.dashboard-panel\s*\{[\s\S]*?width:\s*100%/);
-  assert.ok(html.includes("style.css?v=2.0.31"));
-  assert.ok(html.includes("app.js?v=2.0.33"));
+  assert.ok(html.includes("style.css?v=2.0.32"));
+  assert.ok(html.includes("app.js?v=2.0.37"));
 });
 
 
@@ -475,4 +475,15 @@ test("each service workspace has an independent conversation panel and session",
   assert.match(app, /irhcf_workspace_session_/);
   assert.match(app, /workspaceChatForm\.addEventListener\("submit"/);
   assert.match(app, /renderWorkspaceChat\(\)/);
+});
+
+
+test("generated website artifacts expose a sandboxed preview action", () => {
+  const root = path.join(__dirname, "..", "..");
+  const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
+  const css = fs.readFileSync(path.join(root, "style.css"), "utf8");
+  assert.ok(app.includes("Preview website / app"));
+  assert.ok(app.includes('sandbox="allow-scripts"'));
+  assert.match(app, /sourceByName\.set\(item\.name\.toLowerCase\(\)/);
+  assert.match(css, /\.irhcf-artifact-preview-dialog/);
 });
