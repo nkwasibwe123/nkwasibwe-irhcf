@@ -8182,7 +8182,7 @@ document.addEventListener(
 function showDashboardHome() {
   activeDashboardCategory = null;
   if (taskManager) taskManager.hidden = true;
-  if (dashboardActivityCenter) dashboardActivityCenter.hidden = false;
+  if (dashboardActivityCenter) dashboardActivityCenter.hidden = false;\n  if (workspaceChatPanel) workspaceChatPanel.hidden = true;
   if (workspaceActivityCenter) workspaceActivityCenter.hidden = true;
   if (dashboardCategories) dashboardCategories.hidden = false;
   if (dashboardGrid) dashboardGrid.hidden = true;
@@ -8197,12 +8197,47 @@ function showDashboardHome() {
   }
 }
 
+const workspaceChatPanel=document.getElementById("workspaceChatPanel");
+const workspaceChatMessages=document.getElementById("workspaceChatMessages");
+const workspaceChatForm=document.getElementById("workspaceChatForm");
+const workspaceChatInput=document.getElementById("workspaceChatInput");
+const workspaceChatSend=document.getElementById("workspaceChatSend");
+const workspaceChatClear=document.getElementById("workspaceChatClear");
+function workspaceChatStorageKey(category){return "irhcf_workspace_chat_"+String(category||"general");}
+function renderWorkspaceChat(){
+ if(!workspaceChatMessages||!activeDashboardCategory)return;
+ let items=[];try{items=JSON.parse(localStorage.getItem(workspaceChatStorageKey(activeDashboardCategory))||"[]");}catch{}
+ workspaceChatMessages.replaceChildren();
+ if(!items.length){const empty=document.createElement("p");empty.className="task-list-empty";empty.textContent="Tangirira hano: baza ikibazo cyangwa usabe igikorwa kijyanye n'iyi service.";workspaceChatMessages.appendChild(empty);return;}
+ items.forEach(item=>{const row=document.createElement("article");row.className="workspace-chat-message "+(item.role==="user"?"workspace-chat-user":"workspace-chat-assistant");const label=document.createElement("strong");label.textContent=item.role==="user"?"Wowe":"Nkwasibwe · "+(DASHBOARD_WORKSPACES[activeDashboardCategory]?.title||"Service");const body=document.createElement("p");body.textContent=String(item.text||"");row.append(label,body);workspaceChatMessages.appendChild(row);});
+ workspaceChatMessages.scrollTop=workspaceChatMessages.scrollHeight;
+}
+function saveWorkspaceChat(items){try{localStorage.setItem(workspaceChatStorageKey(activeDashboardCategory),JSON.stringify(items.slice(-60)));}catch{showToast("Ububiko bw'uru ganiriro kuri iyi device bwuzuye.","warning");}}
+if(workspaceChatForm)workspaceChatForm.addEventListener("submit",async event=>{
+ event.preventDefault();if(!activeDashboardCategory||!workspaceChatInput||!workspaceChatSend)return;
+ const message=workspaceChatInput.value.trim();if(!message)return;
+ if(!authToken){showAuthenticationDialog();return;}
+ let items=[];try{items=JSON.parse(localStorage.getItem(workspaceChatStorageKey(activeDashboardCategory))||"[]");}catch{}
+ const category=activeDashboardCategory;const workspace=DASHBOARD_WORKSPACES[category];items.push({role:"user",text:message,at:new Date().toISOString()});saveWorkspaceChat(items);renderWorkspaceChat();workspaceChatInput.value="";workspaceChatSend.disabled=true;workspaceChatSend.textContent="Thinking…";
+ try{
+  const sessionKey="irhcf_workspace_session_"+category;let sessionId=localStorage.getItem(sessionKey);
+  if(!sessionId){sessionId="workspace-"+category+"-"+(crypto.randomUUID?crypto.randomUUID():Date.now()+"-"+Math.random().toString(36).slice(2));localStorage.setItem(sessionKey,sessionId);}
+  const contextualMessage="You are the dedicated assistant for the Nkwasibwe IRHCF workspace: "+(workspace?.title||category)+". Workspace description: "+(workspace?.description||"")+"\nAnswer questions and help with tasks relevant to this workspace. Keep this workspace conversation separate from the general conversation. If the user requests an action, use the available task execution workflow where appropriate; never claim a task succeeded without evidence.\n\nUser message: "+message;
+  const data=await apiRequest(API_ENDPOINTS.chat,{method:"POST",body:JSON.stringify({message:contextualMessage,sessionId,session_id:sessionId,responseLanguage:"auto",languagePreference:"auto"})});
+  let answer=data?.response??data?.reply??data?.result??data?.answer??data?.output??data?.message?.content??data?.data?.response??data?.data?.reply??data?.data?.result??data?.data?.answer??data?.data?.output??data?.data?.message?.content??data?.message;
+  if(answer&&typeof answer==="object")answer=answer.content??answer.text??JSON.stringify(answer,null,2);
+  if(!data?.success&&typeof answer!=="string")throw new Error(data?.error||"Nta gisubizo cyagarutse kuri service chat.");
+  items.push({role:"assistant",text:String(answer||"Nta gisubizo cyagarutse. Ongera ugerageze."),at:new Date().toISOString()});saveWorkspaceChat(items);renderWorkspaceChat();
+ }catch(error){items.push({role:"assistant",text:"Ntibyashobotse kubona igisubizo: "+String(error?.message||error),at:new Date().toISOString()});saveWorkspaceChat(items);renderWorkspaceChat();}
+ finally{workspaceChatSend.disabled=false;workspaceChatSend.textContent="Send";workspaceChatInput.focus();}
+});
+if(workspaceChatClear)workspaceChatClear.addEventListener("click",()=>{if(!activeDashboardCategory)return;localStorage.removeItem(workspaceChatStorageKey(activeDashboardCategory));localStorage.removeItem("irhcf_workspace_session_"+activeDashboardCategory);renderWorkspaceChat();});
 function showDashboardWorkspace(category) {
   const workspace = DASHBOARD_WORKSPACES[category];
   if (!workspace) return;
   activeDashboardCategory = category;
   if (dashboardActivityCenter) dashboardActivityCenter.hidden = true;
-  if (workspaceActivityCenter) workspaceActivityCenter.hidden = false;
+  if (workspaceActivityCenter) workspaceActivityCenter.hidden = false;\n  if (workspaceChatPanel) workspaceChatPanel.hidden = false;\n  const workspaceChatTitle = document.getElementById("workspaceChatTitle");\n  const workspaceChatDescription = document.getElementById("workspaceChatDescription");\n  if (workspaceChatTitle) workspaceChatTitle.textContent = "Ganira na " + workspace.title;\n  if (workspaceChatDescription) workspaceChatDescription.textContent = "Baza ibibazo kandi saba ubufasha bijyanye na " + workspace.title + " hano.";\n  renderWorkspaceChat();
   if (dashboardCategories) dashboardCategories.hidden = true;
   if (dashboardWorkspaceHeading) dashboardWorkspaceHeading.hidden = false;
   if (dashboardWorkspaceTitle) dashboardWorkspaceTitle.textContent = workspace.title;
