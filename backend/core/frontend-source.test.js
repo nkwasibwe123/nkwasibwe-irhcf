@@ -401,3 +401,27 @@ test("dashboard opens as a full-screen app workspace instead of a floating overl
   assert.match(html, /style\.css\?v=2\.0\.26/);
   assert.match(html, /app\.js\?v=2\.0\.27/);
 });
+
+
+test("service workspace activity dashboard has scoped status cards, chart, and refresh controls", () => {
+  const root = path.join(__dirname, "..", "..");
+  const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  const css = fs.readFileSync(path.join(root, "style.css"), "utf8");
+  const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
+  for (const id of ["workspaceActivityCenter", "workspaceActivityRecentCount", "workspaceActivitySucceededCount", "workspaceActivityFailedCount", "workspaceActivityRunningCount", "workspaceChartSucceeded", "workspaceChartRunning", "workspaceChartFailed", "workspaceRecentActivityList", "workspaceActivityRefresh"]) {
+    assert.match(html, new RegExp('id="' + id + '"'), "Missing service dashboard element: " + id);
+  }
+  assert.match(css, /\.workspace-activity-summary/);
+  assert.match(css, /\.workspace-chart-track/);
+  assert.match(app, /function renderWorkspaceActivities\(\)/);
+  assert.match(app, /function getTaskWorkspaceCategory\(task\)/);
+  assert.match(app, /renderWorkspaceActivities\(\);\s*renderTaskList\(cachedTasks\)/);
+});
+
+test("workspace activity cards preserve the selected workspace when opening filtered task manager", () => {
+  const root = path.join(__dirname, "..", "..");
+  const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
+  assert.match(app, /function openTaskManager\(filter = "all", workspaceFilter = activeDashboardCategory \|\| null\)/);
+  assert.match(app, /showDashboardWorkspace\(workspaceFilter\);\s*activeTaskWorkspaceFilter = workspaceFilter;/);
+  assert.match(app, /metadata: \{ source: "irhcf_chat_build_request", workspace: activeDashboardCategory \|\| "build", deliverableRequired: true \}/);
+});
