@@ -2712,3 +2712,41 @@ body { background: #fff; color: var(--text); }
  .workspace-chart-row { grid-template-columns:70px minmax(40px,1fr) 24px; gap:7px; }
  .workspace-chart-heading,.workspace-activity-list-heading { align-items:flex-start; flex-direction:column; }
 }
+
+/* Workspace activity filters and result actions */
+.workspace-activity-center [data-workspace-activity-filter].activity-filter-active {
+  border-color: #2563eb;
+  background: #eff6ff;
+  box-shadow: inset 0 0 0 1px #2563eb;
+}
+.workspace-activity-center .recent-activity-item {
+  align-items: flex-start;
+}
+.workspace-activity-center .recent-activity-side {
+  max-width: 100%;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+}
+.workspace-activity-center .task-edit-result {
+  flex: 1 0 100%;
+  min-width: 0;
+}
+.workspace-activity-center .task-edit-result textarea {
+  box-sizing: border-box;
+  min-height: 130px;
+  font-size: 14px;
+}
+@media (max-width: 640px) {
+  .workspace-activity-center .recent-activity-item {
+    flex-direction: column;
+  }
+  .workspace-activity-center .recent-activity-side {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .workspace-activity-center .recent-activity-side button {
+    min-height: 38px;
+  }
+}
