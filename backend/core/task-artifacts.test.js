@@ -46,3 +46,26 @@ test("partial website output does not silently become a fallback site", () => {
   assert.equal(result.fallbackUsed, undefined);
   assert.match(result.error, /Missing required file/);
 });
+
+
+test("trading website fallback matches the requested domain and stays paper-trading only", () => {
+  const result = buildTaskArtifacts({
+    task: "I want to make for me a website of trading with all requirements",
+    taskId: "task-trading-46",
+    result: {
+      success: false,
+      error: { code: "ALL_ADAPTERS_FAILED", message: "AI providers failed before generating files." }
+    }
+  });
+  assert.equal(result.required, true);
+  assert.equal(result.verified, true);
+  assert.equal(result.fallbackUsed, true);
+  assert.deepEqual(result.artifacts.map(item => item.name).sort(), ["README.md", "index.html", "script.js", "style.css"]);
+  const html = result.artifacts.find(item => item.name === "index.html").content;
+  const js = result.artifacts.find(item => item.name === "script.js").content;
+  assert.match(html, /Market[s]?/i);
+  assert.match(html, /Paper portfolio/);
+  assert.match(html, /DEMO · PAPER TRADING/);
+  assert.doesNotMatch(html, /Welcome to our school|Every learner matters/);
+  assert.match(js, /paper buy|virtual only/i);
+});
