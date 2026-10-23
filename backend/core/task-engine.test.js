@@ -398,3 +398,36 @@ test("website artifact builder records provider failure while returning verified
   assert.equal(result.providerFailure.code, "ALL_ADAPTERS_FAILED");
   assert.equal(result.artifacts.length, 4);
 });
+
+test("website task falls back to verified downloadable files when executor returns failure", async () => {
+  const engine = new TaskEngine({
+    pool: { async query(sql, params) {
+      if (sql.includes("SELECT status, worker_id")) return { rows: [{ status: TASK_STATES.RUNNING, worker_id: "worker-test" }] };
+      if (sql.includes("SET status = $2") && sql.includes("RETURNING id")) return { rows: [{ id: 77 }] };
+      if (sql.includes("RETURNING *") && sql.includes("result = $4")) return { rows: [{ id: 77, status: TASK_STATES.COMPLETED, result: params[3] }] };
+      return { rows: [] };
+    } },
+    workerId: "worker-test",
+    executor: async () => ({ success: false, error: { code: "ALL_ADAPTERS_FAILED", message: "No AI provider responded." } }),
+    verifier: async ({ result }) => ({ verified: result?.taskAction?.verified === true, reason: result?.taskAction?.error || "Verified local website files." })
+  });
+  engine.createTaskRun = async () => ({ id: 10 });
+  engine.createAgentRun = async () => ({ id: 11 });
+  engine.createAgentStep = async () => ({ id: 12 });
+  engine.updateProgress = async () => ({ id: 77 });
+  engine.finishAgentStep = async () => {};
+  engine.finishTaskRun = async () => {};
+  engine.finishAgentRun = async () => {};
+  engine.assertTaskStillOwned = async () => ({ status: TASK_STATES.RUNNING, worker_id: "worker-test" });
+  const result = await engine.executeClaimedTask({
+    id: 77, user_id: 1, session_id: "session-test",
+    task: "Build deliverable. User request: I want you to help me build a website of school, make it yourself and give me a result.",
+    metadata: { deliverableRequired: true, requestedTask: "I want you to help me build a website of school, make it yourself and give me a result." },
+    attempts: 1, max_attempts: 3, checkpoint: {}, status: TASK_STATES.RUNNING, worker_id: "worker-test"
+  });
+  assert.equal(result.status, TASK_STATES.COMPLETED);
+  const stored = JSON.parse(result.result);
+  assert.equal(stored.fallbackUsed, true);
+  assert.equal(stored.taskAction.verified, true);
+  assert.deepEqual(stored.taskAction.artifacts.map(file => file.name), ["index.html", "style.css", "script.js", "README.md"]);
+});
