@@ -6500,6 +6500,17 @@ function speakAssistantResponse(text) {
   try {
     window.speechSynthesis.cancel();
     const utterance = new window.SpeechSynthesisUtterance(spokenText.slice(0, 12000));
+    // Signal live voice mode to suspend its microphone recognizer while TTS
+    // plays, preventing the assistant from hearing and replying to itself.
+    window.__irhcfSpeakingUtterance = utterance;
+    window.dispatchEvent(new Event("irhcf:assistant-speech-start"));
+    const finishSpokenReply = () => {
+      if (window.__irhcfSpeakingUtterance !== utterance) return;
+      window.__irhcfSpeakingUtterance = null;
+      window.dispatchEvent(new Event("irhcf:assistant-speech-end"));
+    };
+    utterance.onend = finishSpokenReply;
+    utterance.onerror = finishSpokenReply;
     const preferred = String(getPreferredResponseLanguage() || "en").toLowerCase();
     utterance.lang = preferred === "rw" || preferred.startsWith("rw") ? "rw-RW"
       : preferred.startsWith("fr") ? "fr-FR"
