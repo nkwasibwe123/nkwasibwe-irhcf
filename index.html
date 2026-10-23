@@ -232,6 +232,12 @@
             <h3 id="dashboardWorkspaceTitle">Workspace</h3>
             <p id="dashboardWorkspaceDescription"></p>
           </div>
+          <section id="workspaceChatPanel" class="workspace-chat-panel" hidden aria-labelledby="workspaceChatTitle">
+            <div class="workspace-chat-heading"><div><p class="dashboard-eyebrow">SERVICE CONVERSATION</p><h3 id="workspaceChatTitle">Ganira na service</h3><p id="workspaceChatDescription">Baza ibibazo bijyanye n'iyi service hano.</p></div><button id="workspaceChatClear" class="task-secondary-button" type="button">New conversation</button></div>
+            <div id="workspaceChatMessages" class="workspace-chat-messages" aria-live="polite"><p class="task-list-empty">Ubutumwa bw'iyi service buzagaragara hano.</p></div>
+            <form id="workspaceChatForm" class="workspace-chat-form"><label class="sr-only" for="workspaceChatInput">Ubutumwa bwa service</label><textarea id="workspaceChatInput" rows="2" maxlength="12000" placeholder="Baza cyangwa saba ikintu kijyanye n'iyi service…"></textarea><button id="workspaceChatSend" class="task-primary-button" type="submit">Send</button></form>
+            <p class="workspace-chat-note">Uru ni uruganiriro rwihariye rwa service. Ntiruvanga ubutumwa n'uruganiriro rusange.</p>
+          </section>
           <section id="workspaceActivityCenter" class="dashboard-activity-center workspace-activity-center" hidden aria-labelledby="workspaceActivityTitle">
             <div class="activity-center-heading">
               <div><p class="dashboard-eyebrow">SERVICE WORKSPACE</p><h3 id="workspaceActivityTitle">Service activities</h3><p id="workspaceActivityDescription">Ibikorwa byo muri iyi service gusa.</p></div>
@@ -905,7 +911,7 @@ STATUS BAR
        ================================================ -->
 
   <script
-    src="app.js?v=2.0.30"
+    src="app.js?v=2.0.31"
   ></script>
   <script
     src="voice-client.js?v=2.0.24"
