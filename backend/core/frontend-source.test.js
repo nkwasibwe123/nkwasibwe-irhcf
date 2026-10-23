@@ -398,8 +398,8 @@ test("dashboard opens as a full-screen app workspace instead of a floating overl
   assert.match(css, /\.capability-dashboard\.open\s*\{\s*display:\s*flex/);
   assert.match(css, /\.capability-dashboard \.dashboard-backdrop\s*\{\s*display:\s*none !important/);
   assert.match(css, /\.capability-dashboard \.dashboard-panel\s*\{[\s\S]*?width:\s*100%/);
-  assert.ok(html.includes("style.css?v=2.0.30"));
-  assert.ok(html.includes("app.js?v=2.0.30"));
+  assert.ok(html.includes("style.css?v=2.0.31"));
+  assert.ok(html.includes("app.js?v=2.0.32"));
 });
 
 
@@ -445,4 +445,20 @@ test("service activity filters stay on the service page and successful results e
   assert.match(app, /Save edited copy/);
   assert.match(app, /localStorage\.setItem\(key/);
   assert.match(css, /activity-filter-active/);
+});
+
+
+test("each service workspace has an independent conversation panel and session", () => {
+  const root = path.join(__dirname, "..", "..");
+  const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  const css = fs.readFileSync(path.join(root, "style.css"), "utf8");
+  const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
+  for (const id of ["workspaceChatPanel", "workspaceChatMessages", "workspaceChatForm", "workspaceChatInput", "workspaceChatSend", "workspaceChatClear"]) {
+    assert.match(html, new RegExp('id="' + id + '"'), "Missing service conversation element: " + id);
+  }
+  assert.match(css, /\.workspace-chat-panel/);
+  assert.match(app, /function workspaceChatStorageKey\(category\)/);
+  assert.match(app, /irhcf_workspace_session_/);
+  assert.match(app, /workspaceChatForm\.addEventListener\("submit"/);
+  assert.match(app, /renderWorkspaceChat\(\)/);
 });
