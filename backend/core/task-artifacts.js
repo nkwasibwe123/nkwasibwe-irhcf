@@ -241,6 +241,61 @@ Replace the sample school name and contact email, add verified school details an
  ];
 }
 
+
+function isTradingWebsiteRequest(task) {
+ return /\b(trad(?:e|ing)|broker|forex|stock market|crypto exchange|portfolio|paper trading|trading platform|trading website|crypto trading)\b/i.test(String(task||""));
+}
+
+function buildTradingFallback(task) {
+ const title=String(task||"Trading Platform").replace(/\s+/g," ").trim().slice(0,90)||"Trading Platform";
+ const safeTitle=title.replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
+ return [
+  {name:"index.html",extension:"html",mimeType:EXT_TO_MIME.html,content:`<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="Trading dashboard demo with market watchlist and paper portfolio"><title>${safeTitle}</title><link rel="stylesheet" href="style.css"><script defer src="script.js"></script></head>
+<body><header class="topbar"><a class="brand" href="#home">Trade<span>Desk</span></a><nav><a href="#markets">Markets</a><a href="#portfolio">Portfolio</a><a href="#learn">Learn</a></nav><span class="demo-pill">DEMO · PAPER TRADING</span></header>
+<main id="home"><section class="welcome"><div><p class="eyebrow">MARKET OVERVIEW</p><h1>Trade with a clearer view.</h1><p>Track sample markets, review your paper portfolio and practice order entry without real money.</p></div><div class="market-summary"><span>Demo account balance</span><strong id="balance">$10,000.00</strong><small>Virtual funds only · no real orders</small></div></section>
+<section class="market-strip" aria-label="Sample market prices"><article><span>BTC / USD</span><strong>$67,420.50</strong><em>+2.14%</em></article><article><span>ETH / USD</span><strong>$3,520.20</strong><em>+1.08%</em></article><article><span>S&P 500</span><strong>5,842.10</strong><em>+0.42%</em></article><article><span>EUR / USD</span><strong>1.0842</strong><em class="negative">−0.16%</em></article></section>
+<section class="grid"><div class="panel" id="markets"><div class="panel-heading"><div><p class="eyebrow">WATCHLIST</p><h2>Markets</h2></div><span class="sample-label">SAMPLE DATA</span></div><label class="search-label" for="marketSearch">Search markets</label><input id="marketSearch" type="search" placeholder="Search BTC, ETH, AAPL…"><div class="table-wrap"><table><thead><tr><th>Asset</th><th>Price</th><th>24h</th><th>Action</th></tr></thead><tbody id="marketRows"><tr data-symbol="BTC"><td><b>Bitcoin</b><small>BTC/USD</small></td><td>$67,420.50</td><td class="positive">+2.14%</td><td><button class="buy" data-buy="BTC">Paper buy</button></td></tr><tr data-symbol="ETH"><td><b>Ethereum</b><small>ETH/USD</small></td><td>$3,520.20</td><td class="positive">+1.08%</td><td><button class="buy" data-buy="ETH">Paper buy</button></td></tr><tr data-symbol="AAPL"><td><b>Apple</b><small>AAPL</small></td><td>$231.40</td><td class="positive">+0.61%</td><td><button class="buy" data-buy="AAPL">Paper buy</button></td></tr><tr data-symbol="TSLA"><td><b>Tesla</b><small>TSLA</small></td><td>$248.50</td><td class="negative">−0.84%</td><td><button class="buy" data-buy="TSLA">Paper buy</button></td></tr></tbody></table></div></div>
+<aside class="panel" id="portfolio"><p class="eyebrow">PRACTICE ONLY</p><h2>Paper portfolio</h2><p class="muted">Click “Paper buy” to simulate a small order using virtual funds.</p><div class="portfolio-stat"><span>Virtual cash</span><strong id="cash">$10,000.00</strong></div><div class="portfolio-stat"><span>Demo orders</span><strong id="orderCount">0</strong></div><h3>Recent activity</h3><ul id="activity"><li>No demo orders yet.</li></ul><button id="resetDemo" class="secondary">Reset demo</button></aside></section>
+<section class="learn" id="learn"><p class="eyebrow">IMPORTANT</p><h2>A safe starting point, not a live broker</h2><p>This starter uses illustrative prices and browser-only demo orders. It does not connect to a broker, execute real trades, provide investment advice, or guarantee market data. Before production, add secure authentication, a backend, a licensed market-data source, risk controls, compliance review and a broker integration.</p></section></main><footer>TradeDesk · Educational paper-trading demo · No real funds or live market data.</footer></body></html>`},
+  {name:"style.css",extension:"css",mimeType:EXT_TO_MIME.css,content:`:root{font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#e7edf8;background:#0b1220;font-synthesis:none}*{box-sizing:border-box}body{margin:0;line-height:1.5}.topbar{display:flex;align-items:center;gap:2rem;padding:1rem clamp(1rem,4vw,4rem);background:#111b2d;border-bottom:1px solid #24324a;position:sticky;top:0}.brand{font-size:1.35rem;font-weight:900;color:#fff;text-decoration:none}.brand span{color:#5ee0b5}.topbar nav{display:flex;gap:1.25rem;flex:1}.topbar nav a{color:#aab8ce;text-decoration:none}.demo-pill,.sample-label{font-size:.7rem;font-weight:800;letter-spacing:.08em;color:#ffd98a;background:#3b2d18;padding:.45rem .65rem;border-radius:99px}.welcome{display:flex;justify-content:space-between;align-items:center;gap:2rem;padding:3.5rem clamp(1rem,5vw,5rem);background:radial-gradient(ellipse at top right,#183d49,#0b1220 60%)}.eyebrow{font-size:.72rem;font-weight:800;letter-spacing:.14em;color:#5ee0b5}.welcome h1{font-size:clamp(2.1rem,5vw,4rem);line-height:1.05;max-width:650px;margin:.5rem 0}.welcome p:not(.eyebrow),.muted{color:#aab8ce;max-width:650px}.market-summary,.panel{background:#111b2d;border:1px solid #26354d;border-radius:1rem;padding:1.3rem}.market-summary{min-width:230px;display:grid;gap:.5rem}.market-summary span,.market-summary small,.market-strip span,.portfolio-stat span{color:#aab8ce}.market-summary strong{font-size:1.7rem}.market-strip{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1rem;padding:0 clamp(1rem,5vw,5rem) 1.5rem}.market-strip article{display:grid;gap:.35rem;padding:1rem;background:#111b2d;border:1px solid #26354d;border-radius:.8rem}.market-strip strong{font-size:1.2rem}.positive,.market-strip em{color:#5ee0b5;font-style:normal}.negative{color:#ff8b9b!important}.grid{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(260px,1fr);gap:1rem;padding:0 clamp(1rem,5vw,5rem) 2rem}.panel-heading{display:flex;justify-content:space-between;align-items:center}.panel h2{margin:.1rem 0 1rem}.search-label{display:block;color:#aab8ce;font-size:.85rem;margin:.5rem 0}.panel input{width:100%;padding:.75rem;border:1px solid #30425e;border-radius:.6rem;background:#0b1220;color:#fff;margin-bottom:1rem}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;text-align:left}th,td{padding:.85rem .6rem;border-bottom:1px solid #26354d;white-space:nowrap}th{font-size:.75rem;color:#aab8ce}td small{display:block;color:#aab8ce}.buy,.secondary{border:0;border-radius:.5rem;padding:.55rem .7rem;background:#1b725a;color:#fff;font-weight:700;cursor:pointer}.secondary{background:#30425e;margin-top:1rem}.portfolio-stat{display:flex;justify-content:space-between;padding:.85rem 0;border-bottom:1px solid #26354d}.panel h3{margin-top:1.5rem}.panel ul{padding-left:1.2rem;color:#aab8ce;font-size:.9rem}.panel li{margin:.5rem 0}.learn{margin:0 clamp(1rem,5vw,5rem) 2rem;padding:1.5rem;background:#17263b;border-radius:1rem}.learn p:last-child{color:#bdc9da}footer{text-align:center;padding:1.5rem;color:#aab8ce;border-top:1px solid #26354d}@media(max-width:800px){.topbar{flex-wrap:wrap;gap:1rem}.topbar nav{order:3;width:100%;flex-basis:100%}.demo-pill{margin-left:auto}.welcome{align-items:stretch;flex-direction:column}.market-strip{grid-template-columns:repeat(2,minmax(0,1fr))}.grid{grid-template-columns:1fr}}@media(max-width:420px){.market-strip{grid-template-columns:1fr 1fr;gap:.5rem}.market-strip article{padding:.7rem}.market-strip strong{font-size:1rem}}`},
+  {name:"script.js",extension:"js",mimeType:EXT_TO_MIME.js,content:`"use strict";
+let cash=10000;let orders=0;
+const prices={BTC:67420.5,ETH:3520.2,AAPL:231.4,TSLA:248.5};
+const fmt=value=>new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(value);
+const cashNode=document.querySelector("#cash"),balanceNode=document.querySelector("#balance"),orderNode=document.querySelector("#orderCount"),activity=document.querySelector("#activity");
+document.querySelectorAll("[data-buy]").forEach(button=>button.addEventListener("click",()=>{
+ const symbol=button.dataset.buy;const cost=prices[symbol]*0.01;
+ if(cash<cost){alert("Not enough virtual cash in this demo.");return;}
+ cash-=cost;orders+=1;cashNode.textContent=fmt(cash);balanceNode.textContent=fmt(cash);orderNode.textContent=String(orders);
+ const empty=activity.querySelector("li");if(empty&&empty.textContent.includes("No demo orders"))activity.replaceChildren();
+ const item=document.createElement("li");item.textContent="Paper buy: 0.01 "+symbol+" · "+fmt(cost)+" (virtual only)";activity.prepend(item);
+}));
+document.querySelector("#marketSearch").addEventListener("input",event=>{
+ const query=event.target.value.trim().toLowerCase();
+ document.querySelectorAll("#marketRows tr").forEach(row=>row.hidden=!row.textContent.toLowerCase().includes(query));
+});
+document.querySelector("#resetDemo").addEventListener("click",()=>{cash=10000;orders=0;cashNode.textContent=fmt(cash);balanceNode.textContent=fmt(cash);orderNode.textContent="0";activity.innerHTML="<li>No demo orders yet.</li>";});
+`},
+  {name:"README.md",extension:"md",mimeType:EXT_TO_MIME.md,content:`# ${title}
+
+Responsive trading-dashboard starter with a market watchlist, searchable sample assets, virtual balance and browser-only paper-buy interactions.
+
+## Run
+Keep index.html, style.css and script.js in one folder, then open index.html in a browser.
+
+## Included
+- Responsive market overview and watchlist
+- Search filter for listed sample assets
+- Paper-trading demo buttons and resettable virtual cash
+- No real broker, live prices, real-money orders, or investment advice
+
+## Production requirements
+This is not a production brokerage. Before launch, add a secure backend, authentication, database, trusted market-data provider, broker API, audit logs, order/risk validation, legal/compliance review and security testing. Do not expose provider keys in browser code. Sample prices are illustrative and may be stale.
+`}
+ ];
+}
+
 function buildTaskArtifacts({task,result,taskId}={}) {
  const expected=requestedArtifacts(task);
  if(!expected.length)return {required:false,artifacts:[]};
@@ -253,7 +308,7 @@ function buildTaskArtifacts({task,result,taskId}={}) {
  // syntax-checked starter site rather than leaving the task failed with four
  // missing-file errors. Partial AI output still fails verification explicitly.
  if(blocks.length===0) {
-  const fallback=buildWebsiteFallback(task);
+  const fallback=isTradingWebsiteRequest(task)?buildTradingFallback(task):buildWebsiteFallback(task);
   const artifacts=[];
   const errors=[];
   for(const file of fallback) {
