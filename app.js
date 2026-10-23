@@ -7507,7 +7507,7 @@ async function sendMessage() {
         body: JSON.stringify({
           task: executableTask,
           sessionId: activeSessionId,
-          metadata: { source: "irhcf_chat_build_request", workspace: activeDashboardCategory || "build", deliverableRequired: true }
+          metadata: { source: "irhcf_chat_build_request", workspace: "build", deliverableRequired: true }
         }),
         timeoutMs: 30000
       });
@@ -7522,7 +7522,7 @@ async function sendMessage() {
       );
       saveCurrentConversation();
       setStatus("Build task yashyizwe ku murongo.", "online");
-      openTaskManager();
+      openTaskManager("running", "build");
       return;
     }
 
