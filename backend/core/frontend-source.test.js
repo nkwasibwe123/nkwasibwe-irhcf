@@ -57,6 +57,8 @@ test("voice note and live voice controls use the existing authenticated IRHCF AP
   assert.match(html, /id="liveVoiceButton"/, "Live voice control must exist.");
   assert.match(app, /API_ENDPOINTS\.audioTranscription/, "Voice notes must use the existing transcription endpoint.");
   assert.match(voice, /\/api\/voice\/realtime/, "Live voice must use the authenticated server-side SDP endpoint.");
+  assert.match(voice, /waitForIceGathering\(peer\)/, "Live voice must wait for a complete local SDP offer before sending it.");
+  assert.match(voice, /body: localSdp/, "Live voice must send the final local SDP description.");
   assert.match(voice, /nkwasibwe_auth_token/, "Live voice must use the existing authentication token.");
   assert.match(app, /async function toggleVoiceRecording\(/, "The existing composer must own voice-note recording.");
   assert.match(app, /window\.SpeechRecognition \|\| window\.webkitSpeechRecognition/, "Use browser speech recognition when available, without requiring paid transcription.");
@@ -314,7 +316,7 @@ test("live voice fallback follows the selected/device language and preserves rep
   assert.match(voice, /navigator\.languages\?\.\[0\] \|\| navigator\.language/);
   assert.match(voice, /recognition\.lang = languageTag/);
   assert.match(voice, /\.map\(r => r\[0\]\?\.transcript \|\| ""\)\.join\(" "\)/);
-  assert.match(html, /voice-client\.js\?v=2\.0\.24/);
+  assert.match(html, /voice-client\.js\?v=2\.0\.25/);
 });
 
 test("live voice starts browser fallback when WebRTC is unavailable and can stop it", () => {
@@ -324,7 +326,7 @@ test("live voice starts browser fallback when WebRTC is unavailable and can stop
   assert.match(voice, /if \(live \|\| starting \|\| fallbackRecognition\)/);
   assert.match(voice, /if \(!window\.RTCPeerConnection \|\| !navigator\.mediaDevices\?\.getUserMedia\) \{\s*startBrowserFallback\(/);
   assert.match(voice, /cleanupLive\("Live voice conversation ended\."\)/);
-  assert.match(html, /voice-client\.js\?v=2\.0\.24/);
+  assert.match(html, /voice-client\.js\?v=2\.0\.25/);
 });
 
 
