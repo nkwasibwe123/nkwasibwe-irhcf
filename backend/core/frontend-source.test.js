@@ -316,7 +316,10 @@ test("live voice fallback follows the selected/device language and preserves rep
   assert.match(voice, /navigator\.languages\?\.\[0\] \|\| navigator\.language/);
   assert.match(voice, /recognition\.lang = languageTag/);
   assert.match(voice, /\.map\(r => r\[0\]\?\.transcript \|\| ""\)\.join\(" "\)/);
-  assert.match(html, /voice-client\.js\?v=2\.0\.25/);
+  assert.match(voice, /recognition\.continuous = true/, "Fallback voice must stay active for multiple utterances.");
+  assert.match(voice, /lastProcessedResultIndex/, "Speech results must be processed as individual final segments.");
+  assert.match(voice, /irhcf_reply_in_voice/, "Voice-originated requests must enable spoken replies.");
+  assert.match(html, /voice-client\.js\?v=2\.0\.26/);
 });
 
 test("live voice starts browser fallback when WebRTC is unavailable and can stop it", () => {
@@ -326,7 +329,10 @@ test("live voice starts browser fallback when WebRTC is unavailable and can stop
   assert.match(voice, /if \(live \|\| starting \|\| fallbackRecognition\)/);
   assert.match(voice, /if \(!window\.RTCPeerConnection \|\| !navigator\.mediaDevices\?\.getUserMedia\) \{\s*startBrowserFallback\(/);
   assert.match(voice, /cleanupLive\("Live voice conversation ended\."\)/);
-  assert.match(html, /voice-client\.js\?v=2\.0\.25/);
+  assert.match(voice, /recognition\.continuous = true/, "Fallback voice must stay active for multiple utterances.");
+  assert.match(voice, /lastProcessedResultIndex/, "Speech results must be processed as individual final segments.");
+  assert.match(voice, /irhcf_reply_in_voice/, "Voice-originated requests must enable spoken replies.");
+  assert.match(html, /voice-client\.js\?v=2\.0\.26/);
 });
 
 
