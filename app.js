@@ -8255,7 +8255,11 @@ function showDashboardWorkspace(category) {
   if (dashboardActivityCenter) dashboardActivityCenter.hidden = true;
   if (workspaceActivityCenter) workspaceActivityCenter.hidden = false;
   if (workspaceChatPanel) workspaceChatPanel.hidden = false;
-  const workspaceChatTitle = document.getElementById("workspaceChatTitle");\n  const workspaceChatDescription = document.getElementById("workspaceChatDescription");\n  if (workspaceChatTitle) workspaceChatTitle.textContent = "Ganira na " + workspace.title;\n  if (workspaceChatDescription) workspaceChatDescription.textContent = "Baza ibibazo kandi saba ubufasha bijyanye na " + workspace.title + " hano.";\n  renderWorkspaceChat();
+  const workspaceChatTitle = document.getElementById("workspaceChatTitle");
+  const workspaceChatDescription = document.getElementById("workspaceChatDescription");
+  if (workspaceChatTitle) workspaceChatTitle.textContent = "Ganira na " + workspace.title;
+  if (workspaceChatDescription) workspaceChatDescription.textContent = "Baza ibibazo kandi saba ubufasha bijyanye na " + workspace.title + " hano.";
+  renderWorkspaceChat();
   if (dashboardCategories) dashboardCategories.hidden = true;
   if (dashboardWorkspaceHeading) dashboardWorkspaceHeading.hidden = false;
   if (dashboardWorkspaceTitle) dashboardWorkspaceTitle.textContent = workspace.title;
