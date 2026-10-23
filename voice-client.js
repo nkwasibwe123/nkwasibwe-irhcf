@@ -35,6 +35,26 @@
   let live = false;
   let starting = false;
   let fallbackRecognition = null;
+  let assistantSpeaking = false;
+
+  // Never let browser speech recognition transcribe IRHCF's own spoken reply.
+  // Abort the active recognition segment during playback, then resume listening.
+  window.addEventListener("irhcf:assistant-speech-start", () => {
+    assistantSpeaking = true;
+    if (fallbackRecognition) {
+      try { fallbackRecognition.abort(); } catch (_) {}
+    }
+  });
+  window.addEventListener("irhcf:assistant-speech-end", () => {
+    assistantSpeaking = false;
+    const recognition = fallbackRecognition;
+    if (!recognition) return; // User explicitly stopped voice mode.
+    setTimeout(() => {
+      if (fallbackRecognition !== recognition || assistantSpeaking) return;
+      try { recognition.start(); }
+      catch (_) { /* onend will retry if the browser requires a fresh segment */ }
+    }, 350);
+  });
 
   const cleanupLive = (message = "Live voice conversation ended.") => {
     live = false;
@@ -82,6 +102,7 @@
     setBusy(true);
     setStatus("Live voice fallback is listening continuously. Speak naturally; tap ⏹ to finish or switch to typing.");
     recognition.onresult = event => {
+      if (assistantSpeaking) return;
       for (let i = Math.max(event.resultIndex || 0, lastProcessedResultIndex + 1); i < event.results.length; i++) {
         const result = event.results[i];
         if (!result?.isFinal) continue;
@@ -99,6 +120,9 @@
       }
     };
     recognition.onerror = event => {
+      if (assistantSpeaking || event.error === "aborted") return;
+      // no-speech is recoverable in continuous mode; let onend restart it.
+      if (event.error === "no-speech") return;
       setBusy(false);
       fallbackRecognition = null;
       setStatus("Browser voice error: " + (event.error || "microphone error") + ". You can use the normal chat.");
@@ -107,9 +131,9 @@
       // Some mobile browsers end a continuous recognition segment after a pause.
       // Restart it while this conversation is still active, but never after the
       // user taps Stop or switches away from voice.
-      if (fallbackRecognition !== recognition) return;
+      if (fallbackRecognition !== recognition || assistantSpeaking) return;
       setTimeout(() => {
-        if (fallbackRecognition !== recognition) return;
+        if (fallbackRecognition !== recognition || assistantSpeaking) return;
         try { lastProcessedResultIndex = -1; recognition.start(); }
         catch (_) { setStatus("Voice listening paused. Tap 🔊 to resume or type your message."); }
       }, 250);
