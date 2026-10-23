@@ -75,26 +75,28 @@
       ? selectedLanguage
       : ({ rw: "rw-RW", en: "en-US", fr: "fr-FR", sw: "sw-KE" }[selectedLanguage] || selectedLanguage);
     recognition.lang = languageTag;
-    recognition.continuous = false;
+    recognition.continuous = true;
     recognition.interimResults = false;
     recognition.maxAlternatives = 1;
-    let submitted = false;
+    let lastProcessedResultIndex = -1;
     setBusy(true);
-    setStatus("Browser voice fallback ready. Speak now; the recognized words will be sent once to IRHCF chat.");
+    setStatus("Live voice fallback is listening continuously. Speak naturally; tap ⏹ to finish or switch to typing.");
     recognition.onresult = event => {
-      if (submitted) return;
-      const text = Array.from(event.results || []).filter(r => r.isFinal).map(r => r[0]?.transcript || "").join(" ").trim();
-      if (!text) return;
-      submitted = true;
-      const input = document.getElementById("userInput");
-      const send = document.getElementById("sendButton");
-      if (!input || !send) { setStatus("Chat input was not found."); return; }
-      input.value = text;
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-      setStatus("Sending recognized speech to IRHCF…");
-      send.click();
-      setBusy(false);
-      fallbackRecognition = null;
+      for (let i = Math.max(event.resultIndex || 0, lastProcessedResultIndex + 1); i < event.results.length; i++) {
+        const result = event.results[i];
+        if (!result?.isFinal) continue;
+        lastProcessedResultIndex = i;
+        const text = String(result[0]?.transcript || "").trim();
+        if (!text) continue;
+        const input = document.getElementById("userInput");
+        const send = document.getElementById("sendButton");
+        if (!input || !send) { setStatus("Chat input was not found."); continue; }
+        input.value = text;
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        try { sessionStorage.setItem("irhcf_reply_in_voice", "1"); } catch (_) {}
+        setStatus("Heard: “" + text.slice(0, 100) + "” — sending to IRHCF…");
+        send.click();
+      }
     };
     recognition.onerror = event => {
       setBusy(false);
@@ -102,10 +104,15 @@
       setStatus("Browser voice error: " + (event.error || "microphone error") + ". You can use the normal chat.");
     };
     recognition.onend = () => {
-      if (!submitted && fallbackRecognition === recognition) {
-        fallbackRecognition = null;
-        setBusy(false);
-      }
+      // Some mobile browsers end a continuous recognition segment after a pause.
+      // Restart it while this conversation is still active, but never after the
+      // user taps Stop or switches away from voice.
+      if (fallbackRecognition !== recognition) return;
+      setTimeout(() => {
+        if (fallbackRecognition !== recognition) return;
+        try { recognition.start(); }
+        catch (_) { setStatus("Voice listening paused. Tap 🔊 to resume or type your message."); }
+      }, 250);
     };
     try { recognition.start(); } catch (error) {
       fallbackRecognition = null;
