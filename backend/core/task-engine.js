@@ -758,9 +758,11 @@ class TaskEngine {
         });
       }
 
-      // Some adapters return { success:false } instead of throwing. Use the same
-      // verified local website fallback for that failure shape, too.
-      if (executionResult?.success === false) {
+      // A website build is not complete just because the agent returned a text
+      // brief. Require the full verified file bundle; when AI output is a plan,
+      // specialist brief, partial code, or provider failure, build a local starter
+      // site instead of retrying forever with no downloadable files.
+      {
         const artifactTaskText = String(task.metadata?.requestedTask || task.metadata?.originalUserRequest || task.task || "");
         const expectedArtifacts = requestedArtifacts(artifactTaskText);
         const isWebsiteBundle = expectedArtifacts.length > 1 &&
@@ -768,33 +770,55 @@ class TaskEngine {
           expectedArtifacts.some(item => item.name === "style.css") &&
           expectedArtifacts.some(item => item.name === "script.js");
         if (isWebsiteBundle) {
-          const providerFailure = {
-            code: executionResult.code || executionResult.error?.code || "AI_EXECUTION_FAILED",
-            message: String(executionResult.error?.message || executionResult.error || executionResult.message || "The execution adapter failed before returning website files.").slice(0, 500)
-          };
-          const taskAction = buildTaskArtifacts({
-            task: artifactTaskText,
-            taskId: task.id,
-            result: { success: false, error: providerFailure }
-          });
-          if (taskAction.verified === true && taskAction.artifacts?.length === expectedArtifacts.length) {
-            executionResult = {
-              success: true,
-              response: "The AI execution adapter failed, so a local starter website was generated and every file passed verification.",
-              taskAction,
-              providerFailure,
-              fallbackUsed: true
+          const hasVerifiedBundle = executionResult?.taskAction?.verified === true &&
+            Array.isArray(executionResult.taskAction.artifacts) &&
+            executionResult.taskAction.artifacts.length === expectedArtifacts.length &&
+            executionResult.taskAction.artifacts.every(item => item?.verified === true && typeof item.content === "string" && item.content.trim());
+          if (!hasVerifiedBundle) {
+            const providerFailure = {
+              code: executionResult?.code || executionResult?.error?.code || "AI_OUTPUT_INCOMPLETE",
+              message: String(executionResult?.error?.message || executionResult?.error || "The agent did not return a complete, verified website file bundle.").slice(0, 500)
             };
-            await this.updateProgress(task.id, {
-              progress: 62,
-              message: "AI adapter returned failure; local website files were generated and verified.",
-              checkpoint: { phase: "LOCAL_ARTIFACT_FALLBACK", fallbackUsed: true, providerFailure, expectedFiles: taskAction.expectedFiles }
+            let taskAction = buildTaskArtifacts({
+              task: artifactTaskText,
+              taskId: task.id,
+              result: executionResult
             });
-          } else {
-            const fallbackError = new Error(taskAction.error || "Local website fallback failed verification.");
-            fallbackError.code = "TASK_ARTIFACT_VERIFICATION_FAILED";
-            fallbackError.taskAction = taskAction;
-            throw fallbackError;
+            if (taskAction.verified !== true || taskAction.artifacts?.length !== expectedArtifacts.length) {
+              taskAction = buildTaskArtifacts({
+                task: artifactTaskText,
+                taskId: task.id,
+                result: { success: false, error: providerFailure }
+              });
+            }
+            if (taskAction.verified === true && taskAction.artifacts?.length === expectedArtifacts.length) {
+              const fallbackUsed = taskAction.fallbackUsed === true || executionResult?.success === false;
+              executionResult = {
+                success: true,
+                response: fallbackUsed
+                  ? "The agent did not produce a complete website bundle, so a local starter website was generated and every file passed verification."
+                  : "The website files were generated and verified.",
+                taskAction,
+                ...(fallbackUsed ? { providerFailure, fallbackUsed: true } : {})
+              };
+              await this.updateProgress(task.id, {
+                progress: 62,
+                message: fallbackUsed
+                  ? "Agent output was incomplete; local website files were generated and verified."
+                  : "Website files were verified; preparing delivery.",
+                checkpoint: {
+                  phase: fallbackUsed ? "LOCAL_ARTIFACT_FALLBACK" : "ARTIFACT_VERIFICATION",
+                  fallbackUsed,
+                  ...(fallbackUsed ? { providerFailure } : {}),
+                  expectedFiles: taskAction.expectedFiles
+                }
+              });
+            } else {
+              const fallbackError = new Error(taskAction.error || "Website files failed verification.");
+              fallbackError.code = "TASK_ARTIFACT_VERIFICATION_FAILED";
+              fallbackError.taskAction = taskAction;
+              throw fallbackError;
+            }
           }
         }
       }
