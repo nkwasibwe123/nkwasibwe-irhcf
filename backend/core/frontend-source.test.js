@@ -425,3 +425,11 @@ test("workspace activity cards preserve the selected workspace when opening filt
   assert.match(app, /showDashboardWorkspace\(workspaceFilter\);\s*activeTaskWorkspaceFilter = workspaceFilter;/);
   assert.match(app, /metadata: \{ source: "irhcf_chat_build_request", workspace: activeDashboardCategory \|\| "build", deliverableRequired: true \}/);
 });
+
+
+test("opening the task list hides workspace summary to avoid duplicate dashboard clutter", () => {
+  const root = path.join(__dirname, "..", "..");
+  const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
+  assert.match(app, /if \(workspaceActivityCenter\) workspaceActivityCenter\.hidden = true;\s*if \(dashboardGrid\) dashboardGrid\.hidden = true;\s*if \(taskManager\) taskManager\.hidden = false;/);
+  assert.match(app, /function closeTaskManager\(\) \{\s*if \(taskManager\) taskManager\.hidden = true;\s*if \(activeDashboardCategory\) showDashboardWorkspace\(activeDashboardCategory\)/);
+});
