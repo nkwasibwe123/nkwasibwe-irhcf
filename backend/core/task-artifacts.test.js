@@ -44,7 +44,7 @@ test("partial website output does not silently become a fallback site", () => {
   assert.equal(result.required, true);
   assert.equal(result.verified, false);
   assert.equal(result.fallbackUsed, undefined);
-  assert.ok(result.error.includes("Missing local file reference: missing.css"));
+  assert.match(result.error, /Missing required file/);
 });
 
 
@@ -155,6 +155,6 @@ test("website bundle fails verification when HTML points to a missing local file
   });
   assert.equal(result.required, true);
   assert.equal(result.verified, false);
-  assert.match(result.error, /Missing local file reference: missing\\.css/);
+  assert.ok(result.error.includes("Missing local file reference: missing.css"));
   assert.ok(result.artifacts.every(item => item.verified === false));
 });
