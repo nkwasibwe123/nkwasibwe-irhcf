@@ -2,11 +2,11 @@
 const vm=require("node:vm");
 
 const FILE_REQUEST=/\b(create|write|generate|build|make|produce|save|export|nkorera|unkorera|unkorere|ngukorere|ndashaka|kora|yubake|ubaka|mpa|uyimpe)\b.{0,160}\b(file|script|code|document|report|page|website|web site|urubuga|app|application|component|module|spreadsheet|csv|json|html|css|javascript|typescript|site ya internet)\b|\b(file|script|code|document|report|website|urubuga|app|application|component|module)\b.{0,100}\b(for me|please|that works|with|named|called|yuzuye|rwose)\b/i;
-const EXTENSION=/\b([\w.-]+\.(?:js|cjs|mjs|ts|tsx|jsx|html|css|json|md|txt|csv|xml|svg))\b/i;
+const EXTENSION=/\b([\w.-]+\.(?:js|cjs|mjs|ts|tsx|jsx|html|htm|css|json|md|txt|csv|xml|svg|yml|yaml|toml|py|go|rs|java|kt|php|sql|sh|bat|webmanifest|map|graphql|gql|vue|svelte|astro|scss|sass|less|lock))\b/i;
 const EXT_TO_MIME=Object.freeze({
  js:"text/javascript",cjs:"text/javascript",mjs:"text/javascript",ts:"text/plain",tsx:"text/plain",jsx:"text/javascript",
- html:"text/html; charset=utf-8",css:"text/css; charset=utf-8",json:"application/json",md:"text/markdown; charset=utf-8",
- txt:"text/plain; charset=utf-8",csv:"text/csv; charset=utf-8",xml:"application/xml",svg:"image/svg+xml"
+ html:"text/html; charset=utf-8",htm:"text/html; charset=utf-8",css:"text/css; charset=utf-8",json:"application/json",md:"text/markdown; charset=utf-8",
+ txt:"text/plain; charset=utf-8",csv:"text/csv; charset=utf-8",xml:"application/xml",svg:"image/svg+xml",yml:"text/yaml",yaml:"text/yaml",toml:"text/plain",py:"text/x-python",go:"text/plain",rs:"text/plain",java:"text/plain",kt:"text/plain",php:"text/plain",sql:"text/plain",sh:"text/plain",bat:"text/plain",webmanifest:"application/manifest+json",map:"application/json",graphql:"text/plain",gql:"text/plain",vue:"text/plain",svelte:"text/plain",astro:"text/plain",scss:"text/plain",sass:"text/plain",less:"text/plain",lock:"text/plain"
 });
 const WEBSITE_FILES=[
  {name:"index.html",extension:"html",mimeType:EXT_TO_MIME.html},
@@ -34,7 +34,20 @@ function requestedArtifacts(task) {
  if(!request) return [];
  const text=String(task||"");
  const website=/\b(website|web site|urubuga|site ya internet)\b/i.test(text);
- return website ? WEBSITE_FILES.map(file=>({...file})) : [request];
+ const base=website ? WEBSITE_FILES.map(file=>({...file})) : [request];
+ // Respect every explicitly named source/config/data file in the request.
+ // The standard website bundle is a minimum, not a hard-coded ceiling.
+ const named=[];
+ const pattern=/\b([A-Za-z0-9_.-]+\.(?:js|cjs|mjs|ts|tsx|jsx|html|htm|css|json|md|txt|csv|xml|svg|yml|yaml|toml|py|go|rs|java|kt|php|sql|sh|bat|webmanifest|map|graphql|gql|vue|svelte|astro|scss|sass|less|lock))\b/gi;
+ let match;
+ while((match=pattern.exec(text))!==null) {
+  const name=match[1];
+  if(name.includes("..")||name.startsWith(".")) continue;
+  const extension=name.split(".").pop().toLowerCase();
+  if(!EXT_TO_MIME[extension]||base.some(file=>file.name.toLowerCase()===name.toLowerCase())||named.some(file=>file.name.toLowerCase()===name.toLowerCase())) continue;
+  named.push({name,extension,mimeType:EXT_TO_MIME[extension]});
+ }
+ return [...base,...named];
 }
 
 function getResponseText(result) {
@@ -86,7 +99,7 @@ function buildSingleArtifact(request,{task,result,taskId}={}) {
  if(!result||result.success===false) return {artifact:null,error:"Agent execution failed; no artifact was created."};
  const content=extractDeliverable(getResponseText(result),request.extension);
  const bytes=Buffer.byteLength(content,"utf8");
- if(bytes>20000) return {artifact:null,error:"Generated file exceeds the 20 KB per-file limit."};
+ if(bytes>512000) return {artifact:null,error:"Generated file exceeds the 512 KB per-file limit."};
  const check=verifyContent(request.name,request.extension,content);
  if(!check.verified) return {artifact:null,error:check.reason};
  return {artifact:{name:request.name,mimeType:request.mimeType,content,bytes,verified:true,verification:check.reason,
@@ -394,7 +407,7 @@ function buildTaskArtifacts({task,result,taskId}={}) {
   artifacts.push(built.artifact);
  }
  const totalBytes=artifacts.reduce((sum,item)=>sum+item.bytes,0);
- if(totalBytes>36000) return {required:true,verified:false,expectedFiles:expected.map(f=>f.name),artifacts:[],error:"Website source exceeds the 36 KB combined file limit."};
+ if(totalBytes>2000000) return {required:true,verified:false,expectedFiles:expected.map(f=>f.name),artifacts:[],error:"Generated project exceeds the 2 MB combined artifact limit."};
  errors.push(...verifyWebsiteBundle(artifacts));
  const verified=errors.length===0&&artifacts.length===expected.length;
  if(!verified) for(const artifact of artifacts) artifact.verified=false;
