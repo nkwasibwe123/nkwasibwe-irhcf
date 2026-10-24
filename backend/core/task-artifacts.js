@@ -127,8 +127,9 @@ function extractNamedFileBlocks(text, expectedFiles = WEBSITE_FILES) {
   const language=(info.split(/\s+/)[0]||"").toLowerCase();
   const languageExtension=({html:"html",htm:"htm",css:"css",js:"js",javascript:"js",ecmascript:"js",cjs:"cjs",mjs:"mjs",ts:"ts",tsx:"tsx",jsx:"jsx",json:"json",md:"md",markdown:"md",text:"txt",txt:"txt",csv:"csv",xml:"xml",svg:"svg",yaml:"yaml",yml:"yml",toml:"toml",python:"py",py:"py",go:"go",rust:"rs",rs:"rs",java:"java",kotlin:"kt",php:"php",sql:"sql",bash:"sh",sh:"sh",vue:"vue",svelte:"svelte",astro:"astro",scss:"scss",sass:"sass",less:"less",graphql:"graphql",gql:"gql"})[language]||"";
   const explicitName=filenameMatch?.[1];
+  const namedExpected=expectedFiles.find(file=>info.toLowerCase().includes(file.name.toLowerCase()))?.name;
   const expectedExtension=expectedFiles.find(file=>file.extension===languageExtension)?.name;
-  blocks.push({language,name:explicitName||expectedExtension||null,content:body,info});
+  blocks.push({language,name:namedExpected||explicitName||expectedExtension||null,content:body,info});
  }
  // Be tolerant of model responses that place fence markers next to adjacent
  // blocks or use unusual line endings. The primary parser above remains preferred.
@@ -145,8 +146,9 @@ function extractNamedFileBlocks(text, expectedFiles = WEBSITE_FILES) {
    const language=(info.split(/\s+/)[0]||"").toLowerCase();
    const extension=filenameMatch?.[1]?.split(".").pop().toLowerCase();
    const languageExtension=({html:"html",htm:"htm",css:"css",js:"js",javascript:"js",ecmascript:"js",cjs:"cjs",mjs:"mjs",ts:"ts",tsx:"tsx",jsx:"jsx",json:"json",md:"md",markdown:"md",text:"txt",txt:"txt",csv:"csv",xml:"xml",svg:"svg",yaml:"yaml",yml:"yml",toml:"toml",python:"py",py:"py",go:"go",rust:"rs",rs:"rs",java:"java",kotlin:"kt",php:"php",sql:"sql",bash:"sh",sh:"sh",vue:"vue",svelte:"svelte",astro:"astro",scss:"scss",sass:"sass",less:"less",graphql:"graphql",gql:"gql"})[language]||"";
+   const namedExpected=expectedFiles.find(file=>info.toLowerCase().includes(file.name.toLowerCase()))?.name;
    const expectedExtension=expectedFiles.find(file=>file.extension===languageExtension)?.name;
-   blocks.push({language,name:filenameMatch?.[1]||expectedExtension||null,content:body+"\n",info});
+   blocks.push({language,name:namedExpected||filenameMatch?.[1]||expectedExtension||null,content:body+"\n",info});
   }
  }
  // Also support labelled Markdown sections such as "## index.html" followed by a code fence.
