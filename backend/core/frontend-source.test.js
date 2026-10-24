@@ -437,7 +437,7 @@ test("workspace activity cards preserve the selected workspace when opening filt
   const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
   assert.match(app, /function openTaskManager\(filter = "all", workspaceFilter = activeDashboardCategory \|\| null\)/);
   assert.match(app, /showDashboardWorkspace\(workspaceFilter\);\s*activeTaskWorkspaceFilter = workspaceFilter;/);
-  assert.match(app, /metadata: \{ source: "irhcf_chat_build_request", workspace: "build", deliverableRequired: true \}/);
+  assert.match(app, /metadata: \{ source: "irhcf_chat_build_request", workspace: "build", deliverableRequired: true, requestedTask: taskText, originalUserRequest: taskText \}/);
 });
 
 
