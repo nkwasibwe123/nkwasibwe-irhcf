@@ -140,6 +140,35 @@ test("task response string is usable output", () => {
   assert.equal(isUsableTaskResult({ success: true, response: "The task produced a real result." }), true);
 });
 
+test("verified required artifacts are usable even when executor omits prose response", () => {
+  assert.equal(isUsableTaskResult({
+    success: true,
+    taskAction: {
+      required: true,
+      verified: true,
+      expectedFiles: ["index.html", "style.css"],
+      artifacts: [
+        { name: "index.html", content: "<!doctype html><html></html>", verified: true },
+        { name: "style.css", content: "body { margin: 0; }", verified: true }
+      ]
+    }
+  }), true);
+});
+
+test("artifact-only output is rejected if any required file is missing or unverified", () => {
+  assert.equal(isUsableTaskResult({
+    success: true,
+    taskAction: {
+      required: true,
+      verified: true,
+      expectedFiles: ["index.html", "style.css"],
+      artifacts: [
+        { name: "index.html", content: "<!doctype html><html></html>", verified: true }
+      ]
+    }
+  }), false);
+});
+
 
 test("website task gets verified starter artifacts when agent output has no code blocks", () => {
   const task = "Kora website nto y'ishuri. Kora dosiye za HTML, CSS na JavaScript, uzibike";
