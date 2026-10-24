@@ -9268,6 +9268,39 @@ function renderTaskArtifactButtons(task) {
       });
       taskProgressResult.appendChild(previewButton);
     }
+    const reviseButton = document.createElement("button");
+    reviseButton.type = "button";
+    reviseButton.className = "task-action-button task-revise-button";
+    reviseButton.textContent = "✏️ Request project changes";
+    reviseButton.addEventListener("click", async () => {
+      const changes = window.prompt("What should Nkwasibwe change in this same project?");
+      if (!changes || !changes.trim()) return;
+      reviseButton.disabled = true;
+      reviseButton.textContent = "Creating revision task…";
+      try {
+        const response = await fetch(`/api/tasks/${Number(task.id)}/revise`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${authToken}`
+          },
+          body: JSON.stringify({ changes: changes.trim() })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.success) {
+          throw new Error(data.error || `Could not create revision (HTTP ${response.status}).`);
+        }
+        showToast("Revision task created. It will use the verified files from this project.", "success");
+        await refreshTaskList();
+        await refreshTaskProgressPanel();
+      } catch (error) {
+        showToast(String(error?.message || "Could not create project revision.").slice(0, 220), "warning");
+      } finally {
+        reviseButton.disabled = false;
+        reviseButton.textContent = "✏️ Request project changes";
+      }
+    });
+    taskProgressResult.appendChild(reviseButton);
     const title = document.createElement("strong");
     title.textContent = "Dosiye zagenzuwe zo gukuramo:";
     taskProgressResult.appendChild(title);
