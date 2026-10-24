@@ -1412,6 +1412,93 @@ function createTaskRouter({
     });
   });
 
+  router.post("/:id/revise", authenticateToken, async (req, res) => {
+    const taskId = Number(req.params.id);
+    const changes = safeText(req.body?.changes || req.body?.message, 4000);
+    if (!Number.isInteger(taskId) || taskId <= 0) {
+      return res.status(400).json({ success: false, code: "TASK_ID_INVALID", error: "Invalid task id." });
+    }
+    if (!changes) {
+      return res.status(400).json({ success: false, code: "REVISION_REQUEST_REQUIRED", error: "Describe the changes you want made." });
+    }
+
+    try {
+      const parent = await engine.getTask(taskId, req.user.id);
+      if (!parent) {
+        return res.status(404).json({ success: false, code: "TASK_NOT_FOUND", error: "Project task not found." });
+      }
+      let previousResult = parent.result;
+      if (typeof previousResult === "string") {
+        try { previousResult = JSON.parse(previousResult); } catch { previousResult = null; }
+      }
+      const artifacts = Array.isArray(previousResult?.taskAction?.artifacts)
+        ? previousResult.taskAction.artifacts.filter(file =>
+            file?.verified === true &&
+            typeof file.name === "string" &&
+            /^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$/.test(file.name) &&
+            !file.name.includes("..") &&
+            typeof file.content === "string")
+        : [];
+      if (!artifacts.length) {
+        return res.status(409).json({
+          success: false,
+          code: "VERIFIED_PROJECT_FILES_REQUIRED",
+          error: "This task has no verified project files to revise. Generate and verify the project first."
+        });
+      }
+
+      const projectBytes = artifacts.reduce((total, file) => total + Buffer.byteLength(file.content, "utf8"), 0);
+      if (projectBytes > 70000) {
+        return res.status(413).json({
+          success: false,
+          code: "PROJECT_REVISION_CONTEXT_TOO_LARGE",
+          error: "The verified project is too large to safely include in one revision request. Split the changes into smaller steps."
+        });
+      }
+      const fileNames = artifacts.map(file => file.name);
+      const projectFiles = artifacts.map(file =>
+        "===== EXISTING FILE: " + file.name + " =====\n" + file.content
+      ).join("\n\n");
+      const revisionPrompt = [
+        "Revise the existing Nkwasibwe IRHCF project; do not start an unrelated project.",
+        "Original project task: " + safeText(parent.task, 5000),
+        "Requested changes: " + changes,
+        "Keep existing behavior and design unless the user explicitly asks to change it.",
+        "Return complete updated contents for every existing project file that remains needed. Add or remove files only when the requested changes require it. Label every code block with its exact filename.",
+        "Existing verified files: " + fileNames.join(", "),
+        "Current project source files follow:",
+        projectFiles
+      ].join("\n\n");
+      const artifactRequest = [
+        "Build and revise the existing project files: " + fileNames.join(", "),
+        "Original project task: " + safeText(parent.task, 5000),
+        "Requested changes: " + changes
+      ].join("\n");
+      const created = await engine.createTask({
+        userId: req.user.id,
+        task: revisionPrompt,
+        sessionId: parent.session_id || parent.sessionId || null,
+        priority: parent.priority,
+        metadata: {
+          source: "project_revision",
+          parentTaskId: taskId,
+          revisionOfTaskId: taskId,
+          deliverableRequired: true,
+          requestedTask: artifactRequest,
+          expectedFiles: fileNames,
+          revisionRequest: changes
+        }
+      });
+      return res.status(201).json({ success: true, task: created, parentTaskId: taskId });
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        code: error?.code || "PROJECT_REVISION_CREATE_FAILED",
+        error: safeText(error?.message || "Could not create project revision task.", 500)
+      });
+    }
+  });
+
   router.post("/:id/pause", authenticateToken, async (req, res) => {
     const task = await engine.pauseTask(
       Number(req.params.id),
