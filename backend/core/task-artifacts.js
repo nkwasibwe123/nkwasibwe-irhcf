@@ -320,15 +320,15 @@ function verifyWebsiteBundle(artifacts) {
  const errors=[];
  if(!html) return ["Missing index.html."];
  const referenced=new Set();
- const ids=new Set([...html.matchAll(/\\bid\\s*=\\s*["']([^"']+)["']/gi)].map(match=>match[1]));
- for(const match of html.matchAll(/\\b(?:href|src)\\s*=\\s*["']([^"']+)["']/gi)) {
+ const ids=new Set([...html.matchAll(/\bid\s*=\s*["']([^"']+)["']/gi)].map(match=>match[1]));
+ for(const match of html.matchAll(/\b(?:href|src)\s*=\s*["']([^"']+)["']/gi)) {
   const raw=String(match[1]||"").trim();
-  if(!raw||/^(?:[a-z][a-z0-9+.-]*:|\\/\\/)/i.test(raw)) continue;
+  if(!raw||/^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(raw)) continue;
   if(raw.startsWith("#")) {
    if(raw.length>1&&!ids.has(decodeURIComponent(raw.slice(1)))) errors.push("Broken in-page link: "+raw);
    continue;
   }
-  const path=raw.split(/[?#]/)[0].replace(/^\\.\\//,"");
+  const path=raw.split(/[?#]/)[0].replace(/^\.\//,"");
   if(!path) continue;
   const name=path.split("/").pop().toLowerCase();
   referenced.add(name);
