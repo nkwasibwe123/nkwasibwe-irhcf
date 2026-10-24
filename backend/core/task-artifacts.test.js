@@ -69,3 +69,28 @@ test("trading website fallback matches the requested domain and stays paper-trad
   assert.doesNotMatch(html, /Welcome to our school|Every learner matters/);
   assert.match(js, /paper buy|virtual only/i);
 });
+
+
+test("Kinyarwanda online shop requests receive an e-commerce storefront instead of a school template", () => {
+  const result = buildTaskArtifacts({
+    task: "Ncaka ko unkorera website yo gucururizaho ibintu byose ikaba ibifite iri secure kubijyanye na payment",
+    taskId: "task-ecommerce-48",
+    result: {
+      success: false,
+      error: { code: "ALL_ADAPTERS_FAILED", message: "AI providers unavailable." }
+    }
+  });
+  assert.equal(result.required, true);
+  assert.equal(result.verified, true);
+  assert.equal(result.fallbackUsed, true);
+  assert.deepEqual(result.artifacts.map(item => item.name).sort(), ["README.md", "index.html", "script.js", "style.css"]);
+  const html = result.artifacts.find(item => item.name === "index.html").content;
+  const js = result.artifacts.find(item => item.name === "script.js").content;
+  const readme = result.artifacts.find(item => item.name === "README.md").content;
+  assert.match(html, /Nkwasibwe Market/);
+  assert.match(html, /Ibicuruzwa/);
+  assert.match(html, /Agaseke/);
+  assert.doesNotMatch(html, /Welcome to our school|Every learner matters/);
+  assert.match(js, /data-add/);
+  assert.match(readme, /does not process payments/i);
+});
