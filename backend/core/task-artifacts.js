@@ -386,7 +386,11 @@ function buildTaskArtifacts({task,result,taskId}={}) {
  // If the agent returned no parseable file blocks at all, deliver a real,
  // syntax-checked starter site rather than leaving the task failed with four
  // missing-file errors. Partial AI output still fails verification explicitly.
- if(blocks.length===0) {
+ // Treat partial source bundles like missing bundles. Keeping a single AI-generated
+ // file while filling the rest with a template can silently create a broken or
+ // misleading project. For recognized domains, replace the incomplete bundle
+ // with one internally consistent, locally verified starter project.
+ if(blocks.length===0 || expected.some(file => !blocks.some(block => block.name===file.name))) {
   // Never substitute an unrelated template for the user's requested product.
   // Only use a local fallback when the request's domain is positively identified.
   const fallback=isEcommerceWebsiteRequest(task)?buildEcommerceFallback(task)
