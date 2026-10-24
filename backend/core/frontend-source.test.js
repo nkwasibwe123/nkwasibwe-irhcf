@@ -124,7 +124,7 @@ test("attached-photo background editing calls the authenticated real image-edit 
 
   assert.ok(app.includes('"/api/media/image/edit"'));
   const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
-  assert.match(html, /src="app\.js\?v=2\.0\.39"/, "Deploying a new frontend version must bypass stale cached app.js.");
+  assert.match(html, /src="app\.js\?v=2\.0\.40"/, "Deploying a new frontend version must bypass stale cached app.js.");
   assert.match(html, /href="style\.css\?v=2\.0\.33"/, "Deploying a new frontend version must refresh the related stylesheet.");
   assert.ok(app.includes("async function editAttachedImage(prompt, file)"));
   assert.ok(app.includes('[IRHCF IMAGE EDIT ROUTING v2.0.5]'), "The deployed frontend must expose a routing diagnostic so stale frontend code can be distinguished from a failed image-edit API.");
@@ -207,7 +207,7 @@ test("selected image attachments show thumbnails in the composer and refresh fro
   assert.match(app, /attachment-thumbnail/);
   assert.match(app, /Photo preview: /);
   assert.match(app, /URL\.createObjectURL\(file\)/);
-  assert.match(html, /src="app\.js\?v=2\.0\.39"/);
+  assert.match(html, /src="app\.js\?v=2\.0\.40"/);
   assert.match(html, /href="style\.css\?v=2\.0\.33"/);
 });
 
@@ -228,7 +228,7 @@ test("live camera capture provides preview, still photo, and bounded video recor
   assert.match(camera, /irhcf-photo-/);
   assert.match(camera, /irhcf-video-/);
   assert.match(css, /irhcf-camera-modal/);
-  assert.match(html, /src="app\.js\?v=2\.0\.39"/);
+  assert.match(html, /src="app\.js\?v=2\.0\.40"/);
   assert.match(html, /href="style\.css\?v=2\.0\.33"/);
 });
 
@@ -264,7 +264,7 @@ test("chat routes explicit build requests to the persistent task executor and an
   assert.match(app, /API_ENDPOINTS\.tasks/);
   assert.match(app, /deliverableRequired: true/);
   assert.match(app, /Build and generate the actual requested deliverable/);
-  assert.match(html, /src="app\.js\?v=2\.0\.39"/);
+  assert.match(html, /src="app\.js\?v=2\.0\.40"/);
   assert.match(html, /href="style\.css\?v=2\.0\.33"/);
 });
 
@@ -413,7 +413,7 @@ test("dashboard opens as a full-screen app workspace instead of a floating overl
   assert.match(css, /\.capability-dashboard \.dashboard-backdrop\s*\{\s*display:\s*none !important/);
   assert.match(css, /\.capability-dashboard \.dashboard-panel\s*\{[\s\S]*?width:\s*100%/);
   assert.ok(html.includes("style.css?v=2.0.33"));
-  assert.ok(html.includes("app.js?v=2.0.39"));
+  assert.ok(html.includes("app.js?v=2.0.40"));
 });
 
 
@@ -485,6 +485,10 @@ test("generated website artifacts expose a sandboxed preview action", () => {
   assert.ok(app.includes("Preview website / app"));
   assert.ok(app.includes('sandbox="allow-scripts"'));
   assert.match(app, /sourceByName\.set\(item\.name\.toLowerCase\(\)/);
+  assert.match(app, /previewFiles = verified\.filter/);
+  assert.match(app, /localAssetName/);
+  assert.match(app, /sourceByName\.get\(name\)/);
+  assert.match(app, /\(\?:css\|js\|mjs\|cjs\)/);
   assert.match(css, /\.irhcf-artifact-preview-dialog/);
 });
 
