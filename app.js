@@ -7521,7 +7521,7 @@ async function sendMessage() {
         body: JSON.stringify({
           task: executableTask,
           sessionId: activeSessionId,
-          metadata: { source: "irhcf_chat_build_request", workspace: "build", deliverableRequired: true }
+          metadata: { source: "irhcf_chat_build_request", workspace: "build", deliverableRequired: true, requestedTask: taskText, originalUserRequest: taskText }
         }),
         timeoutMs: 30000
       });
