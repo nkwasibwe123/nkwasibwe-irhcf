@@ -970,7 +970,9 @@ class TaskEngine {
         [
           task.id,
           TASK_STATES.COMPLETED,
-          "Task completed and verified.",
+          (executionResult?.taskAction?.verificationLevel === "static-content" || executionResult?.taskAction?.productionReady === false)
+            ? "Starter files generated; static content checks passed only. Runtime behavior and production readiness are not verified."
+            : "Task completed and verified.",
           safeText(
             typeof executionResult === "string"
               ? executionResult
