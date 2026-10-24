@@ -256,7 +256,7 @@ test("website cannot be marked complete when a required file is missing or inval
   const task = "Build a complete website";
   const result = buildTaskArtifacts({ task, taskId: 18, result: { success: true, response: '```html filename="index.html"\n<html><body>Incomplete</body></html>\n```' } });
   assert.equal(result.verified, false);
-  assert.ok(result.error.includes("Missing required file"));
+  assert.match(result.error, /no matching domain-specific fallback is available/i);
   assert.equal(isUsableTaskResult({ success: true, response: "looks good", taskAction: result }), false);
 });
 
