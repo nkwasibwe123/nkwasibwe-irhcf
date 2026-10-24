@@ -323,7 +323,7 @@ test("live voice fallback follows the selected/device language and preserves rep
   assert.match(voice, /irhcf:assistant-speech-end/, "Recognition must resume after assistant audio ends.");
   assert.match(voice, /lastProcessedResultIndex/, "Speech results must be processed as individual final segments.");
   assert.match(voice, /irhcf_reply_in_voice/, "Voice-originated requests must enable spoken replies.");
-  assert.match(html, /voice-client\.js\?v=2\.0\.27/);
+  assert.match(html, /voice-client\.js\?v=2\.0\.28/);
 });
 
 test("live voice starts browser fallback when WebRTC is unavailable and can stop it", () => {
@@ -338,7 +338,7 @@ test("live voice starts browser fallback when WebRTC is unavailable and can stop
   assert.match(voice, /irhcf:assistant-speech-end/, "Recognition must resume after assistant audio ends.");
   assert.match(voice, /lastProcessedResultIndex/, "Speech results must be processed as individual final segments.");
   assert.match(voice, /irhcf_reply_in_voice/, "Voice-originated requests must enable spoken replies.");
-  assert.match(html, /voice-client\.js\?v=2\.0\.27/);
+  assert.match(html, /voice-client\.js\?v=2\.0\.28/);
 });
 
 
