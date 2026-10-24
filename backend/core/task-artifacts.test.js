@@ -22,6 +22,9 @@ test("verified local website fallback survives total AI adapter failure", () => 
   assert.equal(result.required, true);
   assert.equal(result.verified, true);
   assert.equal(result.fallbackUsed, true);
+  assert.equal(result.verificationLevel, "static-content");
+  assert.equal(result.productionReady, false);
+  assert.match(result.completionNote, /static content checks only/i);
   assert.equal(result.artifacts.length, 4);
   assert.deepEqual(
     result.artifacts.map((artifact) => artifact.name).sort(),
