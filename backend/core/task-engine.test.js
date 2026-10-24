@@ -2,7 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { TaskEngine, TASK_STATES, isUsableTaskResult } = require("./task-engine");
+const { TaskEngine, TASK_STATES, isUsableTaskResult, createTaskRouter } = require("./task-engine");
 const { requestedArtifact, buildTaskArtifact, buildTaskArtifacts } = require("./task-artifacts");
 
 test("createAgentRun uses a status accepted by chk_agent_runs_status", async () => {
@@ -431,3 +431,49 @@ test("website task falls back to verified downloadable files when executor retur
   assert.equal(stored.taskAction.verified, true);
   assert.deepEqual(stored.taskAction.artifacts.map(file => file.name), ["index.html", "style.css", "script.js", "README.md"]);
 });
+
+test("project revision endpoint carries verified prior files into an authenticated revision task", async () => {
+  const previousTask = {
+    id: 12,
+    user_id: 7,
+    task: "Build a school website for GS Kitazigurwa",
+    session_id: "session-12",
+    priority: 3,
+    result: JSON.stringify({
+      taskAction: {
+        verified: true,
+        artifacts: [
+          { name: "index.html", content: "<!doctype html><html><body><h1>GS Kitazigurwa</h1></body></html>", verified: true },
+          { name: "style.css", content: "h1 { color: navy; }", verified: true }
+        ]
+      }
+    })
+  };
+  let createdInput;
+  const engine = {
+    getTask: async (id, userId) => id === 12 && userId === 7 ? previousTask : null,
+    createTask: async input => {
+      createdInput = input;
+      return { id: 13, task: input.task, metadata: input.metadata };
+    }
+  };
+  const router = createTaskRouter({ engine, authenticateToken: (_req, _res, next) => next() });
+  const layer = router.stack.find(item => item.route?.path === "/:id/revise");
+  assert.ok(layer, "revision route must be registered");
+  const handler = layer.route.stack[1].handle;
+  const response = {
+    statusCode: 200,
+    status(code) { this.statusCode = code; return this; },
+    json(body) { this.body = body; return this; }
+  };
+  await handler({ params: { id: "12" }, body: { changes: "Make the main heading green" }, user: { id: 7 } }, response);
+  assert.equal(response.statusCode, 201);
+  assert.equal(response.body.success, true);
+  assert.equal(response.body.parentTaskId, 12);
+  assert.equal(createdInput.metadata.parentTaskId, 12);
+  assert.deepEqual(createdInput.metadata.expectedFiles, ["index.html", "style.css"]);
+  assert.match(createdInput.task, /===== EXISTING FILE: index\.html =====/);
+  assert.match(createdInput.task, /Make the main heading green/);
+  assert.match(createdInput.task, /GS Kitazigurwa/);
+});
+
