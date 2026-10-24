@@ -413,7 +413,7 @@ function buildTaskArtifacts({task,result,taskId}={}) {
   errors.push(...verifyWebsiteBundle(artifacts));
   const verified=errors.length===0&&artifacts.length===expected.length;
   if(!verified) for(const artifact of artifacts) artifact.verified=false;
-  return {required:true,verified,expectedFiles:expected.map(f=>f.name),artifacts,
+  return {required:true,verified,verificationLevel:"static-content",productionReady:false,completionNote:"Files passed static content checks only; this is a starter/demo and has not passed browser, backend, security, or payment integration tests.",expectedFiles:expected.map(f=>f.name),artifacts,
    fallbackUsed:true,
    fallbackReason:executionFailed?"AI provider execution failed; used a verified local website starter instead.":"AI response did not contain the required website source files.",
    providerFailure:executionFailed?{code:result?.error?.code||result?.code||"AI_EXECUTION_FAILED",message:String(result?.error?.message||result?.error||"The AI execution adapter failed before returning website files.").slice(0,500)}:null,
@@ -437,8 +437,8 @@ function buildTaskArtifacts({task,result,taskId}={}) {
  errors.push(...verifyWebsiteBundle(artifacts));
  const verified=errors.length===0&&artifacts.length===expected.length;
  if(!verified) for(const artifact of artifacts) artifact.verified=false;
- return {required:true,verified,expectedFiles:expected.map(f=>f.name),artifacts,
-  verification:verified?"All website files passed their content checks.":null,
+ return {required:true,verified,verificationLevel:"static-content",productionReady:false,completionNote:"Files passed static content checks only; this does not establish that the website is production-ready or that backend, security, checkout, or payments work.",expectedFiles:expected.map(f=>f.name),artifacts,
+  verification:verified?"All website files passed their content checks only; runtime behavior was not tested.":null,
   error:verified?null:errors.join(" ").slice(0,1500)};
 }
 
