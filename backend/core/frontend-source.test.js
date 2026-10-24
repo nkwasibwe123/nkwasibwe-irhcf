@@ -488,7 +488,7 @@ test("generated website artifacts expose a sandboxed preview action", () => {
   assert.match(app, /previewFiles = verified\.filter/);
   assert.match(app, /localAssetName/);
   assert.match(app, /sourceByName\.get\(name\)/);
-  assert.match(app, /\.(?:css|js|mjs|cjs)$/i);
+  assert.match(app, /\(\?:css\|js\|mjs\|cjs\)/);
   assert.match(css, /\.irhcf-artifact-preview-dialog/);
 });
 
