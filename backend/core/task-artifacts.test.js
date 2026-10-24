@@ -31,7 +31,7 @@ test("verified local website fallback survives total AI adapter failure", () => 
   assert.match(result.fallbackReason, /AI provider execution failed/i);
 });
 
-test("partial website output does not silently become a fallback site", () => {
+test("partial website output is replaced with a complete verified domain fallback", () => {
   const result = buildTaskArtifacts({
     task: websiteTask,
     taskId: "task-partial",
@@ -42,9 +42,10 @@ test("partial website output does not silently become a fallback site", () => {
   });
 
   assert.equal(result.required, true);
-  assert.equal(result.verified, false);
-  assert.equal(result.fallbackUsed, undefined);
-  assert.match(result.error, /Missing required file/);
+  assert.equal(result.verified, true, result.error);
+  assert.equal(result.fallbackUsed, true);
+  assert.equal(result.artifacts.length, 4);
+  assert.ok(result.artifacts.every(file => file.verified && file.content.trim()));
 });
 
 
