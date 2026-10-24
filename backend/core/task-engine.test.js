@@ -210,7 +210,7 @@ test("complete website requires every named file and verifies HTML, CSS, and Jav
   const { buildTaskArtifacts } = require("./task-artifacts");
   const task = "Nkorera website yuzuye ya GS Kitazigurwa";
   const response = [
-    ' ```html filename="index.html"\n<!doctype html><html><head><title>School</title><link rel="stylesheet" href="style.css"></head><body><h1>GS Kitazigurwa</h1><script src="script.js"></script></body></html>\n```',
+    `<!doctype html><html><head><title>School</title><link rel="stylesheet" href="style.css"><script defer src="script.js"></script></head><body><h1>GS Kitazigurwa</h1></body></html>`,
     ' ```css filename="style.css"\nbody { margin: 0; }\n```',
     ' ```javascript filename="script.js"\nconsole.log("ready");\n```',
     ' ```markdown filename="README.md"\n# GS Kitazigurwa\n```'
@@ -295,7 +295,7 @@ test("website artifact extraction accepts language-labelled fences without filen
   const task = "Kora website nto y'ishuri. Kora dosiye za HTML, CSS na JavaScript, ugenzure ko zikora.";
   const response = [
     "```html",
-    "<!doctype html><html><head><title>School</title></head><body><h1>GS Kitazigurwa</h1></body></html>",
+    `<!doctype html><html><head><title>School</title><link rel="stylesheet" href="style.css"><script defer src="script.js"></script></head><body><h1>GS Kitazigurwa</h1></body></html>`,
     "```",
     "```css",
     "body { margin: 0; font-family: Arial, sans-serif; }",
@@ -318,7 +318,7 @@ test("website artifact extraction assigns anonymous code fences in expected file
   const task = "Build a website with HTML, CSS and JavaScript files.";
   const response = [
     "```",
-    "<!doctype html><html><body><h1>School</h1></body></html>",
+    `<!doctype html><html><head><link rel="stylesheet" href="style.css"><script defer src="script.js"></script></head><body><h1>School</h1></body></html>`,
     "```",
     "```",
     "body { color: #222; }",

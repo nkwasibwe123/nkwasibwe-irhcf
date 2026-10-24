@@ -94,3 +94,98 @@ test("Kinyarwanda online shop requests receive an e-commerce storefront instead 
   assert.match(js, /data-add/);
   assert.match(readme, /does not process payments/i);
 });
+
+test("unknown website requests never receive an unrelated school fallback", () => {
+  const result = buildTaskArtifacts({
+    task: "Build a website for a completely new idea with its own required features",
+    taskId: "task-unknown-domain",
+    result: {
+      success: false,
+      error: { code: "ALL_ADAPTERS_FAILED", message: "AI providers unavailable." }
+    }
+  });
+  assert.equal(result.required, true);
+  assert.equal(result.verified, false);
+  assert.equal(result.fallbackUsed, false);
+  assert.deepEqual(result.artifacts, []);
+  assert.match(result.error, /Nothing unrelated was substituted/i);
+});
+
+test("school fallback is only used for an explicitly school-related request", () => {
+  const result = buildTaskArtifacts({
+    task: "Create a website for GS Kitazigurwa school",
+    taskId: "task-school-domain",
+    result: {
+      success: false,
+      error: { code: "ALL_ADAPTERS_FAILED", message: "AI providers unavailable." }
+    }
+  });
+  assert.equal(result.verified, true);
+  assert.equal(result.fallbackUsed, true);
+  const html = result.artifacts.find(item => item.name === "index.html").content;
+  assert.match(html, /GS Kitazigurwa school/i);
+  assert.match(html, /Every learner matters/i);
+});
+
+test("website bundle fails verification when HTML points to a missing local file", () => {
+  const result = buildTaskArtifacts({
+    task: "Build a website for a completely new idea with its own required features",
+    taskId: "task-broken-reference",
+    result: {
+      success: true,
+      response: [
+        '## index.html',
+        '```html filename="index.html"',
+        '<!doctype html><html><head><link rel="stylesheet" href="style.css"><link rel="stylesheet" href="missing.css"><script defer src="script.js"></script></head><body><h1 id="home">Demo</h1><a href="#home">Home</a></body></html>',
+        '```',
+        '## style.css',
+        '```css filename="style.css"',
+        'body { margin: 0; }',
+        '```',
+        '## script.js',
+        '```js filename="script.js"',
+        'document.body.dataset.ready = "true";',
+        '```',
+        '## README.md',
+        '```md filename="README.md"',
+        'Demo project.',
+        '```'
+      ].join("\n")
+    }
+  });
+  assert.equal(result.required, true);
+  assert.equal(result.verified, false);
+  assert.ok(result.error.includes("Missing local file reference: missing.css"));
+  assert.ok(result.artifacts.every(item => item.verified === false));
+});
+
+test("website generation preserves explicitly requested configuration and server files", () => {
+  const task = "Build a website project with index.html, style.css, script.js, package.json and server.js.";
+  const response = [
+    '```html filename="index.html"',
+    '<!doctype html><html><head><link rel="stylesheet" href="style.css"><script defer src="script.js"></script></head><body><h1>Demo</h1></body></html>',
+    '```',
+    '```css filename="style.css"',
+    'body { margin: 0; }',
+    '```',
+    '```javascript filename="script.js"',
+    'document.body.dataset.ready = "true";',
+    '```',
+    '```json filename="package.json"',
+    '{"name":"demo-site","private":true,"scripts":{"start":"node server.js"}}',
+    '```',
+    '```javascript filename="server.js"',
+    'const http = require("node:http");',
+    '```',
+    '```markdown filename="README.md"',
+    '# Demo website',
+    '```'
+  ].join("\n");
+  const result = buildTaskArtifacts({ task, taskId: "task-extra-files", result: { success: true, response } });
+  assert.equal(result.verified, true, result.error);
+  assert.ok(result.expectedFiles.includes("package.json"));
+  assert.ok(result.expectedFiles.includes("server.js"));
+  assert.ok(result.artifacts.some(file => file.name === "package.json" && JSON.parse(file.content).scripts.start === "node server.js"));
+  assert.ok(result.artifacts.some(file => file.name === "server.js"));
+});
+

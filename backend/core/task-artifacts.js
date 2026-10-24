@@ -2,11 +2,11 @@
 const vm=require("node:vm");
 
 const FILE_REQUEST=/\b(create|write|generate|build|make|produce|save|export|nkorera|unkorera|unkorere|ngukorere|ndashaka|kora|yubake|ubaka|mpa|uyimpe)\b.{0,160}\b(file|script|code|document|report|page|website|web site|urubuga|app|application|component|module|spreadsheet|csv|json|html|css|javascript|typescript|site ya internet)\b|\b(file|script|code|document|report|website|urubuga|app|application|component|module)\b.{0,100}\b(for me|please|that works|with|named|called|yuzuye|rwose)\b/i;
-const EXTENSION=/\b([\w.-]+\.(?:js|cjs|mjs|ts|tsx|jsx|html|css|json|md|txt|csv|xml|svg))\b/i;
+const EXTENSION=/\b([\w.-]+\.(?:js|cjs|mjs|ts|tsx|jsx|html|htm|css|json|md|txt|csv|xml|svg|yml|yaml|toml|py|go|rs|java|kt|php|sql|sh|bat|webmanifest|map|graphql|gql|vue|svelte|astro|scss|sass|less|lock))\b/i;
 const EXT_TO_MIME=Object.freeze({
  js:"text/javascript",cjs:"text/javascript",mjs:"text/javascript",ts:"text/plain",tsx:"text/plain",jsx:"text/javascript",
- html:"text/html; charset=utf-8",css:"text/css; charset=utf-8",json:"application/json",md:"text/markdown; charset=utf-8",
- txt:"text/plain; charset=utf-8",csv:"text/csv; charset=utf-8",xml:"application/xml",svg:"image/svg+xml"
+ html:"text/html; charset=utf-8",htm:"text/html; charset=utf-8",css:"text/css; charset=utf-8",json:"application/json",md:"text/markdown; charset=utf-8",
+ txt:"text/plain; charset=utf-8",csv:"text/csv; charset=utf-8",xml:"application/xml",svg:"image/svg+xml",yml:"text/yaml",yaml:"text/yaml",toml:"text/plain",py:"text/x-python",go:"text/plain",rs:"text/plain",java:"text/plain",kt:"text/plain",php:"text/plain",sql:"text/plain",sh:"text/plain",bat:"text/plain",webmanifest:"application/manifest+json",map:"application/json",graphql:"text/plain",gql:"text/plain",vue:"text/plain",svelte:"text/plain",astro:"text/plain",scss:"text/plain",sass:"text/plain",less:"text/plain",lock:"text/plain"
 });
 const WEBSITE_FILES=[
  {name:"index.html",extension:"html",mimeType:EXT_TO_MIME.html},
@@ -34,7 +34,20 @@ function requestedArtifacts(task) {
  if(!request) return [];
  const text=String(task||"");
  const website=/\b(website|web site|urubuga|site ya internet)\b/i.test(text);
- return website ? WEBSITE_FILES.map(file=>({...file})) : [request];
+ const base=website ? WEBSITE_FILES.map(file=>({...file})) : [request];
+ // Respect every explicitly named source/config/data file in the request.
+ // The standard website bundle is a minimum, not a hard-coded ceiling.
+ const named=[];
+ const pattern=/\b([A-Za-z0-9_.-]+\.(?:js|cjs|mjs|ts|tsx|jsx|html|htm|css|json|md|txt|csv|xml|svg|yml|yaml|toml|py|go|rs|java|kt|php|sql|sh|bat|webmanifest|map|graphql|gql|vue|svelte|astro|scss|sass|less|lock))\b/gi;
+ let match;
+ while((match=pattern.exec(text))!==null) {
+  const name=match[1];
+  if(name.includes("..")||name.startsWith(".")) continue;
+  const extension=name.split(".").pop().toLowerCase();
+  if(!EXT_TO_MIME[extension]||base.some(file=>file.name.toLowerCase()===name.toLowerCase())||named.some(file=>file.name.toLowerCase()===name.toLowerCase())) continue;
+  named.push({name,extension,mimeType:EXT_TO_MIME[extension]});
+ }
+ return [...base,...named];
 }
 
 function getResponseText(result) {
@@ -86,7 +99,7 @@ function buildSingleArtifact(request,{task,result,taskId}={}) {
  if(!result||result.success===false) return {artifact:null,error:"Agent execution failed; no artifact was created."};
  const content=extractDeliverable(getResponseText(result),request.extension);
  const bytes=Buffer.byteLength(content,"utf8");
- if(bytes>20000) return {artifact:null,error:"Generated file exceeds the 20 KB per-file limit."};
+ if(bytes>512000) return {artifact:null,error:"Generated file exceeds the 512 KB per-file limit."};
  const check=verifyContent(request.name,request.extension,content);
  if(!check.verified) return {artifact:null,error:check.reason};
  return {artifact:{name:request.name,mimeType:request.mimeType,content,bytes,verified:true,verification:check.reason,
@@ -110,12 +123,33 @@ function extractNamedFileBlocks(text, expectedFiles = WEBSITE_FILES) {
   const info=String(match[1]||"").trim();
   const body=String(match[2]||"").trim()+"\n";
   if(!body.trim()) continue;
-  const filenameMatch=info.match(/(?:filename\s*=\s*)?["']?([A-Za-z0-9_.-]+\.(?:html|css|js|md))["']?/i);
+  const filenameMatch=info.match(/([A-Za-z0-9_.-]+\.(?:js|cjs|mjs|ts|tsx|jsx|html|htm|css|json|md|txt|csv|xml|svg|yml|yaml|toml|py|go|rs|java|kt|php|sql|sh|bat|webmanifest|map|graphql|gql|vue|svelte|astro|scss|sass|less|lock))/i);
   const language=(info.split(/\s+/)[0]||"").toLowerCase();
-  const languageExtension=({html:"html",htm:"html",css:"css",js:"js",javascript:"js",ecmascript:"js",md:"md",markdown:"md",text:"md",txt:"md"})[language]||"";
+  const languageExtension=({html:"html",htm:"htm",css:"css",js:"js",javascript:"js",ecmascript:"js",cjs:"cjs",mjs:"mjs",ts:"ts",tsx:"tsx",jsx:"jsx",json:"json",md:"md",markdown:"md",text:"txt",txt:"txt",csv:"csv",xml:"xml",svg:"svg",yaml:"yaml",yml:"yml",toml:"toml",python:"py",py:"py",go:"go",rust:"rs",rs:"rs",java:"java",kotlin:"kt",php:"php",sql:"sql",bash:"sh",sh:"sh",vue:"vue",svelte:"svelte",astro:"astro",scss:"scss",sass:"sass",less:"less",graphql:"graphql",gql:"gql"})[language]||"";
   const explicitName=filenameMatch?.[1];
+  const namedExpected=expectedFiles.find(file=>info.toLowerCase().includes(file.name.toLowerCase()))?.name;
   const expectedExtension=expectedFiles.find(file=>file.extension===languageExtension)?.name;
-  blocks.push({language,name:explicitName||expectedExtension||null,content:body,info});
+  blocks.push({language,name:namedExpected||explicitName||expectedExtension||null,content:body,info});
+ }
+ // Be tolerant of model responses that place fence markers next to adjacent
+ // blocks or use unusual line endings. The primary parser above remains preferred.
+ if(blocks.length===0 && source.includes("```")) {
+  const parts=source.split("```");
+  for(let index=1;index<parts.length;index+=2) {
+   const chunk=parts[index]||"";
+   const newline=chunk.search(/\r?\n/);
+   if(newline<0) continue;
+   const info=chunk.slice(0,newline).trim();
+   const body=chunk.slice(newline+1).trim();
+   if(!body) continue;
+   const filenameMatch=info.match(/([A-Za-z0-9_.-]+\.(?:js|cjs|mjs|ts|tsx|jsx|html|htm|css|json|md|txt|csv|xml|svg|yml|yaml|toml|py|go|rs|java|kt|php|sql|sh|bat|webmanifest|map|graphql|gql|vue|svelte|astro|scss|sass|less|lock))/i);
+   const language=(info.split(/\s+/)[0]||"").toLowerCase();
+   const extension=filenameMatch?.[1]?.split(".").pop().toLowerCase();
+   const languageExtension=({html:"html",htm:"htm",css:"css",js:"js",javascript:"js",ecmascript:"js",cjs:"cjs",mjs:"mjs",ts:"ts",tsx:"tsx",jsx:"jsx",json:"json",md:"md",markdown:"md",text:"txt",txt:"txt",csv:"csv",xml:"xml",svg:"svg",yaml:"yaml",yml:"yml",toml:"toml",python:"py",py:"py",go:"go",rust:"rs",rs:"rs",java:"java",kotlin:"kt",php:"php",sql:"sql",bash:"sh",sh:"sh",vue:"vue",svelte:"svelte",astro:"astro",scss:"scss",sass:"sass",less:"less",graphql:"graphql",gql:"gql"})[language]||"";
+   const namedExpected=expectedFiles.find(file=>info.toLowerCase().includes(file.name.toLowerCase()))?.name;
+   const expectedExtension=expectedFiles.find(file=>file.extension===languageExtension)?.name;
+   blocks.push({language,name:namedExpected||filenameMatch?.[1]||expectedExtension||null,content:body+"\n",info});
+  }
  }
  // Also support labelled Markdown sections such as "## index.html" followed by a code fence.
  for(const file of expectedFiles) {
@@ -244,7 +278,7 @@ Replace the sample school name and contact email, add verified school details an
 
 
 function isEcommerceWebsiteRequest(task) {
- return /\\b(shop|shopping|e[- ]?commerce|online store|storefront|checkout|cart|payment|payments|sell products|selling products|gucururizaho|gucuruza|ubucuruzi|amaduka|iduka|ibicuruzwa|kwishyura|ubwishyu)\\b/i.test(String(task||""));
+ return /\b(shop|shopping|e[- ]?commerce|online store|storefront|checkout|cart|payment|payments|sell products|selling products|gucururizaho|gucuruza|ubucuruzi|amaduka|iduka|ibicuruzwa|kwishyura|ubwishyu)\b/i.test(String(task||""));
 }
 function buildEcommerceFallback(task) {
  const title="Nkwasibwe Market";
@@ -254,6 +288,10 @@ function buildEcommerceFallback(task) {
   {name:"script.js",extension:"js",mimeType:EXT_TO_MIME.js,content:'"use strict";const catalog={bag:{name:"Isakoshi yiza",price:18000},audio:{name:"Headphones",price:25000},watch:{name:"Isaha",price:32000},shoes:{name:"Inkweto",price:28000}};const cart={};const money=n=>"RWF "+n.toLocaleString("en-US");function render(){const entries=Object.entries(cart).filter(x=>x[1]>0);document.querySelector("#cartCount").textContent=entries.reduce((n,x)=>n+x[1],0);const list=document.querySelector("#cartItems");list.replaceChildren();if(!entries.length){const li=document.createElement("li");li.textContent="Nta bicuruzwa wahisemo.";list.append(li)}entries.forEach(([id,q])=>{const li=document.createElement("li");li.textContent=catalog[id].name+" × "+q+" — "+money(catalog[id].price*q);list.append(li)});document.querySelector("#total").textContent="Igiteranyo: "+money(entries.reduce((n,[id,q])=>n+catalog[id].price*q,0))}document.querySelectorAll("[data-add]").forEach(b=>b.addEventListener("click",()=>{cart[b.dataset.add]=(cart[b.dataset.add]||0)+1;render()}));document.querySelector("#search").addEventListener("input",e=>document.querySelectorAll(".product").forEach(p=>p.hidden=!p.dataset.name.toLowerCase().includes(e.target.value.toLowerCase())));document.querySelector("#checkoutForm").addEventListener("submit",e=>{e.preventDefault();document.querySelector("#notice").textContent="Demo gusa: nta order yoherejwe kandi nta mafaranga yishyuwe. Hakenewe backend na payment provider wemewe mbere yo gufungura iduka nyakuri."});document.querySelector("#cartButton").addEventListener("click",()=>document.querySelector("#checkout").scrollIntoView({behavior:"smooth"}));document.querySelector("#year").textContent=new Date().getFullYear();render();'},
   {name:"README.md",extension:"md",mimeType:EXT_TO_MIME.md,content:'# Nkwasibwe Market\n\nResponsive e-commerce starter in Kinyarwanda with sample products, search, a browser-only cart and a checkout form demo.\n\nSECURITY: This is not production-ready and does not process payments. Never collect card data in this demo. Production needs secure server-side authentication, database-backed products/orders, server-side price validation, HTTPS, a reputable hosted PCI-compliant payment provider, order verification, shipping/returns/privacy policies and legal/tax review. Keep payment secrets on the server.\n\nOpen index.html with all four files in the same folder. Products and prices are examples only.'}
  ];
+}
+
+function isSchoolWebsiteRequest(task) {
+ return /\b(school|primary school|secondary school|education|academy|college|university|ishuri|amashuri|ikigo cy'ishuri|ikigo cy'uburezi)\b/i.test(String(task||""));
 }
 
 function isTradingWebsiteRequest(task) {
@@ -310,6 +348,32 @@ This is not a production brokerage. Before launch, add a secure backend, authent
  ];
 }
 
+function verifyWebsiteBundle(artifacts) {
+ const byName=new Map(artifacts.map(item=>[String(item.name||"").toLowerCase(),item]));
+ const html=byName.get("index.html")?.content||"";
+ const errors=[];
+ if(!html) return ["Missing index.html."];
+ const referenced=new Set();
+ const ids=new Set([...html.matchAll(/\bid\s*=\s*["']([^"']+)["']/gi)].map(match=>match[1]));
+ for(const match of html.matchAll(/\b(?:href|src)\s*=\s*["']([^"']+)["']/gi)) {
+  const raw=String(match[1]||"").trim();
+  if(!raw||/^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(raw)) continue;
+  if(raw.startsWith("#")) {
+   if(raw.length>1&&!ids.has(decodeURIComponent(raw.slice(1)))) errors.push("Broken in-page link: "+raw);
+   continue;
+  }
+  const path=raw.split(/[?#]/)[0].replace(/^\.\//,"");
+  if(!path) continue;
+  const name=path.split("/").pop().toLowerCase();
+  referenced.add(name);
+  if(!byName.has(name)) errors.push("Missing local file reference: "+raw);
+ }
+ for(const required of ["style.css","script.js"]) {
+  if(byName.has(required)&&!referenced.has(required)) errors.push("index.html does not reference required file: "+required);
+ }
+ return [...new Set(errors)];
+}
+
 function buildTaskArtifacts({task,result,taskId}={}) {
  const expected=requestedArtifacts(task);
  if(!expected.length)return {required:false,artifacts:[]};
@@ -322,7 +386,16 @@ function buildTaskArtifacts({task,result,taskId}={}) {
  // syntax-checked starter site rather than leaving the task failed with four
  // missing-file errors. Partial AI output still fails verification explicitly.
  if(blocks.length===0) {
-  const fallback=isEcommerceWebsiteRequest(task)?buildEcommerceFallback(task):(isTradingWebsiteRequest(task)?buildTradingFallback(task):buildWebsiteFallback(task));
+  // Never substitute an unrelated template for the user's requested product.
+  // Only use a local fallback when the request's domain is positively identified.
+  const fallback=isEcommerceWebsiteRequest(task)?buildEcommerceFallback(task)
+   :(isTradingWebsiteRequest(task)?buildTradingFallback(task)
+   :(isSchoolWebsiteRequest(task)?buildWebsiteFallback(task):null));
+  if(!fallback) {
+   return {required:true,verified:false,expectedFiles:expected.map(f=>f.name),artifacts:[],fallbackUsed:false,
+    error:"The AI did not generate the requested website files, and no matching domain-specific fallback is available. Nothing unrelated was substituted.",
+    providerFailure:executionFailed?{code:result?.error?.code||result?.code||"AI_EXECUTION_FAILED",message:String(result?.error?.message||result?.error||"The AI execution adapter failed before returning website files.").slice(0,500)}:null};
+  }
   const artifacts=[];
   const errors=[];
   for(const file of fallback) {
@@ -332,7 +405,9 @@ function buildTaskArtifacts({task,result,taskId}={}) {
     verification:"Verified starter-site fallback: "+check.reason,
     downloadUrl:"/api/tasks/"+encodeURIComponent(String(taskId))+"/artifacts/"+encodeURIComponent(file.name)});
   }
+  errors.push(...verifyWebsiteBundle(artifacts));
   const verified=errors.length===0&&artifacts.length===expected.length;
+  if(!verified) for(const artifact of artifacts) artifact.verified=false;
   return {required:true,verified,expectedFiles:expected.map(f=>f.name),artifacts,
    fallbackUsed:true,
    fallbackReason:executionFailed?"AI provider execution failed; used a verified local website starter instead.":"AI response did not contain the required website source files.",
@@ -353,8 +428,10 @@ function buildTaskArtifacts({task,result,taskId}={}) {
   artifacts.push(built.artifact);
  }
  const totalBytes=artifacts.reduce((sum,item)=>sum+item.bytes,0);
- if(totalBytes>36000) return {required:true,verified:false,expectedFiles:expected.map(f=>f.name),artifacts:[],error:"Website source exceeds the 36 KB combined file limit."};
+ if(totalBytes>2000000) return {required:true,verified:false,expectedFiles:expected.map(f=>f.name),artifacts:[],error:"Generated project exceeds the 2 MB combined artifact limit."};
+ errors.push(...verifyWebsiteBundle(artifacts));
  const verified=errors.length===0&&artifacts.length===expected.length;
+ if(!verified) for(const artifact of artifacts) artifact.verified=false;
  return {required:true,verified,expectedFiles:expected.map(f=>f.name),artifacts,
   verification:verified?"All website files passed their content checks.":null,
   error:verified?null:errors.join(" ").slice(0,1500)};
