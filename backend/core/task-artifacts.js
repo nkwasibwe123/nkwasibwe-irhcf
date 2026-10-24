@@ -123,9 +123,9 @@ function extractNamedFileBlocks(text, expectedFiles = WEBSITE_FILES) {
   const info=String(match[1]||"").trim();
   const body=String(match[2]||"").trim()+"\n";
   if(!body.trim()) continue;
-  const filenameMatch=info.match(/(?:filename\s*=\s*)?["']?([A-Za-z0-9_.-]+\.(?:html|css|js|md))["']?/i);
+  const filenameMatch=info.match(/(?:filename\s*=\s*)?["']?([A-Za-z0-9_.-]+\.(?:js|cjs|mjs|ts|tsx|jsx|html|htm|css|json|md|txt|csv|xml|svg|yml|yaml|toml|py|go|rs|java|kt|php|sql|sh|bat|webmanifest|map|graphql|gql|vue|svelte|astro|scss|sass|less|lock))["']?/i);
   const language=(info.split(/\s+/)[0]||"").toLowerCase();
-  const languageExtension=({html:"html",htm:"html",css:"css",js:"js",javascript:"js",ecmascript:"js",md:"md",markdown:"md",text:"md",txt:"md"})[language]||"";
+  const languageExtension=({html:"html",htm:"htm",css:"css",js:"js",javascript:"js",ecmascript:"js",cjs:"cjs",mjs:"mjs",ts:"ts",tsx:"tsx",jsx:"jsx",json:"json",md:"md",markdown:"md",text:"txt",txt:"txt",csv:"csv",xml:"xml",svg:"svg",yaml:"yaml",yml:"yml",toml:"toml",python:"py",py:"py",go:"go",rust:"rs",rs:"rs",java:"java",kotlin:"kt",php:"php",sql:"sql",bash:"sh",sh:"sh",vue:"vue",svelte:"svelte",astro:"astro",scss:"scss",sass:"sass",less:"less",graphql:"graphql",gql:"gql"})[language]||"";
   const explicitName=filenameMatch?.[1];
   const expectedExtension=expectedFiles.find(file=>file.extension===languageExtension)?.name;
   blocks.push({language,name:explicitName||expectedExtension||null,content:body,info});
