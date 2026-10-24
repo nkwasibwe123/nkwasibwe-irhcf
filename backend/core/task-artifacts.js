@@ -256,6 +256,10 @@ function buildEcommerceFallback(task) {
  ];
 }
 
+function isSchoolWebsiteRequest(task) {
+ return /\\b(school|primary school|secondary school|education|academy|college|university|ishuri|amashuri|ikigo cy'ishuri|ikigo cy'uburezi)\\b/i.test(String(task||""));
+}
+
 function isTradingWebsiteRequest(task) {
  return /\b(trad(?:e|ing)|broker|forex|stock market|crypto exchange|portfolio|paper trading|trading platform|trading website|crypto trading)\b/i.test(String(task||""));
 }
@@ -322,7 +326,16 @@ function buildTaskArtifacts({task,result,taskId}={}) {
  // syntax-checked starter site rather than leaving the task failed with four
  // missing-file errors. Partial AI output still fails verification explicitly.
  if(blocks.length===0) {
-  const fallback=isEcommerceWebsiteRequest(task)?buildEcommerceFallback(task):(isTradingWebsiteRequest(task)?buildTradingFallback(task):buildWebsiteFallback(task));
+  // Never substitute an unrelated template for the user's requested product.
+  // Only use a local fallback when the request's domain is positively identified.
+  const fallback=isEcommerceWebsiteRequest(task)?buildEcommerceFallback(task)
+   :(isTradingWebsiteRequest(task)?buildTradingFallback(task)
+   :(isSchoolWebsiteRequest(task)?buildWebsiteFallback(task):null));
+  if(!fallback) {
+   return {required:true,verified:false,expectedFiles:expected.map(f=>f.name),artifacts:[],fallbackUsed:false,
+    error:"The AI did not generate the requested website files, and no matching domain-specific fallback is available. Nothing unrelated was substituted.",
+    providerFailure:executionFailed?{code:result?.error?.code||result?.code||"AI_EXECUTION_FAILED",message:String(result?.error?.message||result?.error||"The AI execution adapter failed before returning website files.").slice(0,500)}:null};
+  }
   const artifacts=[];
   const errors=[];
   for(const file of fallback) {
