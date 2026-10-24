@@ -210,7 +210,7 @@ test("complete website requires every named file and verifies HTML, CSS, and Jav
   const { buildTaskArtifacts } = require("./task-artifacts");
   const task = "Nkorera website yuzuye ya GS Kitazigurwa";
   const response = [
-    `<!doctype html><html><head><title>School</title><link rel="stylesheet" href="style.css"><script defer src="script.js"></script></head><body><h1>GS Kitazigurwa</h1></body></html>`,
+    '```html filename="index.html"\n<!doctype html><html><head><title>School</title><link rel="stylesheet" href="style.css"><script defer src="script.js"></script></head><body><h1>GS Kitazigurwa</h1></body></html>\n```',
     ' ```css filename="style.css"\nbody { margin: 0; }\n```',
     ' ```javascript filename="script.js"\nconsole.log("ready");\n```',
     ' ```markdown filename="README.md"\n# GS Kitazigurwa\n```'
