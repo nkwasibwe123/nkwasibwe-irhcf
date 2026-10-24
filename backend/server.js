@@ -42,6 +42,7 @@ const {
   createTaskRouter,
   isUsableTaskResult
 } = require("./core/task-engine");
+const { ensureCommerceSchema, createCommerceRouter } = require("./routes/commerce-routes");
 const { createSelfImprovementRouter } = require("./routes/self-improvement-routes");
 const { SelfImprovementWorker } = require("./core/self-improvement-worker");
 
@@ -32560,6 +32561,11 @@ app.use(
   })
 );
 
+app.use(
+  "/api/commerce",
+  createCommerceRouter({ pool, authenticateToken })
+);
+
 // 404 HANDLER
 // ============================================================
 //
@@ -32813,6 +32819,9 @@ async function startServer() {
       );
 
       await createSchema();
+
+      await ensureCommerceSchema(pool);
+      console.log("[COMMERCE] Products, orders, and checkout schema ready.");
 
       console.log(
         "[DATABASE] Database schema initialized successfully."
