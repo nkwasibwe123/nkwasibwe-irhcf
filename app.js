@@ -7515,7 +7515,7 @@ async function sendMessage() {
         "For a school website, produce a complete responsive MVP with real HTML/CSS/JS files, working navigation, school profile, academics, admissions, news/events, FAQ, and contact form UI. Mark unknown school facts as editable placeholders; do not invent phone numbers, addresses, fees, staff, or history.",
         "User's requested work:",
         taskText
-      ].join("\\n\\n");
+      ].join("\n\n");
       const queued = await apiRequest(API_ENDPOINTS.tasks, {
         method: "POST",
         body: JSON.stringify({
@@ -8252,7 +8252,7 @@ if(workspaceChatForm)workspaceChatForm.addEventListener("submit",async event=>{
     "Keep all task metadata scoped to workspace: "+category+" ("+(workspace?.title||category)+").",
     "Use the current workspace conversation context when available. Never claim success without verification.",
     "User request:",message
-   ].join("\\n\\n");
+   ].join("\n\n");
    const queued=await apiRequest(API_ENDPOINTS.tasks,{method:"POST",body:JSON.stringify({task:executableTask,sessionId,metadata:{source:"irhcf_chat_build_request",workspace:category,deliverableRequired:true,requestedTask:message}}),timeoutMs:30000});
    if(!queued?.success||!queued.task)throw new Error(queued?.error||"Ntibyashobotse gushyira igikorwa muri task queue.");
    items.push({role:"assistant",text:"Natangiye gukora igikorwa muri "+(workspace?.title||category)+". Task #"+queued.task.id+" yashyizwe ku murongo; si ukuvuga ko yarangiye. Reba ibikorwa byo kuri iyi page kugira ngo ukurikirane progress n'amadosiye yagenzuwe.",at:new Date().toISOString()});
@@ -9476,7 +9476,7 @@ async function requestTaskDeployment(taskId) {
           "Do not buy a domain, create paid resources, expose secrets, or change unrelated production systems.",
           "If no authorized deployment target or credentials are configured, do not pretend deployment succeeded; report exactly what is missing and provide the safest next step.",
           `Approved completed task ID: ${Number(taskId)}.`
-        ].join("\\n\\n"),
+        ].join("\n\n"),
         sessionId: ensureSessionId(),
         metadata: {
           source: "task_progress_deploy_confirmation",
