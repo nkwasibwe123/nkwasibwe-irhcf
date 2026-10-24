@@ -93,7 +93,36 @@ function isUsableTaskResult(result) {
   if (typeof result !== "object" || Array.isArray(result)) return false;
   if (result.success === false) return false;
   if (result.agent?.responseQuality?.verified === false) return false;
-  if (result.taskAction?.required) { const artifacts = Array.isArray(result.taskAction.artifacts) ? result.taskAction.artifacts : []; const verified = new Set(artifacts.filter(item => item?.verified === true && typeof item?.content === "string" && item.content.trim()).map(item => item.name)); const expected = Array.isArray(result.taskAction.expectedFiles) ? result.taskAction.expectedFiles : []; if (expected.length ? !expected.every(name => verified.has(name)) : !artifacts.some(item => item?.verified === true && typeof item?.content === "string" && item.content.trim())) return false; }
+
+  // A verified file bundle is itself a deliverable. Some executors return the
+  // generated artifacts without a separate prose response; rejecting those
+  // results caused valid website tasks to fail response-quality verification.
+  let verifiedArtifactBundle = false;
+  if (result.taskAction?.required) {
+    const artifacts = Array.isArray(result.taskAction.artifacts)
+      ? result.taskAction.artifacts
+      : [];
+    const verified = new Set(
+      artifacts
+        .filter(item =>
+          item?.verified === true &&
+          typeof item?.content === "string" &&
+          item.content.trim()
+        )
+        .map(item => item.name)
+    );
+    const expected = Array.isArray(result.taskAction.expectedFiles)
+      ? result.taskAction.expectedFiles
+      : [];
+    verifiedArtifactBundle = expected.length
+      ? expected.every(name => verified.has(name))
+      : artifacts.some(item =>
+          item?.verified === true &&
+          typeof item?.content === "string" &&
+          item.content.trim()
+        );
+    if (!verifiedArtifactBundle) return false;
+  }
 
   const contentCandidates = [
     typeof result.response === "string" ? result.response : result.response?.content,
@@ -103,7 +132,7 @@ function isUsableTaskResult(result) {
     result.result?.output_text
   ];
 
-  return contentCandidates.some(
+  return verifiedArtifactBundle || contentCandidates.some(
     value => typeof value === "string" && value.trim().length > 0
   );
 }
