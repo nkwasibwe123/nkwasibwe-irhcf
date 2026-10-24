@@ -295,7 +295,7 @@ test("website artifact extraction accepts language-labelled fences without filen
   const task = "Kora website nto y'ishuri. Kora dosiye za HTML, CSS na JavaScript, ugenzure ko zikora.";
   const response = [
     "```html",
-    "<!doctype html><html><head><title>School</title></head><body><h1>GS Kitazigurwa</h1></body></html>",
+    "<!doctype html><html><head><title>School</title><link rel="stylesheet" href="style.css"><script defer src="script.js"></script></head><body><h1>GS Kitazigurwa</h1></body></html>",
     "```",
     "```css",
     "body { margin: 0; font-family: Arial, sans-serif; }",
@@ -318,7 +318,7 @@ test("website artifact extraction assigns anonymous code fences in expected file
   const task = "Build a website with HTML, CSS and JavaScript files.";
   const response = [
     "```",
-    "<!doctype html><html><body><h1>School</h1></body></html>",
+    "<!doctype html><html><head><link rel="stylesheet" href="style.css"><script defer src="script.js"></script></head><body><h1>School</h1></body></html>",
     "```",
     "```",
     "body { color: #222; }",
