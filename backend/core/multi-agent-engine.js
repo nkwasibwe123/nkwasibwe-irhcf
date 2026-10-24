@@ -3,46 +3,32 @@
 /**
  * IRHCF MULTI-AGENT EXECUTION ENGINE
  *
- * Specialist agents are coordinated through the existing central
- * execution engine. This module does not create provider clients,
- * bypass authorization, or mutate production state.
- *
- * The Master Agent remains the final synthesizer. Specialists produce
- * bounded briefs that are fed into the final execution context.
+ * Specialists are coordinated through the existing central execution engine.
+ * This module does not create provider clients, bypass authorization, or mutate
+ * production state. The Master Agent remains the final synthesizer.
  */
 
 function clean(value, max = 8000) {
-  return String(value ?? "")
-    .replace(/\u0000/g, "")
-    .trim()
-    .slice(0, max);
+  return String(value ?? "").replace(/\u0000/g, "").trim().slice(0, max);
 }
 
 function recommendedSpecialistCount(team, options = {}) {
   const requestedMinimum = Number(options.minimum);
   const requestedMaximum = Number(options.maximum);
   const minimum = Number.isFinite(requestedMinimum)
-    ? Math.max(1, Math.min(8, Math.trunc(requestedMinimum)))
-    : 5;
+    ? Math.max(1, Math.min(8, Math.trunc(requestedMinimum))) : 5;
   const maximum = Number.isFinite(requestedMaximum)
-    ? Math.max(minimum, Math.min(8, Math.trunc(requestedMaximum)))
-    : 8;
+    ? Math.max(minimum, Math.min(8, Math.trunc(requestedMaximum))) : 8;
   const declaredCount = Number(team?.count);
-  const availableCount = Array.isArray(team?.specialists)
-    ? team.specialists.length
-    : 0;
+  const availableCount = Array.isArray(team?.specialists) ? team.specialists.length : 0;
   const teamCount = Number.isFinite(declaredCount) && declaredCount > 0
-    ? Math.trunc(declaredCount)
-    : availableCount;
+    ? Math.trunc(declaredCount) : availableCount;
   return Math.max(minimum, Math.min(maximum, teamCount || minimum));
 }
 
 function selectSpecialists(team, maxSpecialists = 6, task = "") {
-  const specialists = Array.isArray(team?.specialists)
-    ? team.specialists
-    : [];
+  const specialists = Array.isArray(team?.specialists) ? team.specialists : [];
   const taskText = clean(task, 4000).toLowerCase();
-
   const qualityFirst = ["requirements", "security", "testing"];
   let taskSpecific = ["verification", "architecture", "research", "backend", "frontend", "user_care"];
 
@@ -56,8 +42,8 @@ function selectSpecialists(team, maxSpecialists = 6, task = "") {
     taskSpecific = ["file_operations", "document_analysis", "document_generation", "format_validation", "research"];
   } else if (/link|url|web research|find sources|source/.test(taskText)) {
     taskSpecific = ["links", "research", "source_evaluation", "fact_checking", "synthesis"];
-  } else if (/website|web app|frontend|interface|ui|design/.test(taskText)) {
-    taskSpecific = ["frontend", "architecture", "backend", "research", "media"];
+  } else if (/website|web app|frontend|interface|ui|design|e-commerce|ecommerce|payment|gucururizaho|ubucuruzi/.test(taskText)) {
+    taskSpecific = ["frontend", "architecture", "backend", "research", "security", "testing"];
   } else if (/api|backend|database|server|authentication|security|code|software|application/.test(taskText)) {
     taskSpecific = ["architecture", "backend", "frontend", "research", "media"];
   } else if (/research|compare|evidence|sources|investigate/.test(taskText)) {
@@ -70,9 +56,6 @@ function selectSpecialists(team, maxSpecialists = 6, task = "") {
     const bi = preferred.indexOf(b.id);
     return (ai < 0 ? 999 : ai) - (bi < 0 ? 999 : bi);
   });
-
-  // A larger pool improves complex-task coverage, while the hard cap prevents
-  // runaway provider calls and keeps latency/cost bounded.
   return ranked.slice(0, Math.max(1, Math.min(8, Number(maxSpecialists) || 6)));
 }
 
@@ -106,6 +89,10 @@ function buildSpecialistMessages(task, specialist, sharedContext = "") {
   ];
 }
 
+function isSoftwareBuildTask(task) {
+  return /website|web app|web application|software|application|e-commerce|ecommerce|payment|backend|frontend|api|database|gucururizaho|ubucuruzi|urubuga/i.test(clean(task, 4000));
+}
+
 async function runSpecialistTeam({
   task,
   team,
@@ -120,12 +107,14 @@ async function runSpecialistTeam({
     throw new Error("Multi-agent execution requires the central execution engine.");
   }
 
-  const selected = selectSpecialists(team, maxSpecialists, task);
+  const softwareBuild = isSoftwareBuildTask(task);
+  // Software builds need time/token budget for the Master Agent to create actual
+  // files. Eight simultaneous specialist calls exhausted Groq TPM and yielded
+  // truncated briefs, so keep this path to four specialists and two concurrent calls.
+  const specialistLimit = softwareBuild ? Math.min(4, Number(maxSpecialists) || 4) : maxSpecialists;
+  const selected = selectSpecialists(team, specialistLimit, task);
 
-  // Specialists are independent, bounded analysis calls. Run them concurrently
-  // to reduce wall-clock latency while preserving deterministic result ordering.
-  // Each failure is captured locally so one provider failure does not cancel the team.
-  const results = await Promise.all(selected.map(async (specialist) => {
+  const executeSpecialist = async (specialist) => {
     try {
       const execution = await executionEngine.execute({
         action: "generate_text",
@@ -135,77 +124,58 @@ async function runSpecialistTeam({
         taskId,
         taskRunId,
         input: {
-          messages: buildSpecialistMessages(
-            task,
-            specialist,
-            sharedContext
-          ),
-          options: {
-            temperature: 0.2,
-            maxTokens: 350
-          }
+          messages: buildSpecialistMessages(task, specialist, sharedContext),
+          options: { temperature: 0.2, maxTokens: softwareBuild ? 500 : 350 }
         },
-        metadata: {
-          source: "multi-agent-team",
-          specialist: specialist.id
-        }
+        metadata: { source: "multi-agent-team", specialist: specialist.id }
       });
 
-      const rawBrief =
-        execution?.result?.choices?.[0]?.message?.content ??
-        execution?.result?.output_text ??
-        execution?.result?.content ??
-        execution?.result;
-
-      const brief = typeof rawBrief === "string"
-        ? clean(rawBrief, 2500)
-        : rawBrief == null
-          ? ""
-          : clean(JSON.stringify(rawBrief), 2500);
+      const rawBrief = execution?.result?.choices?.[0]?.message?.content ??
+        execution?.result?.output_text ?? execution?.result?.content ?? execution?.result;
+      const brief = typeof rawBrief === "string" ? clean(rawBrief, 2500) :
+        rawBrief == null ? "" : clean(JSON.stringify(rawBrief), 2500);
 
       if (execution?.verification?.verified === false) {
         return {
-          specialist: specialist.id,
-          description: specialist.description,
-          provider: execution?.provider || null,
-          model: execution?.model || null,
-          status: "failed",
-          error: clean(execution.verification.reason || "Specialist output failed verification.", 1000)
+          specialist: specialist.id, description: specialist.description,
+          provider: execution?.provider || null, model: execution?.model || null,
+          status: "failed", error: clean(execution.verification.reason || "Specialist output failed verification.", 1000)
         };
       }
-
       if (!brief) {
         return {
-          specialist: specialist.id,
-          description: specialist.description,
-          provider: execution?.provider || null,
-          model: execution?.model || null,
-          status: "failed",
-          error: "Specialist provider returned an empty brief."
+          specialist: specialist.id, description: specialist.description,
+          provider: execution?.provider || null, model: execution?.model || null,
+          status: "failed", error: "Specialist provider returned an empty brief."
         };
       }
-
       return {
-        specialist: specialist.id,
-        description: specialist.description,
-        provider: execution?.provider || null,
-        model: execution?.model || null,
-        brief,
-        status: "completed"
+        specialist: specialist.id, description: specialist.description,
+        provider: execution?.provider || null, model: execution?.model || null,
+        brief, status: "completed"
       };
     } catch (error) {
       return {
-        specialist: specialist.id,
-        description: specialist.description,
-        status: "failed",
-        error: clean(
-          error?.message || String(error),
-          1000
-        )
+        specialist: specialist.id, description: specialist.description, status: "failed",
+        error: clean(error?.message || String(error), 1000)
       };
     }
-  }));
- 
+  };
+
+  let results;
+  if (softwareBuild) {
+    // Small batches avoid a burst of requests against providers with low free-tier
+    // token-per-minute quotas. Results still follow the deterministic team order.
+    results = [];
+    for (let index = 0; index < selected.length; index += 2) {
+      const batch = selected.slice(index, index + 2);
+      results.push(...await Promise.all(batch.map(executeSpecialist)));
+    }
+  } else {
+    // Other tasks retain parallel execution for lower wall-clock latency.
+    results = await Promise.all(selected.map(executeSpecialist));
+  }
+
   return {
     mode: "specialist_team",
     teamTypes: Array.isArray(team?.teamTypes) ? team.teamTypes : [],
@@ -218,25 +188,11 @@ async function runSpecialistTeam({
 }
 
 function formatSpecialistBriefs(teamExecution) {
-  if (!teamExecution || !Array.isArray(teamExecution.results)) {
-    return "";
-  }
-
-  const completed = teamExecution.results.filter(
-    item => item.status === "completed" && item.brief
-  );
-
+  if (!teamExecution || !Array.isArray(teamExecution.results)) return "";
+  const completed = teamExecution.results.filter(item => item.status === "completed" && item.brief);
   if (!completed.length) return "";
-
-  return completed
-    .map(item =>
-      [
-        `[SPECIALIST: ${item.specialist}]`,
-        item.brief
-      ].join("\n")
-    )
-    .join("\n\n")
-    .slice(0, 9000);
+  return completed.map(item => [`[SPECIALIST: ${item.specialist}]`, item.brief].join("\n"))
+    .join("\n\n").slice(0, 9000);
 }
 
 module.exports = {
