@@ -767,7 +767,7 @@ class TaskEngine {
         }
         executionResult = {
           success: true,
-          response: "AI providers failed before generating website files. A local starter website was generated and its files passed verification.",
+          response: "AI providers failed before generating website files. A local starter website was generated; files passed static content checks only. Runtime behavior, backend, security, and payment integration are not verified, so this is not production-ready.",
           taskAction,
           providerFailure: {
             code: executionError?.code || "AI_EXECUTION_FAILED",
