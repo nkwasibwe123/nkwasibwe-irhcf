@@ -9233,19 +9233,34 @@ function renderTaskArtifactButtons(task) {
         previewButton.textContent = "Loading preview…";
         try {
           const sourceByName = new Map();
-          await Promise.all(verified.filter(item => ["index.html", "style.css", "script.js"].includes(item.name.toLowerCase())).map(async item => {
-            const response = await fetch(item.downloadUrl, { headers: { Authorization: `Bearer ${authToken}` } });
-            if (!response.ok) throw new Error(`Preview file ${item.name} failed (HTTP ${response.status}).`);
+          const previewFiles = verified.filter(item =>
+            item.name.toLowerCase() === "index.html" || /\.(?:css|js|mjs|cjs)$/i.test(item.name)
+          );
+          await Promise.all(previewFiles.map(async item => {
+            const response = await fetch(item.downloadUrl, { headers: { Authorization: \`Bearer \${authToken}\` } });
+            if (!response.ok) throw new Error(\`Preview file \${item.name} failed (HTTP \${response.status}).\`);
             sourceByName.set(item.name.toLowerCase(), await response.text());
           }));
           let page = sourceByName.get("index.html");
           if (!page) throw new Error("index.html is missing.");
-          const cssSource = sourceByName.get("style.css") || "";
-          const jsSource = sourceByName.get("script.js") || "";
-          page = page.replace(/<link\b[^>]*href=["']style\.css["'][^>]*>/i, "");
-          page = page.replace(/<script\b[^>]*src=["']script\.js["'][^>]*><\/script>/i, "");
-          page = page.replace("</head>", `<style>\n${cssSource.replace(/<\/style/gi, "<\\/style")}\n</style></head>`);
-          page = page.replace("</body>", `<script>\n${jsSource.replace(/<\/script/gi, "<\\/script")}\n<\/script></body>`);
+          const localAssetName = value => {
+            const path = String(value || "").trim();
+            if (!path || /^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i.test(path)) return "";
+            return path.split(/[?#]/, 1)[0].split("/").pop().toLowerCase();
+          };
+          page = page.replace(/<link\b([^>]*?)href=["']([^"']+)["']([^>]*)>/gi, (tag, before, href, after) => {
+            const name = localAssetName(href);
+            const source = name ? sourceByName.get(name) : undefined;
+            if (source === undefined || !/\.css$/i.test(name)) return tag;
+            return "<style>\n" + source.replace(/<\/style/gi, "<\\/style") + "\n</style>";
+          });
+          page = page.replace(/<script\b([^>]*?)src=["']([^"']+)["']([^>]*)>\s*<\/script>/gi, (tag, before, src, after) => {
+            const name = localAssetName(src);
+            const source = name ? sourceByName.get(name) : undefined;
+            if (source === undefined || !/\.(?:js|mjs|cjs)$/i.test(name)) return tag;
+            const attributes = (before + " " + after).replace(/\s+(?:defer|async)\b/gi, "");
+            return "<script" + attributes + ">\n" + source.replace(/<\/script/gi, "<\\/script") + "\n</script>";
+          });
           let dialog = document.getElementById("irhcfArtifactPreviewDialog");
           if (!dialog) {
             dialog = document.createElement("dialog");
