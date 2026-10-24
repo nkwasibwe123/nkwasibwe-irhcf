@@ -89,3 +89,50 @@ test("checkout fails closed when payment secrets are not configured", async () =
     assert.equal(payload.code, "PAYMENT_PROVIDER_NOT_CONFIGURED");
   });
 });
+
+test("product creation fails closed when no commerce admin is configured", async () => {
+  const app = express();
+  app.use(express.json());
+  app.use("/api/commerce", createCommerceRouter({
+    pool: { async query() { throw new Error("product write must not be reached"); } },
+    authenticateToken: (req, res, next) => { req.user = { id: 7, email: "buyer@example.com" }; next(); },
+    env: {}
+  }));
+  await withServer(app, async base => {
+    const response = await fetch(base + "/api/commerce/products", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Test product", priceMinor: 100, currency: "RWF", stockQuantity: 2 })
+    });
+    assert.equal(response.status, 403);
+    const payload = await response.json();
+    assert.equal(payload.code, "COMMERCE_ADMIN_REQUIRED");
+  });
+});
+
+test("configured commerce admin can create a validated product", async () => {
+  const app = express();
+  app.use(express.json());
+  let insertParams;
+  app.use("/api/commerce", createCommerceRouter({
+    pool: { async query(sql, params) {
+      assert.match(sql, /INSERT INTO commerce_products/);
+      insertParams = params;
+      return { rows: [{ id: "9", name: params[0], price_minor: String(params[3]), currency: params[4], stock_quantity: params[5] }] };
+    } },
+    authenticateToken: (req, res, next) => { req.user = { id: 7, email: "admin@example.com" }; next(); },
+    env: { COMMERCE_ADMIN_USER_IDS: "7" }
+  }));
+  await withServer(app, async base => {
+    const response = await fetch(base + "/api/commerce/products", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Notebook", priceMinor: 2500, currency: "RWF", stockQuantity: 8 })
+    });
+    assert.equal(response.status, 201);
+    const payload = await response.json();
+    assert.equal(payload.product.name, "Notebook");
+    assert.equal(insertParams[3], 2500);
+    assert.equal(insertParams[4], "RWF");
+  });
+});
