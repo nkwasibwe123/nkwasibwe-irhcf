@@ -487,3 +487,16 @@ test("generated website artifacts expose a sandboxed preview action", () => {
   assert.match(app, /sourceByName\.set\(item\.name\.toLowerCase\(\)/);
   assert.match(css, /\.irhcf-artifact-preview-dialog/);
 });
+
+test("verified project artifacts expose a revision action that carries forward the same project", () => {
+  const root = path.join(__dirname, "..", "..");
+  const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
+  const engine = fs.readFileSync(path.join(root, "backend", "core", "task-engine.js"), "utf8");
+  assert.match(app, /task-revise-button/);
+  assert.match(app, /\/api\/tasks\/\$\{Number\(task\.id\)\}\/revise/);
+  assert.match(app, /Request project changes/);
+  assert.match(engine, /router\.post\("\/:id\/revise"/);
+  assert.match(engine, /PROJECT_REVISION_CONTEXT_TOO_LARGE/);
+  assert.match(engine, /===== EXISTING FILE: /);
+});
+
