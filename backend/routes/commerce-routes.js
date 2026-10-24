@@ -48,6 +48,15 @@ async function ensureCommerceSchema(pool) {
       line_total_minor BIGINT NOT NULL CHECK (line_total_minor >= 0)
     );
     CREATE INDEX IF NOT EXISTS idx_commerce_order_items_order ON commerce_order_items(order_id);
+    CREATE TABLE IF NOT EXISTS commerce_cart_items (
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      product_id BIGINT NOT NULL REFERENCES commerce_products(id) ON DELETE CASCADE,
+      quantity INTEGER NOT NULL CHECK (quantity BETWEEN 1 AND 99),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (user_id, product_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_commerce_cart_user_updated ON commerce_cart_items(user_id, updated_at DESC);
   `);
 }
 
@@ -78,6 +87,44 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
       return res.json({ success: true, products: result.rows });
     } catch (error) {
       return res.status(500).json({ success: false, error: "Could not load products.", code: "PRODUCTS_LOAD_FAILED" });
+    }
+  });
+
+  router.get("/cart", authenticateToken, async (req, res) => {
+    try {
+      const result = await pool.query(
+        "SELECT p.id AS product_id, p.name, p.description, p.price_minor, p.currency, p.stock_quantity, p.image_url, c.quantity, (p.price_minor * c.quantity) AS line_total_minor FROM commerce_cart_items c JOIN commerce_products p ON p.id=c.product_id WHERE c.user_id=$1 AND p.active=TRUE ORDER BY c.updated_at DESC",
+        [req.user.id]
+      );
+      return res.json({ success: true, items: result.rows });
+    } catch (error) {
+      return res.status(500).json({ success: false, error: "Could not load cart.", code: "CART_LOAD_FAILED" });
+    }
+  });
+
+  router.put("/cart/items/:productId", authenticateToken, async (req, res) => {
+    const productId = safeInteger(req.params.productId, 1, Number.MAX_SAFE_INTEGER);
+    const quantity = safeInteger(req.body?.quantity, 0, MAX_QUANTITY);
+    if (!productId || quantity === null) {
+      return res.status(400).json({ success: false, error: "Use a valid product ID and quantity from 0 to 99.", code: "CART_ITEM_INVALID" });
+    }
+    try {
+      const product = await pool.query("SELECT id, stock_quantity FROM commerce_products WHERE id=$1 AND active=TRUE", [productId]);
+      if (!product.rows.length) return res.status(404).json({ success: false, error: "Product not found.", code: "PRODUCT_NOT_FOUND" });
+      if (quantity > Number(product.rows[0].stock_quantity)) {
+        return res.status(409).json({ success: false, error: "Requested quantity exceeds current stock.", code: "INSUFFICIENT_STOCK" });
+      }
+      if (quantity === 0) {
+        await pool.query("DELETE FROM commerce_cart_items WHERE user_id=$1 AND product_id=$2", [req.user.id, productId]);
+        return res.json({ success: true, removed: true });
+      }
+      const result = await pool.query(
+        "INSERT INTO commerce_cart_items (user_id, product_id, quantity) VALUES ($1,$2,$3) ON CONFLICT (user_id, product_id) DO UPDATE SET quantity=EXCLUDED.quantity, updated_at=CURRENT_TIMESTAMP RETURNING user_id, product_id, quantity",
+        [req.user.id, productId, quantity]
+      );
+      return res.json({ success: true, item: result.rows[0] });
+    } catch (error) {
+      return res.status(500).json({ success: false, error: "Could not update cart.", code: "CART_UPDATE_FAILED" });
     }
   });
 
