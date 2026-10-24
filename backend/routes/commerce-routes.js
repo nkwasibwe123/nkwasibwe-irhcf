@@ -77,6 +77,102 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
   if (typeof authenticateToken !== "function") throw new Error("Commerce router requires authentication middleware.");
   const router = express.Router();
 
+  function requireCommerceAdmin(req, res, next) {
+    const allowed = String(env.COMMERCE_ADMIN_USER_IDS || "")
+      .split(",").map(value => value.trim()).filter(Boolean);
+    if (!allowed.includes(String(req.user?.id ?? ""))) {
+      return res.status(403).json({
+        success: false,
+        error: "Commerce product management is restricted to configured administrators.",
+        code: "COMMERCE_ADMIN_REQUIRED"
+      });
+    }
+    next();
+  }
+
+  router.post("/products", authenticateToken, requireCommerceAdmin, async (req, res) => {
+    const name = String(req.body?.name || "").trim().slice(0, 180);
+    const description = String(req.body?.description || "").trim().slice(0, 5000);
+    const sku = req.body?.sku == null ? null : String(req.body.sku).trim().slice(0, 80);
+    const priceMinor = safeInteger(req.body?.priceMinor, 1, Number.MAX_SAFE_INTEGER);
+    const stockQuantity = safeInteger(req.body?.stockQuantity ?? 0, 0, 1000000);
+    const currency = String(req.body?.currency || "RWF").toUpperCase();
+    const imageUrl = req.body?.imageUrl == null || req.body.imageUrl === "" ? null : String(req.body.imageUrl).trim();
+    if (!name || !priceMinor || stockQuantity === null || !CURRENCIES.has(currency)) {
+      return res.status(400).json({ success: false, error: "Name, positive priceMinor, supported currency and valid stockQuantity are required.", code: "PRODUCT_INPUT_INVALID" });
+    }
+    if (imageUrl) {
+      try { if (new URL(imageUrl).protocol !== "https:") throw new Error("HTTPS required"); }
+      catch { return res.status(400).json({ success: false, error: "Product image URL must use HTTPS.", code: "PRODUCT_IMAGE_URL_INVALID" }); }
+    }
+    try {
+      const result = await pool.query(
+        "INSERT INTO commerce_products (name, description, sku, price_minor, currency, stock_quantity, image_url, active) VALUES ($1,$2,$3,$4,$5,$6,$7,TRUE) RETURNING id, name, description, sku, price_minor, currency, stock_quantity, image_url, active, created_at",
+        [name, description, sku || null, priceMinor, currency, stockQuantity, imageUrl]
+      );
+      return res.status(201).json({ success: true, product: result.rows[0] });
+    } catch (error) {
+      if (error?.code === "23505") return res.status(409).json({ success: false, error: "That SKU is already in use.", code: "PRODUCT_SKU_CONFLICT" });
+      return res.status(500).json({ success: false, error: "Could not create product.", code: "PRODUCT_CREATE_FAILED" });
+    }
+  });
+
+  router.patch("/products/:productId", authenticateToken, requireCommerceAdmin, async (req, res) => {
+    const productId = safeInteger(req.params.productId, 1, Number.MAX_SAFE_INTEGER);
+    if (!productId) return res.status(400).json({ success: false, error: "Invalid product ID.", code: "PRODUCT_ID_INVALID" });
+    const fields = [];
+    const values = [];
+    const body = req.body || {};
+    const add = (column, value) => { values.push(value); fields.push(column + "=$" + values.length); };
+    if (Object.prototype.hasOwnProperty.call(body, "name")) {
+      const value = String(body.name || "").trim().slice(0, 180);
+      if (!value) return res.status(400).json({ success: false, error: "Product name cannot be empty.", code: "PRODUCT_INPUT_INVALID" });
+      add("name", value);
+    }
+    if (Object.prototype.hasOwnProperty.call(body, "description")) add("description", String(body.description || "").trim().slice(0, 5000));
+    if (Object.prototype.hasOwnProperty.call(body, "sku")) add("sku", body.sku == null || body.sku === "" ? null : String(body.sku).trim().slice(0, 80));
+    if (Object.prototype.hasOwnProperty.call(body, "priceMinor")) {
+      const value = safeInteger(body.priceMinor, 1, Number.MAX_SAFE_INTEGER);
+      if (!value) return res.status(400).json({ success: false, error: "Price must be a positive integer in minor units.", code: "PRODUCT_INPUT_INVALID" });
+      add("price_minor", value);
+    }
+    if (Object.prototype.hasOwnProperty.call(body, "currency")) {
+      const value = String(body.currency).toUpperCase();
+      if (!CURRENCIES.has(value)) return res.status(400).json({ success: false, error: "Unsupported currency.", code: "PRODUCT_INPUT_INVALID" });
+      add("currency", value);
+    }
+    if (Object.prototype.hasOwnProperty.call(body, "stockQuantity")) {
+      const value = safeInteger(body.stockQuantity, 0, 1000000);
+      if (value === null) return res.status(400).json({ success: false, error: "Stock quantity must be a non-negative integer.", code: "PRODUCT_INPUT_INVALID" });
+      add("stock_quantity", value);
+    }
+    if (Object.prototype.hasOwnProperty.call(body, "active")) {
+      if (typeof body.active !== "boolean") return res.status(400).json({ success: false, error: "Active must be true or false.", code: "PRODUCT_INPUT_INVALID" });
+      add("active", body.active);
+    }
+    if (Object.prototype.hasOwnProperty.call(body, "imageUrl")) {
+      let value = body.imageUrl == null || body.imageUrl === "" ? null : String(body.imageUrl).trim();
+      if (value) {
+        try { if (new URL(value).protocol !== "https:") throw new Error("HTTPS required"); }
+        catch { return res.status(400).json({ success: false, error: "Product image URL must use HTTPS.", code: "PRODUCT_IMAGE_URL_INVALID" }); }
+      }
+      add("image_url", value);
+    }
+    if (!fields.length) return res.status(400).json({ success: false, error: "No editable product fields were provided.", code: "PRODUCT_UPDATE_EMPTY" });
+    values.push(productId);
+    try {
+      const result = await pool.query(
+        "UPDATE commerce_products SET " + fields.join(", ") + ", updated_at=CURRENT_TIMESTAMP WHERE id=$" + values.length + " RETURNING id, name, description, sku, price_minor, currency, stock_quantity, image_url, active, updated_at",
+        values
+      );
+      if (!result.rows.length) return res.status(404).json({ success: false, error: "Product not found.", code: "PRODUCT_NOT_FOUND" });
+      return res.json({ success: true, product: result.rows[0] });
+    } catch (error) {
+      if (error?.code === "23505") return res.status(409).json({ success: false, error: "That SKU is already in use.", code: "PRODUCT_SKU_CONFLICT" });
+      return res.status(500).json({ success: false, error: "Could not update product.", code: "PRODUCT_UPDATE_FAILED" });
+    }
+  });
+
   router.get("/products", async (req, res) => {
     try {
       const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 50));
