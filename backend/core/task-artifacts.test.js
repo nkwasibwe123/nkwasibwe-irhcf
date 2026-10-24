@@ -126,3 +126,35 @@ test("school fallback is only used for an explicitly school-related request", ()
   assert.match(html, /GS Kitazigurwa school/i);
   assert.match(html, /Every learner matters/i);
 });
+
+test("website bundle fails verification when HTML points to a missing local file", () => {
+  const result = buildTaskArtifacts({
+    task: "Build a website for a completely new idea with its own required features",
+    taskId: "task-broken-reference",
+    result: {
+      success: true,
+      response: [
+        '## index.html',
+        '```html filename="index.html"',
+        '<!doctype html><html><head><link rel="stylesheet" href="style.css"><link rel="stylesheet" href="missing.css"><script defer src="script.js"></script></head><body><h1 id="home">Demo</h1><a href="#home">Home</a></body></html>',
+        '```',
+        '## style.css',
+        '```css filename="style.css"',
+        'body { margin: 0; }',
+        '```',
+        '## script.js',
+        '```js filename="script.js"',
+        'document.body.dataset.ready = "true";',
+        '```',
+        '## README.md',
+        '```md filename="README.md"',
+        'Demo project.',
+        '```'
+      ].join("\\n")
+    }
+  });
+  assert.equal(result.required, true);
+  assert.equal(result.verified, false);
+  assert.match(result.error, /Missing local file reference: missing\\.css/);
+  assert.ok(result.artifacts.every(item => item.verified === false));
+});
