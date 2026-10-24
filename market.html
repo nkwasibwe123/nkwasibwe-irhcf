@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Nkwasibwe Market — browse products, manage your cart and securely check out.">
+  <title>Nkwasibwe Market</title>
+  <link rel="stylesheet" href="market.css?v=1">
+  <script defer src="market.js?v=1"></script>
+</head>
+<body>
+  <header class="market-header">
+    <a class="brand" href="index.html" aria-label="Back to Nkwasibwe IRHCF"><span class="brand-mark">N</span><span><strong>Nkwasibwe Market</strong><small>Commerce workspace</small></span></a>
+    <nav><a href="index.html">Back to IRHCF</a><button id="reloadButton" type="button">Refresh</button></nav>
+  </header>
+  <main class="market-layout">
+    <section class="intro">
+      <p class="eyebrow">NKWASIBWE IRHCF</p>
+      <h1>Shop with confidence.</h1>
+      <p>Browse the catalogue, keep a saved cart, and use hosted checkout when payment is configured.</p>
+      <div id="authNotice" class="notice" role="status"></div>
+    </section>
+    <section class="catalogue">
+      <div class="section-heading"><div><h2>Products</h2><p>Prices and availability come from the server.</p></div><span id="productCount" class="count">0 items</span></div>
+      <div id="productGrid" class="product-grid"><p class="muted">Loading products…</p></div>
+    </section>
+    <section class="cart-section">
+      <div class="section-heading"><div><h2>Your cart</h2><p>Saved to your account when signed in.</p></div><span id="cartCount" class="count">0 items</span></div>
+      <div id="cartItems" class="cart-items"><p class="muted">Sign in to load your saved cart.</p></div>
+      <div class="cart-footer"><div><span>Subtotal</span><strong id="cartTotal">—</strong></div><button id="checkoutButton" class="primary-button" type="button" disabled>Continue to secure checkout</button><p id="checkoutMessage" class="muted" role="status"></p></div>
+    </section>
+    <section class="orders-section">
+      <div class="section-heading"><div><h2>My orders</h2><p>Payment status is confirmed by the server, not by a browser redirect.</p></div><button id="ordersButton" type="button">Load orders</button></div>
+      <div id="ordersList" class="orders-list"><p class="muted">Sign in to view your orders.</p></div>
+    </section>
+    <details class="admin-section">
+      <summary>Product management (authorized administrators only)</summary>
+      <p class="muted">This form works only for user IDs configured in the server's COMMERCE_ADMIN_USER_IDS setting.</p>
+      <form id="productForm">
+        <label>Product name<input name="name" maxlength="180" required></label>
+        <label>Description<textarea name="description" maxlength="5000" rows="3"></textarea></label>
+        <div class="form-row"><label>Price (minor units)<input name="priceMinor" type="number" min="1" step="1" required></label><label>Currency<select name="currency"><option>RWF</option><option>USD</option><option>EUR</option><option>GBP</option><option>KES</option><option>UGX</option><option>TZS</option><option>NGN</option><option>ZAR</option></select></label></div>
+        <label>Stock quantity<input name="stockQuantity" type="number" min="0" step="1" value="0" required></label>
+        <label>Product image URL (HTTPS)<input name="imageUrl" type="url" placeholder="https://…"></label>
+        <label>SKU (optional)<input name="sku" maxlength="80"></label>
+        <button class="primary-button" type="submit">Create product</button>
+        <p id="adminMessage" class="muted" role="status"></p>
+      </form>
+    </details>
+    <footer><span>Nkwasibwe IRHCF</span><span>Checkout remains disabled until payment secrets are configured and tested.</span></footer>
+  </main>
+</body>
+</html>
