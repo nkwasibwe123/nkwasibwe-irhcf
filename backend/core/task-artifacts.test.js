@@ -150,7 +150,7 @@ test("website bundle fails verification when HTML points to a missing local file
         '```md filename="README.md"',
         'Demo project.',
         '```'
-      ].join("\\n")
+      ].join("\n")
     }
   });
   assert.equal(result.required, true);
