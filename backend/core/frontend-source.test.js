@@ -259,6 +259,7 @@ test("chat routes explicit build requests to the persistent task executor and an
     "Direct Kinyarwanda follow-ups must resume execution instead of returning instructions.");
   assert.match(app, /recover the most recent concrete deliverable request from this same authenticated session/,
     "Follow-up tasks must explicitly recover prior session context.");
+  assert.match(app, /requestedTask: taskText, originalUserRequest: taskText/, "Task execution must preserve the concrete user request separately from the generic execution wrapper.");
   assert.match(app, /isExplicitBuildTask\(taskText\)/,
     "Explicit creation requests must be routed away from chat-only advice.");
   assert.match(app, /API_ENDPOINTS\.tasks/);
