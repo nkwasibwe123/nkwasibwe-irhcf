@@ -946,7 +946,7 @@ class TaskEngine {
             typeof executionResult === "string"
               ? executionResult
               : JSON.stringify(executionResult),
-            50000
+            2500000
           ),
           TASK_STATES.VERIFYING,
           this.workerId
