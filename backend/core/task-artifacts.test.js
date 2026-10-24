@@ -90,7 +90,13 @@ test("Kinyarwanda online shop requests receive an e-commerce storefront instead 
   assert.match(html, /Nkwasibwe Market/);
   assert.match(html, /Ibicuruzwa/);
   assert.match(html, /Agaseke/);
+  assert.match(html, /id="contactForm"/);
+  assert.match(html, /id="contactNotice"/);
   assert.doesNotMatch(html, /Welcome to our school|Every learner matters/);
+  assert.match(js, /contactForm\.addEventListener\("submit"/);
+  assert.match(js, /STORE_CONTACT_EMAIL/);
+  assert.match(js, /mailto:/);
+  assert.match(js, /ntibwoherejwe/i);
   assert.match(js, /data-add/);
   assert.match(readme, /does not process payments/i);
 });
