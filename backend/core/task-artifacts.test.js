@@ -180,7 +180,7 @@ test("website generation preserves explicitly requested configuration and server
     '```markdown filename="README.md"',
     '# Demo website',
     '```'
-  ].join("\\n");
+  ].join("\n");
   const result = buildTaskArtifacts({ task, taskId: "task-extra-files", result: { success: true, response } });
   assert.equal(result.verified, true, result.error);
   assert.ok(result.expectedFiles.includes("package.json"));
