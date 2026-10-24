@@ -130,6 +130,25 @@ function extractNamedFileBlocks(text, expectedFiles = WEBSITE_FILES) {
   const expectedExtension=expectedFiles.find(file=>file.extension===languageExtension)?.name;
   blocks.push({language,name:explicitName||expectedExtension||null,content:body,info});
  }
+ // Be tolerant of model responses that place fence markers next to adjacent
+ // blocks or use unusual line endings. The primary parser above remains preferred.
+ if(blocks.length===0 && source.includes("```")) {
+  const parts=source.split("```");
+  for(let index=1;index<parts.length;index+=2) {
+   const chunk=parts[index]||"";
+   const newline=chunk.search(/\r?\n/);
+   if(newline<0) continue;
+   const info=chunk.slice(0,newline).trim();
+   const body=chunk.slice(newline+1).trim();
+   if(!body) continue;
+   const filenameMatch=info.match(/(?:filename\s*=\s*)?["']?([A-Za-z0-9_.-]+\.(?:js|cjs|mjs|ts|tsx|jsx|html|htm|css|json|md|txt|csv|xml|svg|yml|yaml|toml|py|go|rs|java|kt|php|sql|sh|bat|webmanifest|map|graphql|gql|vue|svelte|astro|scss|sass|less|lock))["']?/i);
+   const language=(info.split(/\s+/)[0]||"").toLowerCase();
+   const extension=filenameMatch?.[1]?.split(".").pop().toLowerCase();
+   const languageExtension=({html:"html",htm:"htm",css:"css",js:"js",javascript:"js",ecmascript:"js",cjs:"cjs",mjs:"mjs",ts:"ts",tsx:"tsx",jsx:"jsx",json:"json",md:"md",markdown:"md",text:"txt",txt:"txt",csv:"csv",xml:"xml",svg:"svg",yaml:"yaml",yml:"yml",toml:"toml",python:"py",py:"py",go:"go",rust:"rs",rs:"rs",java:"java",kotlin:"kt",php:"php",sql:"sql",bash:"sh",sh:"sh",vue:"vue",svelte:"svelte",astro:"astro",scss:"scss",sass:"sass",less:"less",graphql:"graphql",gql:"gql"})[language]||"";
+   const expectedExtension=expectedFiles.find(file=>file.extension===languageExtension)?.name;
+   blocks.push({language,name:filenameMatch?.[1]||expectedExtension||null,content:body+"\n",info});
+  }
+ }
  // Also support labelled Markdown sections such as "## index.html" followed by a code fence.
  for(const file of expectedFiles) {
   if(blocks.some(block=>block.name===file.name)) continue;
