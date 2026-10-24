@@ -103,21 +103,24 @@
     setStatus("Live voice fallback is listening continuously. Speak naturally; tap ⏹ to finish or switch to typing.");
     recognition.onresult = event => {
       if (assistantSpeaking) return;
-      for (let i = Math.max(event.resultIndex || 0, lastProcessedResultIndex + 1); i < event.results.length; i++) {
+      const startIndex = Math.max(event.resultIndex || 0, lastProcessedResultIndex + 1);
+      const finalResults = [];
+      for (let i = startIndex; i < event.results.length; i++) {
         const result = event.results[i];
         if (!result?.isFinal) continue;
         lastProcessedResultIndex = i;
-        const text = String(result[0]?.transcript || "").trim();
-        if (!text) continue;
-        const input = document.getElementById("userInput");
-        const send = document.getElementById("sendButton");
-        if (!input || !send) { setStatus("Chat input was not found."); continue; }
-        input.value = text;
-        input.dispatchEvent(new Event("input", { bubbles: true }));
-        try { sessionStorage.setItem("irhcf_reply_in_voice", "1"); } catch (_) {}
-        setStatus("Heard: “" + text.slice(0, 100) + "” — sending to IRHCF…");
-        send.click();
+        finalResults.push(result);
       }
+      const text = finalResults.map(r => r[0]?.transcript || "").join(" ").trim();
+      if (!text) return;
+      const input = document.getElementById("userInput");
+      const send = document.getElementById("sendButton");
+      if (!input || !send) { setStatus("Chat input was not found."); return; }
+      input.value = text;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      try { sessionStorage.setItem("irhcf_reply_in_voice", "1"); } catch (_) {}
+      setStatus("Heard: “" + text.slice(0, 100) + "” — sending to IRHCF…");
+      send.click();
     };
     recognition.onerror = event => {
       if (assistantSpeaking || event.error === "aborted") return;
