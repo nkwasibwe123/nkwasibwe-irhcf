@@ -314,6 +314,32 @@ This is not a production brokerage. Before launch, add a secure backend, authent
  ];
 }
 
+function verifyWebsiteBundle(artifacts) {
+ const byName=new Map(artifacts.map(item=>[String(item.name||"").toLowerCase(),item]));
+ const html=byName.get("index.html")?.content||"";
+ const errors=[];
+ if(!html) return ["Missing index.html."];
+ const referenced=new Set();
+ const ids=new Set([...html.matchAll(/\\bid\\s*=\\s*["']([^"']+)["']/gi)].map(match=>match[1]));
+ for(const match of html.matchAll(/\\b(?:href|src)\\s*=\\s*["']([^"']+)["']/gi)) {
+  const raw=String(match[1]||"").trim();
+  if(!raw||/^(?:[a-z][a-z0-9+.-]*:|\\/\\/)/i.test(raw)) continue;
+  if(raw.startsWith("#")) {
+   if(raw.length>1&&!ids.has(decodeURIComponent(raw.slice(1)))) errors.push("Broken in-page link: "+raw);
+   continue;
+  }
+  const path=raw.split(/[?#]/)[0].replace(/^\\.\\//,"");
+  if(!path) continue;
+  const name=path.split("/").pop().toLowerCase();
+  referenced.add(name);
+  if(!byName.has(name)) errors.push("Missing local file reference: "+raw);
+ }
+ for(const required of ["style.css","script.js"]) {
+  if(byName.has(required)&&!referenced.has(required)) errors.push("index.html does not reference required file: "+required);
+ }
+ return [...new Set(errors)];
+}
+
 function buildTaskArtifacts({task,result,taskId}={}) {
  const expected=requestedArtifacts(task);
  if(!expected.length)return {required:false,artifacts:[]};
@@ -345,7 +371,9 @@ function buildTaskArtifacts({task,result,taskId}={}) {
     verification:"Verified starter-site fallback: "+check.reason,
     downloadUrl:"/api/tasks/"+encodeURIComponent(String(taskId))+"/artifacts/"+encodeURIComponent(file.name)});
   }
+  errors.push(...verifyWebsiteBundle(artifacts));
   const verified=errors.length===0&&artifacts.length===expected.length;
+  if(!verified) for(const artifact of artifacts) artifact.verified=false;
   return {required:true,verified,expectedFiles:expected.map(f=>f.name),artifacts,
    fallbackUsed:true,
    fallbackReason:executionFailed?"AI provider execution failed; used a verified local website starter instead.":"AI response did not contain the required website source files.",
@@ -367,7 +395,9 @@ function buildTaskArtifacts({task,result,taskId}={}) {
  }
  const totalBytes=artifacts.reduce((sum,item)=>sum+item.bytes,0);
  if(totalBytes>36000) return {required:true,verified:false,expectedFiles:expected.map(f=>f.name),artifacts:[],error:"Website source exceeds the 36 KB combined file limit."};
+ errors.push(...verifyWebsiteBundle(artifacts));
  const verified=errors.length===0&&artifacts.length===expected.length;
+ if(!verified) for(const artifact of artifacts) artifact.verified=false;
  return {required:true,verified,expectedFiles:expected.map(f=>f.name),artifacts,
   verification:verified?"All website files passed their content checks.":null,
   error:verified?null:errors.join(" ").slice(0,1500)};
