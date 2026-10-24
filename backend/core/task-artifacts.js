@@ -126,7 +126,7 @@ function extractNamedFileBlocks(text, expectedFiles = WEBSITE_FILES) {
   const filenameMatch=info.match(/([A-Za-z0-9_.-]+\.(?:js|cjs|mjs|ts|tsx|jsx|html|htm|css|json|md|txt|csv|xml|svg|yml|yaml|toml|py|go|rs|java|kt|php|sql|sh|bat|webmanifest|map|graphql|gql|vue|svelte|astro|scss|sass|less|lock))/i);
   const language=(info.split(/\s+/)[0]||"").toLowerCase();
   const languageExtension=({html:"html",htm:"htm",css:"css",js:"js",javascript:"js",ecmascript:"js",cjs:"cjs",mjs:"mjs",ts:"ts",tsx:"tsx",jsx:"jsx",json:"json",md:"md",markdown:"md",text:"txt",txt:"txt",csv:"csv",xml:"xml",svg:"svg",yaml:"yaml",yml:"yml",toml:"toml",python:"py",py:"py",go:"go",rust:"rs",rs:"rs",java:"java",kotlin:"kt",php:"php",sql:"sql",bash:"sh",sh:"sh",vue:"vue",svelte:"svelte",astro:"astro",scss:"scss",sass:"sass",less:"less",graphql:"graphql",gql:"gql"})[language]||"";
-  const declaredFilename=info.match(/filename\s*=\\s*["\u0027]?([A-Za-z0-9_.-]+\.[A-Za-z0-9]+)["\u0027]?/i)?.[1];
+  const declaredFilename=info.match(/filename\s*=\s*["\u0027]?([A-Za-z0-9_.-]+\.[A-Za-z0-9]+)["\u0027]?/i)?.[1];
   const explicitName=declaredFilename||filenameMatch?.[1];
   const namedExpected=expectedFiles.find(file=>info.toLowerCase().includes(file.name.toLowerCase()))?.name;
   const expectedExtension=expectedFiles.find(file=>file.extension===languageExtension)?.name;
