@@ -9237,8 +9237,8 @@ function renderTaskArtifactButtons(task) {
             item.name.toLowerCase() === "index.html" || /\.(?:css|js|mjs|cjs)$/i.test(item.name)
           );
           await Promise.all(previewFiles.map(async item => {
-            const response = await fetch(item.downloadUrl, { headers: { Authorization: \`Bearer \${authToken}\` } });
-            if (!response.ok) throw new Error(\`Preview file \${item.name} failed (HTTP \${response.status}).\`);
+            const response = await fetch(item.downloadUrl, { headers: { Authorization: `Bearer ${authToken}` } });
+            if (!response.ok) throw new Error(`Preview file ${item.name} failed (HTTP ${response.status}).`);
             sourceByName.set(item.name.toLowerCase(), await response.text());
           }));
           let page = sourceByName.get("index.html");
