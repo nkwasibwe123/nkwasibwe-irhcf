@@ -29,6 +29,8 @@ test("commerce schema initializer creates indexed products and user-owned orders
   assert.match(calls[0], /CREATE TABLE IF NOT EXISTS commerce_products/);
   assert.match(calls[0], /CREATE TABLE IF NOT EXISTS commerce_orders/);
   assert.match(calls[0], /CREATE TABLE IF NOT EXISTS commerce_order_items/);
+  assert.match(calls[0], /CREATE TABLE IF NOT EXISTS commerce_cart_items/);
+  assert.match(calls[0], /PRIMARY KEY \(user_id, product_id\)/);
   assert.match(calls[0], /REFERENCES users\(id\)/);
   assert.match(calls[0], /idx_commerce_orders_user_created/);
 });
