@@ -8795,7 +8795,7 @@ function renderWorkspaceActivities() {
     const artifactButton=document.createElement("button");artifactButton.type="button";artifactButton.className="task-secondary-button";artifactButton.textContent="Download "+artifact.name;
     artifactButton.addEventListener("click",async()=>{
      artifactButton.disabled=true;const original=artifactButton.textContent;artifactButton.textContent="Downloading…";
-     try{const response=await fetch(artifact.downloadUrl,{headers:{Authorization:"Bearer "+authToken}});if(!response.ok)throw new Error("Download failed (HTTP "+response.status+").");const objectUrl=URL.createObjectURL(await response.blob());const link=document.createElement("a");link.href=objectUrl;link.download=artifact.name;document.body.appendChild(link);link.click();link.remove();window.setTimeout(()=>URL.revokeObjectURL(objectUrl),1000);artifactButton.textContent="Downloaded "+artifact.name;}
+     try{const response=await fetch(API_BASE_URL + artifact.downloadUrl,{headers:{Authorization:"Bearer "+authToken}});if(!response.ok)throw new Error("Download failed (HTTP "+response.status+").");const objectUrl=URL.createObjectURL(await response.blob());const link=document.createElement("a");link.href=objectUrl;link.download=artifact.name;document.body.appendChild(link);link.click();link.remove();window.setTimeout(()=>URL.revokeObjectURL(objectUrl),1000);artifactButton.textContent="Downloaded "+artifact.name;}
      catch(error){artifactButton.textContent=String(error?.message||"Download failed").slice(0,90);}
      finally{artifactButton.disabled=false;if(artifactButton.textContent==="Downloading…")artifactButton.textContent=original;}
     });
@@ -9016,7 +9016,7 @@ function renderTaskList(tasks) {
           const originalLabel = downloadButton.textContent;
           downloadButton.textContent = "Downloading…";
           try {
-            const response = await fetch(artifact.downloadUrl, {
+            const response = await fetch(API_BASE_URL + artifact.downloadUrl, {
               method: "GET",
               headers: { Authorization: `Bearer ${authToken}` }
             });
@@ -9237,7 +9237,7 @@ function renderTaskArtifactButtons(task) {
             item.name.toLowerCase() === "index.html" || /\.(?:css|js|mjs|cjs)$/i.test(item.name)
           );
           await Promise.all(previewFiles.map(async item => {
-            const response = await fetch(item.downloadUrl, { headers: { Authorization: `Bearer ${authToken}` } });
+            const response = await fetch(API_BASE_URL + item.downloadUrl, { headers: { Authorization: `Bearer ${authToken}` } });
             if (!response.ok) throw new Error(`Preview file ${item.name} failed (HTTP ${response.status}).`);
             sourceByName.set(item.name.toLowerCase(), await response.text());
           }));
@@ -9293,7 +9293,7 @@ function renderTaskArtifactButtons(task) {
       reviseButton.disabled = true;
       reviseButton.textContent = "Creating revision task…";
       try {
-        const response = await fetch(`/api/tasks/${Number(task.id)}/revise`, {
+        const response = await fetch(API_BASE_URL + `/api/tasks/${Number(task.id)}/revise`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -9329,7 +9329,7 @@ function renderTaskArtifactButtons(task) {
         const oldText = button.textContent;
         button.textContent = "Irimo gukuramo…";
         try {
-          const response = await fetch(artifact.downloadUrl, {
+          const response = await fetch(API_BASE_URL + artifact.downloadUrl, {
             headers: { Authorization: `Bearer ${authToken}` }
           });
           if (!response.ok) throw new Error(`Download yanze (HTTP ${response.status}).`);
