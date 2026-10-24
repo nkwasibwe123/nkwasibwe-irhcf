@@ -34,3 +34,58 @@ test("commerce schema initializer creates indexed products and user-owned orders
   assert.match(calls[0], /REFERENCES users\(id\)/);
   assert.match(calls[0], /idx_commerce_orders_user_created/);
 });
+
+const express = require("express");
+const { createCommerceRouter } = require("./commerce-routes");
+
+async function withServer(app, callback) {
+  const server = await new Promise(resolve => {
+    const instance = app.listen(0, "127.0.0.1", () => resolve(instance));
+  });
+  try {
+    const address = server.address();
+    await callback("http://127.0.0.1:" + address.port);
+  } finally {
+    await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+  }
+}
+
+test("public product endpoint returns active product data from the database", async () => {
+  const app = express();
+  app.use(express.json());
+  app.use("/api/commerce", createCommerceRouter({
+    pool: { async query(sql) {
+      assert.match(sql, /FROM commerce_products WHERE active = TRUE/);
+      return { rows: [{ id: "4", name: "Notebook", price_minor: "2500", currency: "RWF", stock_quantity: 8 }] };
+    } },
+    authenticateToken: (req, res, next) => { req.user = { id: 7, email: "buyer@example.com" }; next(); },
+    env: {}
+  }));
+  await withServer(app, async base => {
+    const response = await fetch(base + "/api/commerce/products");
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.success, true);
+    assert.equal(payload.products[0].name, "Notebook");
+  });
+});
+
+test("checkout fails closed when payment secrets are not configured", async () => {
+  const app = express();
+  app.use(express.json());
+  app.use("/api/commerce", createCommerceRouter({
+    pool: { async query() { throw new Error("database must not be called before provider configuration"); } },
+    authenticateToken: (req, res, next) => { req.user = { id: 7, email: "buyer@example.com" }; next(); },
+    env: {}
+  }));
+  await withServer(app, async base => {
+    const response = await fetch(base + "/api/commerce/checkout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items: [{ productId: 1, quantity: 1 }] })
+    });
+    assert.equal(response.status, 503);
+    const payload = await response.json();
+    assert.equal(payload.code, "PAYMENT_PROVIDER_NOT_CONFIGURED");
+  });
+});
