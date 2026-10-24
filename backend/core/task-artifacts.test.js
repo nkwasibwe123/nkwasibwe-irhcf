@@ -158,3 +158,34 @@ test("website bundle fails verification when HTML points to a missing local file
   assert.ok(result.error.includes("Missing local file reference: missing.css"));
   assert.ok(result.artifacts.every(item => item.verified === false));
 });
+
+test("website generation preserves explicitly requested configuration and server files", () => {
+  const task = "Build a website project with index.html, style.css, script.js, package.json and server.js.";
+  const response = [
+    '```html filename="index.html"',
+    '<!doctype html><html><head><link rel="stylesheet" href="style.css"><script defer src="script.js"></script></head><body><h1>Demo</h1></body></html>',
+    '```',
+    '```css filename="style.css"',
+    'body { margin: 0; }',
+    '```',
+    '```javascript filename="script.js"',
+    'document.body.dataset.ready = "true";',
+    '```',
+    '```json filename="package.json"',
+    '{"name":"demo-site","private":true,"scripts":{"start":"node server.js"}}',
+    '```',
+    '```javascript filename="server.js"',
+    'const http = require("node:http");',
+    '```',
+    '```markdown filename="README.md"',
+    '# Demo website',
+    '```'
+  ].join("\\n");
+  const result = buildTaskArtifacts({ task, taskId: "task-extra-files", result: { success: true, response } });
+  assert.equal(result.verified, true, result.error);
+  assert.ok(result.expectedFiles.includes("package.json"));
+  assert.ok(result.expectedFiles.includes("server.js"));
+  assert.ok(result.artifacts.some(file => file.name === "package.json" && JSON.parse(file.content).scripts.start === "node server.js"));
+  assert.ok(result.artifacts.some(file => file.name === "server.js"));
+});
+
