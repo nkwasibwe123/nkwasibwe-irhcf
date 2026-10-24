@@ -94,3 +94,35 @@ test("Kinyarwanda online shop requests receive an e-commerce storefront instead 
   assert.match(js, /data-add/);
   assert.match(readme, /does not process payments/i);
 });
+
+test("unknown website requests never receive an unrelated school fallback", () => {
+  const result = buildTaskArtifacts({
+    task: "Build a website for a completely new idea with its own required features",
+    taskId: "task-unknown-domain",
+    result: {
+      success: false,
+      error: { code: "ALL_ADAPTERS_FAILED", message: "AI providers unavailable." }
+    }
+  });
+  assert.equal(result.required, true);
+  assert.equal(result.verified, false);
+  assert.equal(result.fallbackUsed, false);
+  assert.deepEqual(result.artifacts, []);
+  assert.match(result.error, /Nothing unrelated was substituted/i);
+});
+
+test("school fallback is only used for an explicitly school-related request", () => {
+  const result = buildTaskArtifacts({
+    task: "Create a website for GS Kitazigurwa school",
+    taskId: "task-school-domain",
+    result: {
+      success: false,
+      error: { code: "ALL_ADAPTERS_FAILED", message: "AI providers unavailable." }
+    }
+  });
+  assert.equal(result.verified, true);
+  assert.equal(result.fallbackUsed, true);
+  const html = result.artifacts.find(item => item.name === "index.html").content;
+  assert.match(html, /GS Kitazigurwa school/i);
+  assert.match(html, /Every learner matters/i);
+});
