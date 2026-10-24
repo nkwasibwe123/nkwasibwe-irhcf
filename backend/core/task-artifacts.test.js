@@ -44,7 +44,7 @@ test("partial website output does not silently become a fallback site", () => {
   assert.equal(result.required, true);
   assert.equal(result.verified, false);
   assert.equal(result.fallbackUsed, undefined);
-  assert.match(result.error, /Missing required file/);
+  assert.ok(result.error.includes("Missing local file reference: missing.css"));
 });
 
 
