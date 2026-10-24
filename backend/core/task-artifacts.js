@@ -244,7 +244,7 @@ Replace the sample school name and contact email, add verified school details an
 
 
 function isEcommerceWebsiteRequest(task) {
- return /\\b(shop|shopping|e[- ]?commerce|online store|storefront|checkout|cart|payment|payments|sell products|selling products|gucururizaho|gucuruza|ubucuruzi|amaduka|iduka|ibicuruzwa|kwishyura|ubwishyu)\\b/i.test(String(task||""));
+ return /\b(shop|shopping|e[- ]?commerce|online store|storefront|checkout|cart|payment|payments|sell products|selling products|gucururizaho|gucuruza|ubucuruzi|amaduka|iduka|ibicuruzwa|kwishyura|ubwishyu)\b/i.test(String(task||""));
 }
 function buildEcommerceFallback(task) {
  const title="Nkwasibwe Market";
@@ -257,7 +257,7 @@ function buildEcommerceFallback(task) {
 }
 
 function isSchoolWebsiteRequest(task) {
- return /\\b(school|primary school|secondary school|education|academy|college|university|ishuri|amashuri|ikigo cy'ishuri|ikigo cy'uburezi)\\b/i.test(String(task||""));
+ return /\b(school|primary school|secondary school|education|academy|college|university|ishuri|amashuri|ikigo cy'ishuri|ikigo cy'uburezi)\b/i.test(String(task||""));
 }
 
 function isTradingWebsiteRequest(task) {
