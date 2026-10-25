@@ -232,6 +232,68 @@ Do not claim the marketplace is production-ready until the actual configured pro
 11. Live payment and automatic payout are labelled unavailable unless a real provider integration is configured and verified. Do not store raw card or bank credentials.
 12. Automated tests and a provider sandbox walkthrough pass before enabling production money movement.
 
-## 9. Definition of done
+## 9. Feature research record — Chat with Friends & Social Integrations (initial research)
+
+**Status: researched baseline; actual messaging, realtime calling and third-party API access require separate code and provider verification.**
+
+### Sources reviewed (seven distinct official product/API sources)
+
+1. WhatsApp Business Platform developer hub: direct integration, API reference, webhooks, policy, opt-in, rate limits and pricing: https://whatsappbusiness.com/developers/developer-hub/
+2. Meta WhatsApp messages API collection: send text/media/templates, message IDs, read state and delivery status via webhooks: https://www.postman.com/meta/whatsapp-business-platform/folder/o48mro7/messages
+3. Telegram Bot API: HTTPS methods, message/file handling, bot identity and API limits: https://core.telegram.org/bots/api
+4. TikTok Content Posting API: authorized direct posting, verified-domain media URLs, scopes and app audit requirements: https://developers.tiktok.com/docs/en/content-posting-api-get-started
+5. YouTube Data API: OAuth/API-key access, channel/video/playlist/comment resources and permission requirements: https://developers.google.com/youtube/v3/docs/
+6. LinkedIn API access: OAuth 2.0, explicit permissions and partner approval for restricted features: https://learn.microsoft.com/en-us/linkedin/shared/authentication/getting-access
+7. LinkedIn Posts API: create/retrieve text, image, video and document posts with member/organization scopes: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/posts-api?view=li-lms-2026-09
+
+### Comparison and Nkwasibwe synthesis
+
+| Product/API pattern | Constraint or capability | Nkwasibwe design implication |
+|---|---|---|
+| First-party messaging APIs | WhatsApp Business APIs are business messaging, with opt-in, templates/policies, webhooks and rate limits | Do not describe this as a replacement for personal WhatsApp; implement only supported business flows with consent |
+| Bot-based messaging | Telegram Bot API is for bots, not an unrestricted clone of the full Telegram client | Label Telegram bot integration honestly; use official user-authorized capabilities only where available |
+| Content publishing | TikTok posting requires approved scopes, authorized users, media constraints and app audit for public visibility | Show connected-account status, required permissions, upload progress and provider-reported publish status |
+| Video/channel management | YouTube uses API resources and OAuth for private or modifying actions | Separate public search/metadata from actions requiring channel authorization; apply quota budgets |
+| Professional social publishing | LinkedIn posting depends on OAuth permissions and may require partner approval | Display permission gaps clearly and never promise posting features the connected app cannot access |
+| Delivery status | Messaging APIs expose IDs and webhook/event states | Persist provider message IDs and event history; show queued/sent/delivered/read/failed only when supported evidence exists |
+| Platform-specific policy | APIs have different eligibility, rate, consent and content rules | Use an adapter per provider with a shared UI, rather than pretending all networks expose identical functionality |
+
+### Product hierarchy
+
+- **Chat with Friends**
+  - Identity and profile: profile visibility, online state only if supported, avatar and privacy.
+  - Friends: search, requests, accept/decline, block, report and mutual-privacy rules.
+  - Messaging: one-to-one/group threads, attachments, reply/forward, reactions, edit/delete policy, search, unread state and message delivery receipts.
+  - Safety: spam/rate limits, report queue, block enforcement, moderation and account controls.
+  - Calls: voice/video call signaling, permission handling, reconnect, network failure, mute/camera controls and call history; do not expose as working until realtime media infrastructure is integrated and tested.
+  - Feed: posts, media, comments, reactions, shares, bookmarks, visibility and reporting.
+- **Connected Social Accounts**
+  - OAuth consent and least-privilege scopes.
+  - Token storage/refresh/revocation and account disconnect.
+  - Per-provider capabilities and quota/permission diagnostics.
+  - Drafts, preview, explicit publish confirmation, provider job ID, result URL and error details.
+  - Webhook verification, deduplication and event audit.
+- **Phoenix-style downloads**
+  - Accept only supported/publicly accessible URLs and user-provided files within lawful/platform-permitted limits.
+  - Validate scheme/host, avoid SSRF to internal IPs, limit redirects, size, duration and concurrency, and scan/validate file types.
+  - Respect copyright, access controls, rate limits and platform terms; do not bypass DRM, paywalls, private access or technical protections.
+  - Show source, quality/format choices, queue status, cancellation, storage retention and real downloadable output.
+
+### Acceptance criteria
+
+1. Private messages, friend lists, contacts and attachments are always scoped to authenticated participants; cross-account access tests must fail.
+2. Blocked users cannot message, call or interact in ways prohibited by the selected privacy policy.
+3. Message send/retry is idempotent where supported; failures are traceable and do not silently duplicate messages.
+4. Delivery/read indicators are based on server/provider receipts, never fabricated by the client.
+5. Uploads validate file size, MIME and byte signature; downloads enforce SSRF-safe URL validation, redirect/size/time limits and retention cleanup.
+6. Each social provider has an explicit capability matrix showing supported, unavailable, permission-required and quota-blocked actions.
+7. OAuth uses state/CSRF protection, least-privilege scopes, secure token storage, expiry/refresh handling and disconnect/revocation.
+8. Webhook signatures and event IDs are verified/deduplicated; out-of-order events cannot regress a final state incorrectly.
+9. Feed pagination, search, comments, reactions and moderation are tested for empty, malformed, abusive and high-volume cases.
+10. Calls remain labelled unavailable until signaling, media transport, permission UX, reconnection and mobile/network end-to-end tests pass.
+11. Every third-party integration is tested in its sandbox/test account, and real production access is enabled only after the provider grants necessary permissions.
+12. UI language follows the selected interface setting while message replies respect the user's message language unless they explicitly override it.
+
+## 10. Definition of done
 
 A feature is verified only when its five-source research record is complete, code is merged through review, automated tests pass, the real deployed end-to-end workflow succeeds where applicable, security/account isolation/mobile/failure paths are checked, promised outputs are real and downloadable, UI status matches backend state, and limitations/provider requirements/costs are visible.
