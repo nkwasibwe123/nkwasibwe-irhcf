@@ -514,8 +514,8 @@ test("assistant answers expose action controls and long-form length specificatio
   assert.match(app, /navigator\.share/);
   assert.match(css, /\.message-actions\s*\{/);
   assert.match(app, /function getRequestedOutputLength\(/);
-  assert.match(app, /source\.match\(\/\\\\b\(\?:amagambo\)/, "Kinyarwanda requests such as 'amagambo 2000' must be recognized.");
-  assert.match(app, /source\.match\(\/\\\\b\(\?:imirongo\)/, "Kinyarwanda requests such as 'imirongo 100' must be recognized.");
+  assert.ok(app.includes(String.raw`source.match(/\b(?:amagambo)`), "Kinyarwanda requests such as 'amagambo 2000' must be recognized.");
+  assert.ok(app.includes(String.raw`source.match(/\b(?:imirongo)`), "Kinyarwanda requests such as 'imirongo 100' must be recognized.");
   assert.match(app, /neza neza/, "Exact-count instructions in Kinyarwanda must be recognized.");
   assert.match(app, /function buildLengthAwarePrompt\(/);
   assert.match(app, /buildLengthAwarePrompt\(taskText\)/);
