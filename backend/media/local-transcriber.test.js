@@ -63,3 +63,12 @@ test("transcriber accepts explicit ISO language codes without forcing translatio
   assert.match(source, /const language = String\(options\.language \|\| "auto"\)\.toLowerCase\(\)/);
   assert.match(source, /const allowedLanguage = \/\^\[a-z\]\{2,3\}\$\/\.test\(language\) \? language : "auto"/);
 });
+
+
+test("Render Whisper cache marker stores a plain SHA-256 fingerprint line", () => {
+  const fs = require("node:fs");
+  const scriptPath = require("node:path").join(__dirname, "../scripts/setup-local-transcriber.sh");
+  const script = fs.readFileSync(scriptPath, "utf8");
+  assert.ok(script.includes(String.raw`printf '%s\\n' "$FINGERPRINT"`));
+  assert.ok(script.includes('CURRENT_FINGERPRINT" = "$(cat "$VERIFIED_MARKER")'));
+});
