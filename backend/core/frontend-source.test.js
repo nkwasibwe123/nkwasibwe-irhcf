@@ -869,3 +869,17 @@ test("retired Sora video provider is blocked and the UI checks provider readines
   assert.match(html, /Gukora video ya HD byahagaritswe kugeza serivisi ya video yemejwe ihujwe/);
   assert.doesNotMatch(html, /Generate 720p video clips with Sora/);
 });
+
+
+test("marketplace checkout sends a stable account-scoped idempotency key and handles paid replays", () => {
+  const root=path.join(__dirname,"..","..");
+  const html=fs.readFileSync(path.join(root,"market.html"),"utf8");
+  const js=fs.readFileSync(path.join(root,"market.js"),"utf8");
+  assert.match(js,/function getCheckoutIdempotencyKey\(payload\)/);
+  assert.match(js,/sessionStorage\.getItem\(storageKey\)/);
+  assert.match(js,/sessionStorage\.setItem\(storageKey/);
+  assert.match(js,/headers:\{"Idempotency-Key":idempotencyKey\}/);
+  assert.match(js,/result\.paymentStatus==="paid"/);
+  assert.match(js,/IDEMPOTENCY_KEY_ALREADY_USED/);
+  assert.match(html,/market\.js\?v=17/);
+});
