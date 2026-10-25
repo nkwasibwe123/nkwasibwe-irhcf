@@ -561,4 +561,6 @@ test("profile supports personal interests and a private professional-document va
   for(const id of ["profileDocumentForm","profileDocumentCategory","profileDocumentFile","profileDocumentList","socialInterests","socialDislikes","socialWishes","socialPersonalStatement"])assert.ok(html.includes('id="'+id+'"'),"missing profile UI: "+id);
   assert.match(html,/Download document/);
   assert.match(html,/Delete document/);
+  assert.match(html,/profileDocumentExpiryReminders/);
+  assert.match(html,/No documents expiring in the next 30 days/);
 });
