@@ -492,15 +492,29 @@
   }
   async function clearPaidOrderCart(orderId) {
     const detail = await request("/orders/" + encodeURIComponent(orderId));
-    const cart = await request("/cart");
-    const currentItems = new Map((cart.items || []).map(item => [String(item.product_id), Number(item.quantity || 0)]));
+    const progressKey = "nkwasibwe_market_cart_cleared_" + String(orderId);
+    let cleared = new Set();
+    let progressStorageAvailable = true;
+    try {
+      const stored = JSON.parse(sessionStorage.getItem(progressKey) || "[]");
+      if (Array.isArray(stored)) cleared = new Set(stored.map(String));
+    } catch { progressStorageAvailable = false; }
     for (const item of (detail.items || [])) {
       const productId = String(item.product_id);
-      const remaining = Math.max(0, (currentItems.get(productId) || 0) - Number(item.quantity || 0));
+      if (cleared.has(productId)) continue;
+      const cart = await request("/cart");
+      const current = (cart.items || []).find(row => String(row.product_id) === productId);
+      const currentQuantity = Number(current?.quantity || 0);
+      const remaining = progressStorageAvailable
+        ? Math.max(0, currentQuantity - Number(item.quantity || 0))
+        : 0;
       await request("/cart/items/" + encodeURIComponent(productId), {
         method: "PUT",
         body: JSON.stringify({ quantity: remaining })
       });
+      cleared.add(productId);
+      try { sessionStorage.setItem(progressKey, JSON.stringify([...cleared])); }
+      catch { progressStorageAvailable = false; }
     }
     await loadCart();
     await loadOrders();
