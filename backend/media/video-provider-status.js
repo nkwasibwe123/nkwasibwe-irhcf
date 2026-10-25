@@ -8,7 +8,7 @@ function getVideoProviderStatus() {
     provider: "openai_sora",
     code: "VIDEO_PROVIDER_RETIRED",
     retirementDate: SORA_API_RETIREMENT_DATE,
-    message: "HD video generation is temporarily unavailable. The OpenAI Sora Videos API retirement date (2026-09-24) has passed, and Nkwasibwe has not yet connected a verified replacement provider."
+    message: "Gukora video ya HD byahagaritswe by’agateganyo. Igihe cyo guhagarika OpenAI Sora Videos API (2026-09-24) cyararangiye, kandi Nkwasibwe ntirahuza indi serivisi ya video yemejwe."
   };
 }
 
