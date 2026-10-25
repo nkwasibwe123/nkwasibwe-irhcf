@@ -3,7 +3,7 @@
   const API = "https://nkwasibwe-irhcf.onrender.com/api/commerce";
   const TOKEN_KEY = "nkwasibwe_auth_token";
   const $ = id => document.getElementById(id);
-  const state = { products: [], cart: [], orders: [], wishlist: [], addresses: [], seller: null, couponCode: "", quote: null };
+  const state = { products: [], cart: [], orders: [], wishlist: [], addresses: [], seller: null, couponCode: "", quote: null, compareItems: [] };
   const token = () => { try { return localStorage.getItem(TOKEN_KEY) || ""; } catch { return ""; } };
   const authHeaders = () => token() ? { Authorization: "Bearer " + token() } : {};
   const integerCurrencies = new Set(["RWF", "UGX", "XAF", "XOF", "JPY"]);
@@ -109,6 +109,43 @@
       }
     } catch(error) { target.replaceChildren(element("p","muted","Could not load reviews: "+error.message)); }
   }
+  function renderComparison() {
+    const panel=$("comparisonPanel"),wrap=$("comparisonTableWrap");
+    wrap.replaceChildren();
+    const items=state.compareItems;
+    panel.hidden=items.length===0;
+    if(!items.length)return;
+    const table=element("table","comparison-table"),thead=document.createElement("thead"),headRow=document.createElement("tr");
+    headRow.append(element("th","","Feature"));
+    for(const product of items){
+      const th=document.createElement("th");th.append(document.createTextNode(String(product.name||"Product")+" "));
+      const remove=element("button","compare-remove","Remove");remove.type="button";remove.addEventListener("click",()=>{state.compareItems=state.compareItems.filter(item=>String(item.id)!==String(product.id));renderComparison();renderProducts();});
+      th.append(remove);headRow.append(th);
+    }
+    thead.append(headRow);table.append(thead);
+    const tbody=document.createElement("tbody");
+    const rows=[
+      ["Price",p=>money(p.price_minor,p.currency)],
+      ["Category",p=>p.category||"General"],
+      ["Seller",p=>p.seller_name||"Nkwasibwe Market"],
+      ["Rating",p=>Number(p.rating_average)>0?"★ "+Number(p.rating_average).toFixed(1)+" / 5":"No rating yet"],
+      ["Reviews",p=>String(Number(p.review_count||0))],
+      ["Availability",p=>Number(p.stock_quantity)>0?Number(p.stock_quantity)+" in stock":"Out of stock"],
+      ["Delivery",p=>p.requires_shipping===false?"Digital / no shipping":"Physical / delivery required"],
+      ["Description",p=>p.description||"No description"]
+    ];
+    for(const [label,value] of rows){const tr=document.createElement("tr");tr.append(element("th","",label));for(const product of items)tr.append(element("td","",String(value(product))));tbody.append(tr);}
+    table.append(tbody);wrap.append(table);
+  }
+  function toggleComparison(product) {
+    const exists=state.compareItems.some(item=>String(item.id)===String(product.id));
+    if(exists)state.compareItems=state.compareItems.filter(item=>String(item.id)!==String(product.id));
+    else if(state.compareItems.length>=3){$("checkoutMessage").textContent="Compare up to three products at a time. Remove one product first.";return;}
+    else state.compareItems.push({...product});
+    renderComparison();renderProducts();
+    if(state.compareItems.length)$("comparisonPanel").scrollIntoView({behavior:"smooth",block:"nearest"});
+  }
+
   async function loadStorefront(sellerUserId) {
     const panel=$("storefrontPanel"), grid=$("storefrontProducts");
     panel.hidden=false;grid.replaceChildren(element("p","muted","Loading seller shop…"));
@@ -181,7 +218,8 @@
         try{await request("/wishlist/"+encodeURIComponent(product.id),{method:"PUT",body:JSON.stringify({saved:!state.wishlist.some(item=>String(item.id)===String(product.id))})});await loadWishlist();renderProducts();}
         catch(error){$("checkoutMessage").textContent=error.message;wish.disabled=false;}
       });
-      actions.append(add,wish);body.append(actions);
+      const compare=element("button","compare-button",state.compareItems.some(item=>String(item.id)===String(product.id))?"✓ Comparing":"Compare");compare.type="button";compare.setAttribute("aria-pressed",state.compareItems.some(item=>String(item.id)===String(product.id))?"true":"false");compare.addEventListener("click",()=>toggleComparison(product));
+      actions.append(add,wish,compare);body.append(actions);
       const details=element("details","product-reviews");
       const summary=element("summary","","Read reviews / write a review");
       const reviews=element("div","reviews-content");
@@ -447,6 +485,7 @@
     catch(error){message.textContent=error.message;}
   });
   $("closeStorefrontButton").addEventListener("click",()=>{$("storefrontPanel").hidden=true;$("productGrid").scrollIntoView({behavior:"smooth",block:"start"});});
+  $("clearComparisonButton").addEventListener("click",()=>{state.compareItems=[];renderComparison();renderProducts();});
   $("productSearch").addEventListener("input",()=>{clearTimeout(window.marketSearchTimer);window.marketSearchTimer=setTimeout(loadProducts,180);});
   $("categoryFilter").addEventListener("change",loadProducts);
   $("productSort").addEventListener("change",loadProducts);
