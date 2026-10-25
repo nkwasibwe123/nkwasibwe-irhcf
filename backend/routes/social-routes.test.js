@@ -152,3 +152,26 @@ test("declining a friend request only changes the recipient's pending request",a
     assert.deepEqual(params,["12",7]);
   });
 });
+
+test("media upload rejects unsupported types and mismatched file signatures",async()=>{
+  let called=false; const pool={query:async()=>{called=true;return {rows:[]};}};
+  await withServer(appFor(pool),async base=>{
+    let r=await fetch(base+"/api/social/media",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({fileName:"x.exe",mimeType:"application/x-msdownload",dataBase64:Buffer.from("MZ").toString("base64")})});
+    assert.equal(r.status,415);
+    r=await fetch(base+"/api/social/media",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({fileName:"x.png",mimeType:"image/png",dataBase64:Buffer.from("not png").toString("base64")})});
+    assert.equal(r.status,415); assert.equal(called,false);
+  });
+});
+test("media upload persists a validated small PNG and returns a first-party URL",async()=>{
+  let sql,params; const png=Buffer.from([137,80,78,71,13,10,26,10,0,0,0,0]);
+  const pool={query:async(q,p)=>{sql=q;params=p;return {rows:[{id:"17",file_name:"photo.png",mime_type:"image/png",byte_size:png.length,created_at:"now"}]};}};
+  await withServer(appFor(pool),async base=>{
+    const r=await fetch(base+"/api/social/media",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({fileName:"photo.png",mimeType:"image/png",dataBase64:png.toString("base64")})});
+    assert.equal(r.status,201); const data=await r.json(); assert.equal(data.media.url,"/api/social/media/17/content");
+    assert.match(sql,/INSERT INTO social_media_assets/); assert.equal(params[0],7); assert.deepEqual(params[4],png);
+  });
+});
+test("media content is not returned to users without ownership or a visible post",async()=>{
+  const pool={query:async()=>({rows:[]})};
+  await withServer(appFor(pool),async base=>{const r=await fetch(base+"/api/social/media/17/content");assert.equal(r.status,404);});
+});
