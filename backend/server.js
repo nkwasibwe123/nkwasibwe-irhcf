@@ -4014,7 +4014,7 @@ app.post("/api/media/video/photo-animation", authenticateToken, async (req, res)
     const inputPath = path.join(tempDir, "reference." + extension);
     const outputPath = path.join(tempDir, "animation.mp4");
     await fs.writeFile(inputPath, imageBuffer);
-    await animatePhotoFile({ inputPath, outputPath, durationSeconds, motion, size });
+    await animatePhotoFile({ inputPath, outputPath, durationSeconds, motion, size, timeoutMs: 90_000 });
     const output = await fs.readFile(outputPath);
     if (!output.length || output.length < 12 || output.toString("ascii", 4, 8) !== "ftyp") {
       return res.status(500).json({ success: false, error: "Local renderer did not produce a valid MP4 file.", code: "PHOTO_ANIMATION_OUTPUT_INVALID" });
