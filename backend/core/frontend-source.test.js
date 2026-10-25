@@ -692,3 +692,21 @@ test("marketplace product image upload is available to sellers and rendered from
   assert.match(routes,/image\.toString\("base64"\)!==encoded/);
   assert.match(routes,/X-Content-Type-Options/);
 });
+
+
+test("seller earnings and payout UI is account-scoped and backed by verified order ledger entries", () => {
+  const root=path.join(__dirname,"..","..");
+  const html=fs.readFileSync(path.join(root,"market.html"),"utf8");
+  const js=fs.readFileSync(path.join(root,"market.js"),"utf8");
+  const routes=fs.readFileSync(path.join(root,"backend","routes","commerce-routes.js"),"utf8");
+  for(const id of ["sellerBalancesList","sellerPayoutForm","sellerPayoutRequestsList","payoutRequestsButton","payoutRequestsList"])assert.ok(html.includes('id="'+id+'"'),"missing payout UI: "+id);
+  assert.match(js,/async function loadSellerPayouts\(\)/);
+  assert.match(js,/async function loadAdminPayoutRequests\(\)/);
+  assert.match(routes,/CREATE TABLE IF NOT EXISTS commerce_seller_ledger/);
+  assert.match(routes,/CREATE TABLE IF NOT EXISTS commerce_payout_requests/);
+  assert.match(routes,/INSERT INTO commerce_seller_ledger/);
+  assert.match(routes,/WHERE seller_user_id=\$1/);
+  assert.match(routes,/PAYOUT_BALANCE_INSUFFICIENT/);
+  assert.match(routes,/provider_transfer_reference/);
+  assert.match(routes,/getPlatformFeeBps/);
+});
