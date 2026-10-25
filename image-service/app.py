@@ -1,5 +1,6 @@
 import base64
 import hmac
+import importlib.util
 import os
 import re
 import threading
@@ -53,7 +54,22 @@ def background_color(prompt: str):
 
 @app.get("/health")
 def health():
-    return {"success": True, "service": "irhcf-local-image", "ready": True, "capabilities": ["background-replacement-solid-color"]}
+    try:
+        inference_available = importlib.util.find_spec("rembg") is not None
+    except (ImportError, ValueError):
+        inference_available = False
+    model_configured = bool(os.getenv("IRHCF_REMBG_MODEL", "u2netp").strip())
+    token_configured = bool(SERVICE_TOKEN)
+    return {
+        "success": True,
+        "service": "irhcf-local-image",
+        "ready": inference_available and model_configured and token_configured,
+        "inferenceAvailable": inference_available,
+        "modelConfigured": model_configured,
+        "modelLoaded": _session is not None,
+        "tokenConfigured": token_configured,
+        "capabilities": ["background-replacement-solid-color"]
+    }
 
 
 def infer_effect(prompt: str, requested_effect: str, mode: str) -> str:
