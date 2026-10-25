@@ -866,6 +866,6 @@ test("retired Sora video provider is blocked and the UI checks provider readines
   assert.match(app, /videoGenerationStatus:\s*"\/api\/media\/video\/status"/);
   assert.match(app, /checkVideoProviderAvailability/);
   assert.match(app, /async function checkVideoProviderAvailability\(\)\s*\{\s*if \(!authToken\)/, "Video status checks must preserve the sign-in flow.");
-  assert.match(html, /HD video generation is paused until a supported video engine is connected/);
+  assert.match(html, /Gukora video ya HD byahagaritswe kugeza serivisi ya video yemejwe ihujwe/);
   assert.doesNotMatch(html, /Generate 720p video clips with Sora/);
 });
