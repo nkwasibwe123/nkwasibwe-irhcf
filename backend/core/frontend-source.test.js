@@ -730,7 +730,7 @@ test("buyer order history opens an authenticated printable receipt only for comp
   const routes=fs.readFileSync(path.join(root,"backend","routes","commerce-routes.js"),"utf8");
   assert.match(js,/Print receipt/);
   assert.match(js,/Authorization:"Bearer "\+token\(\)/);
-  assert.match(js,/\/orders\/\+"\+encodeURIComponent\(order\.id\)\+"\/receipt/);
+  assert.ok(js.includes('"/orders/"+encodeURIComponent(order.id)+"/receipt'));
   assert.match(routes,/router\.get\("\/orders\/:orderId\/receipt", authenticateToken/);
   assert.match(routes,/ORDER_NOT_PAID/);
   assert.match(routes,/escapeHtml\(item\.product_name\)/);
