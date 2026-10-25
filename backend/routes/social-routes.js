@@ -124,7 +124,7 @@ function createSocialRouter({ pool, authenticateToken } = {}) {
                 EXISTS(SELECT 1 FROM social_post_reactions r WHERE r.post_id=p.id AND r.user_id=$1) AS reacted_by_me
          FROM social_posts p JOIN users u ON u.id=p.author_id
          LEFT JOIN social_profiles sp ON sp.user_id=u.id
-         WHERE (p.visibility='public' OR p.author_id=$1)
+         WHERE (p.visibility='public' OR p.author_id=$1 OR (p.visibility='friends' AND EXISTS(SELECT 1 FROM social_follows f WHERE f.follower_id=$1 AND f.followed_id=p.author_id)))
            AND ($2::bigint IS NULL OR p.id<$2)
            AND NOT EXISTS(SELECT 1 FROM social_blocks b WHERE
              (b.blocker_id=$1 AND b.blocked_id=p.author_id) OR (b.blocker_id=p.author_id AND b.blocked_id=$1))
@@ -169,7 +169,7 @@ function createSocialRouter({ pool, authenticateToken } = {}) {
     try {
       const visible = await pool.query(
         `SELECT p.id FROM social_posts p WHERE p.id=$1 AND
-         (p.visibility='public' OR p.author_id=$2) AND NOT EXISTS(
+         (p.visibility='public' OR p.author_id=$2 OR (p.visibility='friends' AND EXISTS(SELECT 1 FROM social_follows f WHERE f.follower_id=$2 AND f.followed_id=p.author_id))) AND NOT EXISTS(
            SELECT 1 FROM social_blocks b WHERE (b.blocker_id=$2 AND b.blocked_id=p.author_id) OR (b.blocker_id=p.author_id AND b.blocked_id=$2))`,
         [req.params.postId,userId(req)]
       );
@@ -184,7 +184,7 @@ function createSocialRouter({ pool, authenticateToken } = {}) {
     const reaction = String(req.body?.reaction || "like");
     if (!["like","love","laugh","wow","sad","angry","none"].includes(reaction)) return fail(res,400,"Unsupported reaction.");
     try {
-      const visible = await pool.query("SELECT id FROM social_posts WHERE id=$1 AND (visibility='public' OR author_id=$2)",[req.params.postId,userId(req)]);
+      const visible = await pool.query("SELECT id FROM social_posts p WHERE id=$1 AND (visibility='public' OR author_id=$2 OR (visibility='friends' AND EXISTS(SELECT 1 FROM social_follows f WHERE f.follower_id=$2 AND f.followed_id=p.author_id))) AND NOT EXISTS(SELECT 1 FROM social_blocks b WHERE (b.blocker_id=$2 AND b.blocked_id=p.author_id) OR (b.blocker_id=p.author_id AND b.blocked_id=$2))",[req.params.postId,userId(req)]);
       if (!visible.rows.length) return fail(res,404,"Post not found.");
       if (reaction==="none") await pool.query("DELETE FROM social_post_reactions WHERE post_id=$1 AND user_id=$2",[req.params.postId,userId(req)]);
       else await pool.query("INSERT INTO social_post_reactions(post_id,user_id,reaction) VALUES($1,$2,$3) ON CONFLICT(post_id,user_id) DO UPDATE SET reaction=EXCLUDED.reaction,created_at=NOW()",[req.params.postId,userId(req),reaction]);
