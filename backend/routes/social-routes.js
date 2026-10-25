@@ -265,6 +265,54 @@ function createSocialRouter({ pool, authenticateToken } = {}) {
     } catch (error) { return next(error); }
   });
 
+  router.get("/friends", async (req, res, next) => {
+    try {
+      const result = await pool.query(
+        `SELECT u.id, COALESCE(p.display_name,u.name) AS display_name,
+                COALESCE(p.bio,'') AS bio, p.avatar_url
+         FROM social_follows mine
+         JOIN social_follows theirs ON theirs.follower_id=mine.followed_id AND theirs.followed_id=mine.follower_id
+         JOIN users u ON u.id=mine.followed_id
+         LEFT JOIN social_profiles p ON p.user_id=u.id
+         WHERE mine.follower_id=$1
+           AND NOT EXISTS(SELECT 1 FROM social_blocks b WHERE
+             (b.blocker_id=$1 AND b.blocked_id=u.id) OR (b.blocker_id=u.id AND b.blocked_id=$1))
+         ORDER BY COALESCE(p.display_name,u.name) LIMIT 200`,
+        [userId(req)]
+      );
+      return res.json({success:true,friends:result.rows});
+    } catch(error) { return next(error); }
+  });
+
+  router.post("/friend-requests/:requestId/decline", async (req, res, next) => {
+    if (!validId(req.params.requestId)) return fail(res,400,"Invalid request ID.");
+    try {
+      const result = await pool.query(
+        "UPDATE social_friend_requests SET status='declined',updated_at=NOW() WHERE id=$1 AND recipient_id=$2 AND status='pending' RETURNING id,status",
+        [req.params.requestId,userId(req)]
+      );
+      if (!result.rows.length) return fail(res,404,"Pending request not found.");
+      return res.json({success:true,request:result.rows[0]});
+    } catch(error) { return next(error); }
+  });
+
+  router.delete("/friends/:friendId", async (req, res, next) => {
+    if (!validId(req.params.friendId) || Number(req.params.friendId)===userId(req)) return fail(res,400,"A valid friendId is required.");
+    try {
+      const friendId=Number(req.params.friendId);
+      const result=await pool.query(
+        "DELETE FROM social_follows WHERE (follower_id=$1 AND followed_id=$2) OR (follower_id=$2 AND followed_id=$1) RETURNING follower_id",
+        [userId(req),friendId]
+      );
+      if (!result.rows.length) return fail(res,404,"Friend relationship not found.");
+      await pool.query(
+        "UPDATE social_friend_requests SET status='cancelled',updated_at=NOW() WHERE status='accepted' AND ((sender_id=$1 AND recipient_id=$2) OR (sender_id=$2 AND recipient_id=$1))",
+        [userId(req),friendId]
+      );
+      return res.json({success:true,friendId});
+    } catch(error) { return next(error); }
+  });
+
   router.post("/blocks/:targetId", async (req, res, next) => {
     if (!validId(req.params.targetId) || Number(req.params.targetId)===userId(req)) return fail(res,400,"A valid different target ID is required.");
     try {
