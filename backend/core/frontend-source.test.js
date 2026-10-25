@@ -539,3 +539,12 @@ test("first-party social media previews and downloads send bearer authentication
   assert.match(html,/URL\.createObjectURL\(blob\)/);
   assert.match(html,/mime\.startsWith\("video\/"\)/);
 });
+
+
+test("Chat with Friends includes poll creation and authenticated poll voting UI",()=>{
+  const html=fs.readFileSync(path.join(__dirname,"..","..","friends.html"),"utf8");
+  assert.match(html,/id="socialPollQuestion"/);
+  assert.match(html,/id="socialPollOptions"/);
+  assert.match(html,/\/vote/);
+  assert.match(html,/poll\.options/);
+});
