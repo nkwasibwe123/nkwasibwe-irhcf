@@ -782,6 +782,9 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
     let totalMinor;
     let subtotalMinor;
     let discountMinor = 0;
+    let shippingMinor = 0;
+    let taxMinor = 0;
+    let taxRateBps = 0;
     let couponCode = String(req.body?.couponCode || "").trim().toUpperCase().slice(0, 40) || null;
     let currency;
     try {
@@ -855,7 +858,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
         }
         discountMinor = calculation.discountMinor;
       }
-      let shippingMinor = 0;
+      shippingMinor = 0;
       if (requiresShipping) {
         shippingMinor = getShippingRateMinor(shippingAddress?.country, currency, env);
         if (shippingMinor === null) {
@@ -863,12 +866,12 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
           return res.status(503).json({ success: false, code: "SHIPPING_RATE_NOT_CONFIGURED", error: "No shipping rate is configured for this country and currency." });
         }
       }
-      const taxRateBps = getTaxRateBps(env);
+      taxRateBps = getTaxRateBps(env);
       if (taxRateBps === null) {
         await client.query("ROLLBACK");
         return res.status(503).json({ success: false, code: "TAX_CONFIGURATION_INVALID", error: "Tax configuration must be an integer between 0 and 3000 basis points." });
       }
-      const taxMinor = calculateTaxMinor(subtotalMinor, discountMinor, shippingMinor, taxRateBps);
+      taxMinor = calculateTaxMinor(subtotalMinor, discountMinor, shippingMinor, taxRateBps);
       if (taxMinor === null) {
         await client.query("ROLLBACK");
         return res.status(400).json({ success: false, code: "TAX_CALCULATION_INVALID", error: "Tax calculation overflowed." });
