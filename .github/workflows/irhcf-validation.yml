@@ -42,7 +42,7 @@ jobs:
           fi
           export IRHCF_EXPECTED_DEPLOY_COMMIT="$expected_commit"
           for attempt in $(seq 1 36); do
-            current_main_sha="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+            current_main_sha="$(curl --silent --fail --max-time 10 "https://api.github.com/repos/$GITHUB_REPOSITORY/commits/main" 2>/dev/null | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{process.stdout.write(JSON.parse(d).sha||"")}catch{}})' || true)"
             if [[ -n "$current_main_sha" && "$current_main_sha" != "$GITHUB_SHA" ]]; then
               echo "This run was superseded by newer main commit $current_main_sha; the newer run owns deployment verification."
               exit 0
