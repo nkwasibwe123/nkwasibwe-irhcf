@@ -8529,6 +8529,11 @@ async function generateMusicFromPrompt(prompt) {
 }
 
 async function checkVideoProviderAvailability() {
+  if (!authToken) {
+    setDashboardStatus("Banza winjire muri konti kugira ngo urebe uko serivisi ya video ihagaze.");
+    showAuthenticationDialog();
+    return false;
+  }
   try {
     const status = await apiRequest(API_ENDPOINTS.videoGenerationStatus);
     if (status?.available === true) return true;
