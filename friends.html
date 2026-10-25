@@ -17,7 +17,7 @@
 <div class="notice"><strong>Honest progress status.</strong> This workspace entry and feature map are now defined. The cards below describe the target modules; they are not claims that messaging, uploads, calls or feeds are already connected. Those require authenticated backend APIs, durable storage, safety controls and end-to-end tests before being marked live.</div>
 <section class="feed-panel" aria-labelledby="feedTitle">
 <h2 id="feedTitle">Community feed</h2>
-<p class="feed-subtitle">This first connected feature supports authenticated text posts, public feed loading, reactions and comments-ready API foundations. Sign in to IRHCF first.</p>
+<p class="feed-subtitle">This connected feature supports authenticated text posts, audience settings, feed loading, six reaction types, comments and deleting your own posts. Sign in to IRHCF first.</p>
 <form id="socialComposer" class="composer">
 <textarea id="socialPostBody" maxlength="5000" placeholder="Share something with your community…" aria-label="Post text"></textarea>
 <div class="composer-row"><label>Audience <select id="socialVisibility"><option value="public">Public</option><option value="friends">Friends</option><option value="private">Only me</option></select></label><button id="socialPostSubmit" type="submit">Publish post</button></div>
@@ -36,11 +36,11 @@
 <section class="grid">
 <article class="card"><div class="icon">💬</div><h3>Private & group chats</h3><p>One-to-one and group messages, replies, reactions, unread counts, voice notes and attachment sharing.</p><span class="pill build">Backend + realtime pending</span></article>
 <article class="card"><div class="icon">📞</div><h3>Audio & video calls</h3><p>Permission-based calls, call controls, reconnection and privacy-preserving call history.</p><span class="pill">WebRTC / signaling pending</span></article>
-<article class="card"><div class="icon">👥</div><h3>Friends & communities</h3><p>Friend requests, follows, groups, community roles, events, blocking and reporting.</p><span class="pill build">Social graph pending</span></article>
+<article class="card"><div class="icon">👥</div><h3>Friends & communities</h3><p>Friend requests, follows, groups, community roles, events, blocking and reporting.</p><span class="pill ready">Friend requests + follows API connected</span></article>
 </section>
 <div class="section-title"><h2>Share & discover</h2><span>Feed and creator tools</span></div>
 <section class="grid">
-<article class="card"><div class="icon">📰</div><h3>Social feed</h3><p>Text, image and video posts, comments, reactions, reposts, threaded replies, mentions, hashtags and saved posts.</p><span class="pill">Feed API pending</span></article>
+<article class="card"><div class="icon">📰</div><h3>Social feed</h3><p>Text posts, audience settings, comments, six reaction types and post deletion. Media upload, reposts and discovery remain future work.</p><span class="pill ready">Text posts + comments + reactions connected</span></article>
 <article class="card"><div class="icon">▶️</div><h3>Video & channels</h3><p>Creator channels, video processing, captions, playlists, subscriptions, watch history and search.</p><span class="pill">Media pipeline pending</span></article>
 <article class="card"><div class="icon">🎬</div><h3>Short videos</h3><p>Vertical playback, creator profiles, captions, likes, comments and user-controlled recommendations.</p><span class="pill">Upload + feed pending</span></article>
 </section>
@@ -52,11 +52,11 @@
 </section>
 <div class="section-title"><h2>Work & identity</h2><span>Professional connections</span></div>
 <section class="grid">
-<article class="card"><div class="icon">🧑‍💼</div><h3>Professional profile</h3><p>Skills, experience, education, connections, company pages and professional posts.</p><span class="pill">Profile schema pending</span></article>
+<article class="card"><div class="icon">🧑‍💼</div><h3>Professional profile</h3><p>Skills, experience, education, connections, company pages and professional posts.</p><span class="pill ready">Profile API connected</span></article>
 <article class="card"><div class="icon">💼</div><h3>Jobs & applications</h3><p>Job listings, search, application tracking, employer profiles and status notifications.</p><span class="pill">Jobs module pending</span></article>
 <article class="card"><div class="icon">🔔</div><h3>Notifications & privacy</h3><p>In-app alerts, session controls, privacy settings, content reports, moderation and account data controls.</p><span class="pill">Safety APIs pending</span></article>
 </section>
-<section class="bottom"><h2>Build sequence and release gates</h2><p>We will deliver the system in verified layers: authenticated data model → profiles and social graph → posts/feed → persistent messages → realtime → safe media storage → video/creator tools → professional features → security and Android end-to-end tests. External platforms will only be connected through documented APIs and user-authorized account linking. “Phoenix” still needs identification (product name or URL) so its features can be mapped accurately.</p><div class="steps"><div class="step"><b>1 · Foundation</b><small>Workspace + contracts</small></div><div class="step"><b>2 · Core social</b><small>Profiles, feed, chat</small></div><div class="step"><b>3 · Media + realtime</b><small>Uploads, calls, video</small></div><div class="step"><b>4 · Release</b><small>Safety, tests, rollout</small></div></div></section>
+<section class="bottom"><h2>Build sequence and release gates</h2><p>We will deliver the system in verified layers: authenticated data model → profiles and social graph → posts/feed → persistent messages → realtime → safe media storage → video/creator tools → professional features → security and Android end-to-end tests. External platforms will only be connected through documented APIs and user-authorized account linking. This page is not a claim of full feature parity: calls, realtime delivery, media uploads, video and browser/download modules remain pending.</p><div class="steps"><div class="step"><b>1 · Foundation</b><small>Workspace + contracts</small></div><div class="step"><b>2 · Core social</b><small>Profiles, feed, chat</small></div><div class="step"><b>3 · Media + realtime</b><small>Uploads, calls, video</small></div><div class="step"><b>4 · Release</b><small>Safety, tests, rollout</small></div></div></section>
 <footer>Original Nkwasibwe IRHCF product design. Feature parity depends on staged implementation, provider availability, storage, and testing.</footer>
 </main>
 <script>
@@ -81,10 +81,12 @@
       head.append(node("time","",post.created_at ? new Date(post.created_at).toLocaleString() : ""));
       card.append(head,node("p","post-body",post.body || (Array.isArray(post.media)&&post.media.length ? "Media post" : "")));
       const actions=node("div","post-actions");
-      const like=node("button","feed-action","👍 "+(post.reaction_count||0));
-      like.type="button";like.addEventListener("click",()=>react(post.id,"like",like));actions.append(like);
-      const love=node("button","feed-action","❤️ Love");
-      love.type="button";love.addEventListener("click",()=>react(post.id,"love",love));actions.append(love);
+      const reactionChoices=[["like","👍 Like"],["love","❤️ Love"],["laugh","😂 Haha"],["wow","😮 Wow"],["sad","😢 Sad"],["angry","😠 Angry"]];
+      reactionChoices.forEach(([value,label])=>{
+        const button=node("button","feed-action",(post.my_reaction===value?"✓ ":"")+label+(value==="like"?" · "+(post.reaction_count||0):""));
+        button.type="button";button.setAttribute("aria-pressed",String(post.my_reaction===value));
+        button.addEventListener("click",()=>react(post.id,post.my_reaction===value?"none":value,button));actions.append(button);
+      });
       if(post.is_mine){
         const del=node("button","feed-action","Delete");
         del.type="button";del.addEventListener("click",()=>removePost(post.id));actions.append(del);
