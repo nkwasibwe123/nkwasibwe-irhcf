@@ -7,7 +7,29 @@ MODEL_DIR="${WHISPER_MODEL_DIR:-$PWD/.local/models}"
 MODEL_NAME="${WHISPER_MODEL_NAME:-ggml-tiny}"
 MODEL_URL="https://huggingface.co/ggerganov/whisper.cpp/resolve/main/${MODEL_NAME}.bin"
 
-for tool in git cmake c++ curl; do
+BIN="$ROOT/build/bin/whisper-cli"
+MODEL_PATH="$MODEL_DIR/${MODEL_NAME}.bin"
+VERIFIED_MARKER="$MODEL_DIR/.verified-${MODEL_NAME}.sha256"
+
+mkdir -p "$(dirname "$ROOT")" "$MODEL_DIR"
+
+# Only skip real inference checks when this exact binary/model pair has
+# already passed all WAV/MP3/M4A/WebM smoke tests in a previous install.
+fingerprint_engine() {
+  sha256sum "$BIN" "$MODEL_PATH" | sha256sum | awk '{print $1}'
+}
+
+if [ -x "$BIN" ] && [ -s "$MODEL_PATH" ] && [ -s "$VERIFIED_MARKER" ] && "$BIN" --help >/dev/null 2>&1; then
+  CURRENT_FINGERPRINT="$(fingerprint_engine)"
+  if [ "$CURRENT_FINGERPRINT" = "$(cat "$VERIFIED_MARKER")" ]; then
+    echo "[local-transcriber] Reusing previously inference-verified binary/model cache."
+    printf 'WHISPER_CPP_PATH=%s\n' "$BIN"
+    printf 'WHISPER_MODEL_PATH=%s\n' "$MODEL_PATH"
+    exit 0
+  fi
+fi
+
+for tool in git cmake c++ curl sha256sum awk; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     echo "[local-transcriber] ERROR: required build tool '$tool' is unavailable; refusing to report a successful install without the local engine." >&2
     exit 1
@@ -19,8 +41,10 @@ if [ ! -f "$ROOT/CMakeLists.txt" ]; then
   git clone --depth 1 https://github.com/ggml-org/whisper.cpp.git "$ROOT"
 fi
 
-cmake -S "$ROOT" -B "$ROOT/build" -DCMAKE_BUILD_TYPE=Release -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_EXAMPLES=ON
-cmake --build "$ROOT/build" --config Release --target whisper-cli -j "${BUILD_JOBS:-2}"
+if [ ! -x "$BIN" ] || ! "$BIN" --help >/dev/null 2>&1; then
+  cmake -S "$ROOT" -B "$ROOT/build" -DCMAKE_BUILD_TYPE=Release -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_EXAMPLES=ON
+  cmake --build "$ROOT/build" --config Release --target whisper-cli -j "${BUILD_JOBS:-2}"
+fi
 
 MODEL_PATH="$MODEL_DIR/${MODEL_NAME}.bin"
 if [ ! -s "$MODEL_PATH" ]; then
@@ -72,6 +96,9 @@ done
 rm -rf "$SMOKE_DIR"
 trap - EXIT
 
+FINGERPRINT="$(fingerprint_engine)"
+printf "%s\\n" "$FINGERPRINT" > "$VERIFIED_MARKER.tmp"
+mv "$VERIFIED_MARKER.tmp" "$VERIFIED_MARKER"
 echo "[local-transcriber] whisper.cpp binary, multilingual model, FFmpeg and speech inference verified."
 echo "[local-transcriber] WHISPER_CPP_PATH=$BIN"
 echo "[local-transcriber] WHISPER_MODEL_PATH=$MODEL_PATH"
