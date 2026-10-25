@@ -7,6 +7,7 @@
 <title>Chat with Friends · Nkwasibwe IRHCF</title>
 <style>
 /* Facebook-style dashboard navigation: one focused workspace at a time. */
+ .dashboard-launchpad{background:#fff;border:1px solid var(--line);border-radius:16px;padding:20px;margin:18px 0}.dashboard-launch-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.dashboard-launch-grid button{display:grid;justify-items:start;gap:7px;text-align:left;padding:16px;border:1px solid var(--line);border-radius:13px;background:#fff;color:var(--ink);cursor:pointer;min-width:0}.dashboard-launch-grid button:hover{border-color:#b6c8ff;background:#f8faff}.dashboard-launch-grid button>span{font-size:24px}.dashboard-launch-grid strong{font-size:14px}.dashboard-launch-grid small{font-size:12px;color:var(--muted);line-height:1.45}@media(max-width:700px){.dashboard-launchpad{padding:14px}.dashboard-launch-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.dashboard-launch-grid button{padding:12px}}
 .friends-dashboard-nav{position:sticky;top:0;z-index:100;background:rgba(255,255,255,.97);backdrop-filter:blur(12px);border:1px solid var(--line);border-radius:0 0 15px 15px;padding:8px;display:flex;gap:7px;overflow-x:auto;overscroll-behavior-x:contain;box-shadow:0 6px 20px #1720330b;margin:0 0 20px;scrollbar-width:thin}
 .friends-dashboard-nav button{flex:0 0 auto;display:flex;align-items:center;gap:7px;border:1px solid transparent;border-radius:10px;background:transparent;color:var(--muted);padding:10px 13px;font:600 13px/1.2 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;cursor:pointer;white-space:nowrap}
 .friends-dashboard-nav button:hover{background:var(--wash);color:var(--ink)}
@@ -47,6 +48,19 @@ body.dashboard-focused .message-list{max-height:none;min-height:250px}
 </nav>
 <div class="hero" data-dashboard="overview"><div><div class="eyebrow">Social · Communication · Creators</div><h1>Chat with Friends</h1><p>A dedicated home for conversations, communities, sharing, creators and professional connections—built into Nkwasibwe IRHCF.</p></div><div class="status">Foundation phase · In progress</div></div>
 <div class="notice" data-dashboard="overview"><strong>Honest progress status.</strong> This workspace entry and feature map are now defined. The cards below describe the target modules; they are not claims that messaging, uploads, calls or feeds are already connected. Those require authenticated backend APIs, durable storage, safety controls and end-to-end tests before being marked live.</div>
+<section class="dashboard-launchpad" data-dashboard="overview" aria-labelledby="dashboardLaunchpadTitle">
+  <div class="section-title"><h2 id="dashboardLaunchpadTitle">Your workspaces</h2><span>Choose one to make it the main page</span></div>
+  <div class="dashboard-launch-grid">
+    <button type="button" data-dashboard-target="messages"><span>💬</span><strong>Messages</strong><small>Private and group conversations</small></button>
+    <button type="button" data-dashboard-target="friends"><span>👥</span><strong>Friends</strong><small>Requests and social connections</small></button>
+    <button type="button" data-dashboard-target="feed"><span>📰</span><strong>Community feed</strong><small>Posts, reactions and polls</small></button>
+    <button type="button" data-dashboard-target="profile"><span>🧑‍💼</span><strong>Profile & files</strong><small>Career profile and private documents</small></button>
+    <button type="button" data-dashboard-target="communication"><span>📞</span><strong>Communication</strong><small>Calls and community features</small></button>
+    <button type="button" data-dashboard-target="discover"><span>▶️</span><strong>Discover</strong><small>Videos and creator modules</small></button>
+    <button type="button" data-dashboard-target="downloads"><span>⬇️</span><strong>Telegram & downloads</strong><small>Messaging integrations and files</small></button>
+    <button type="button" data-dashboard-target="work"><span>💼</span><strong>Work & safety</strong><small>Professional tools and privacy</small></button>
+  </div>
+</section>
 <section class="feed-panel" data-dashboard="feed" aria-labelledby="feedTitle">
 <h2 id="feedTitle">Community feed</h2>
 <p class="feed-subtitle">This connected feature supports authenticated text posts, audience settings, feed loading, six reaction types, comments and deleting your own posts. Sign in to IRHCF first.</p>
