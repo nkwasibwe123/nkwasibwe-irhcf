@@ -492,10 +492,14 @@
   }
   async function clearPaidOrderCart(orderId) {
     const detail = await request("/orders/" + encodeURIComponent(orderId));
+    const cart = await request("/cart");
+    const currentItems = new Map((cart.items || []).map(item => [String(item.product_id), Number(item.quantity || 0)]));
     for (const item of (detail.items || [])) {
-      await request("/cart/items/" + encodeURIComponent(item.product_id), {
+      const productId = String(item.product_id);
+      const remaining = Math.max(0, (currentItems.get(productId) || 0) - Number(item.quantity || 0));
+      await request("/cart/items/" + encodeURIComponent(productId), {
         method: "PUT",
-        body: JSON.stringify({ quantity: 0 })
+        body: JSON.stringify({ quantity: remaining })
       });
     }
     await loadCart();
