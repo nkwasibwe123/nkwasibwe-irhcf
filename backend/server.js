@@ -3847,14 +3847,6 @@ app.post("/api/media/video/edit", authenticateToken, async (req, res) => {
         code: "VIDEO_EDIT_INPUT_TOO_LARGE"
       });
     }
-    if (req.body?.subtitles) {
-      return res.status(501).json({
-        success: false,
-        error: "Subtitle burn-in is not yet implemented. Remove subtitles and retry.",
-        code: "VIDEO_SUBTITLES_NOT_IMPLEMENTED"
-      });
-    }
-
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "irhcf-video-"));
     const inputPath = path.join(tempDir, "input." + acceptedTypes.get(mimeType));
     const outputFormat = String(req.body?.outputFormat || "mp4").toLowerCase();
@@ -3875,7 +3867,8 @@ app.post("/api/media/video/edit", authenticateToken, async (req, res) => {
         effect: req.body?.effect,
         startSeconds: req.body?.startSeconds,
         endSeconds: req.body?.endSeconds,
-        outputFormat
+        outputFormat,
+        subtitles: req.body?.subtitles
       },
       timeoutMs: 180000
     });
@@ -3894,7 +3887,8 @@ app.post("/api/media/video/edit", authenticateToken, async (req, res) => {
     const code = String(error?.code || "VIDEO_EDIT_FAILED");
     const status = code === "VIDEO_INPUT_NOT_FOUND" ? 400
       : code === "VIDEO_EFFECT_UNSUPPORTED" || code === "VIDEO_TRIM_INVALID" ||
-        code === "VIDEO_FORMAT_UNSUPPORTED" || code === "VIDEO_OUTPUT_EXTENSION_MISMATCH" ? 400
+        code === "VIDEO_FORMAT_UNSUPPORTED" || code === "VIDEO_OUTPUT_EXTENSION_MISMATCH" ||
+        code === "VIDEO_SUBTITLES_TOO_LONG" || code === "VIDEO_SUBTITLES_EMPTY" ? 400
       : code === "FFMPEG_UNAVAILABLE" ? 503
       : code === "VIDEO_RENDER_TIMEOUT" ? 504 : 422;
     console.error("[MEDIA_VIDEO_EDIT] Render failed:", {
