@@ -43,7 +43,12 @@ jobs:
             process.exit(0);
           }
           if (report.error) console.log("AUDIT_ERROR", JSON.stringify(report.error));
-          console.log("Backend dependency audit totals:", JSON.stringify(report.metadata?.vulnerabilities || {}));
+          const totals = report.metadata?.vulnerabilities || {};
+          console.log("Backend dependency audit totals:", JSON.stringify(totals));
+          if (process.env.GITHUB_STEP_SUMMARY) {
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,
+              "## Backend dependency audit\\n\\nTotals: `" + JSON.stringify(totals) + "`\\n\\n");
+          }
           for (const [name, item] of Object.entries(report.vulnerabilities || {})) {
             const via = (item.via || []).map(entry => typeof entry === "string" ? entry : {
               name: entry.name,
@@ -51,13 +56,16 @@ jobs:
               range: entry.range,
               url: entry.url
             });
-            console.log("AUDIT_FINDING", JSON.stringify({
-              name,
-              severity: item.severity,
-              range: item.range,
-              fixAvailable: item.fixAvailable,
-              via
-            }));
+            const finding = { name, severity: item.severity, range: item.range, fixAvailable: item.fixAvailable, via };
+            console.log("AUDIT_FINDING", JSON.stringify(finding));
+            const annotationMessage = (name + " (" + item.severity + ") range " + item.range +
+              "; fixAvailable=" + JSON.stringify(item.fixAvailable)).replace(/%/g, "%25").replace(/\\r/g, "%0D").replace(/\\n/g, "%0A");
+            console.log("::warning title=Backend dependency vulnerability::" + annotationMessage);
+            if (process.env.GITHUB_STEP_SUMMARY) {
+              fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,
+                "- **" + name + "** (" + item.severity + "); range `" + item.range +
+                "`; fix available: `" + JSON.stringify(item.fixAvailable) + "`\\n");
+            }
           }
           NODE
       - name: Run syntax checks and automated tests
