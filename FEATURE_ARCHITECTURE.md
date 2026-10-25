@@ -175,6 +175,7 @@ These sources informed the initial baseline. They do not replace per-feature res
 6. v0 full-stack apps guide: incremental UI → data layer → auth/CRUD/realtime → optimization workflow, with databases and integrations: https://v0.dev/docs/full-stack-apps
 7. v0 FAQ: GitHub import, branching/commits/PRs, editor/preview, project organization and existing-codebase workflow: https://v0.app/docs/faqs
 8. OpenAI ChatGPT overview: coding tasks progress from understanding and planning through writing, testing, reviewing and shipping: https://chatgpt.com/overview/
+9. GitHub Codespaces documentation: repository-scoped cloud development environments and development-container setup: https://docs.github.com/en/codespaces
 
 ### Synthesis for Nkwasibwe
 
