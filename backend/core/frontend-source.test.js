@@ -531,3 +531,11 @@ test("Chat with Friends supports selected-member group creation and visible-tab 
   assert.match(html,/document\.visibilityState!=="visible"/);
   assert.match(html,/Select for group/);
 });
+
+test("first-party social media previews and downloads send bearer authentication",()=>{
+  const html=fs.readFileSync(path.join(__dirname,"..","..","friends.html"),"utf8");
+  assert.match(html,/async function loadInternalMediaBlob\(url\)/);
+  assert.match(html,/Authorization:"Bearer "\+token\(\)/);
+  assert.match(html,/URL\.createObjectURL\(blob\)/);
+  assert.match(html,/mime\.startsWith\("video\/"\)/);
+});
