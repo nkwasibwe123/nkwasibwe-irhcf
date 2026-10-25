@@ -5769,6 +5769,78 @@ function renderMessageContent(container, value) {
   }
 }
 
+function getRequestedOutputLength(text) {
+  const source = String(text || "");
+  const wm = source.match(/\b(?:exactly|precisely|about|approximately|at least)?\s*(\d[\d,]*)\s*(?:words?|amagambo)\b/i);
+  const lm = source.match(/\b(?:exactly|precisely|about|approximately|at least)?\s*(\d[\d,]*)\s*(?:lines?|imirongo)\b/i);
+  const parse = m => m ? Number(m[1].replace(/,/g, "")) : null;
+  const words = parse(wm), lines = parse(lm);
+  if ((!words || words < 1 || words > 20000) && (!lines || lines < 1 || lines > 5000)) return null;
+  return { words: words && words <= 20000 ? words : null, lines: lines && lines <= 5000 ? lines : null };
+}
+function buildLengthAwarePrompt(text) {
+  const target = getRequestedOutputLength(text);
+  if (!target) return String(text || "");
+  const exact = /\bexactly|precisely\b/i.test(text);
+  const rules = [
+    "OUTPUT LENGTH REQUIREMENT (explicit user requirement):",
+    target.words ? "- Produce " + (exact ? "exactly " : "approximately ") + target.words + " words. Count/estimate and expand or trim before finalizing." : null,
+    target.lines ? "- Format the deliverable into " + (exact ? "exactly " : "approximately ") + target.lines + " visible lines using deliberate line breaks." : null,
+    "- Do not stop early merely because the answer is long. Preserve the requested topic, quality, language, and structure.",
+    "- If platform output limits prevent completion, say so and continue in numbered parts rather than claiming the requested count was met."
+  ].filter(Boolean).join("\n");
+  return String(text || "") + "\n\n[IRHCF OUTPUT SPECIFICATION]\n" + rules;
+}
+function copyTextToClipboard(text) {
+  const value = String(text || "");
+  if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(value);
+  return new Promise((resolve, reject) => {
+    const area = document.createElement("textarea");
+    area.value = value; area.setAttribute("readonly", ""); area.style.position = "fixed"; area.style.opacity = "0";
+    document.body.appendChild(area); area.select();
+    try { const ok = document.execCommand("copy"); area.remove(); ok ? resolve() : reject(new Error("Copy was blocked")); }
+    catch (error) { area.remove(); reject(error); }
+  });
+}
+function addAssistantActions(wrapper, message, originalText) {
+  const bar = document.createElement("div"); bar.className = "message-actions"; bar.setAttribute("aria-label", "Answer actions");
+  const button = (label, title, handler, extraClass = "") => {
+    const el = document.createElement("button"); el.type = "button"; el.className = ("message-action-button " + extraClass).trim();
+    el.textContent = label; el.title = title; el.setAttribute("aria-label", title); el.addEventListener("click", handler); bar.appendChild(el); return el;
+  };
+  button("Copy", "Copy answer", async () => {
+    try { await copyTextToClipboard(message.innerText || originalText); const b = bar.querySelector('[aria-label="Copy answer"]'); if (b) { b.textContent = "Copied ✓"; setTimeout(() => { if (b.isConnected) b.textContent = "Copy"; }, 1600); } }
+    catch (_) { setStatus("Copy ntiyashobotse kuri iyi browser. Hitamo amagambo uyakopiye.", "normal"); }
+  });
+  let save;
+  button("Edit", "Edit answer text", () => {
+    if (message.isContentEditable) { message.contentEditable = "false"; setStatus("Impinduka zabitswe muri iki kiganiro kuri iyi screen.", "normal"); }
+    else { message.contentEditable = "true"; message.focus(); save.hidden = false; setStatus("Hindura igisubizo. Kanda Save edit urangije.", "normal"); }
+  });
+  save = button("Save edit", "Save edited answer", () => { message.contentEditable = "false"; save.hidden = true; }, "message-save-edit"); save.hidden = true;
+  button("Read aloud", "Read answer aloud", () => {
+    if (!("speechSynthesis" in window)) { setStatus("Iyi browser ntishyigikira gusoma ijwi.", "normal"); return; }
+    window.speechSynthesis.cancel(); window.speechSynthesis.speak(new SpeechSynthesisUtterance(message.innerText || originalText));
+  });
+  button("Share", "Share answer", async () => {
+    const value = message.innerText || originalText;
+    try { if (navigator.share) await navigator.share({ title: "Nkwasibwe IRHCF answer", text: value }); else { await copyTextToClipboard(value); setStatus("Igisubizo cyakopowe kugira ngo ugisangize abandi.", "normal"); } }
+    catch (error) { if (error?.name !== "AbortError") setStatus("Ntibyashobotse gusangiza igisubizo.", "normal"); }
+  });
+  for (const [label, value] of [["👍 Helpful", "helpful"], ["👎 Not helpful", "not-helpful"]]) {
+    let feedback;
+    feedback = button(label, value === "helpful" ? "Mark answer helpful" : "Mark answer not helpful", () => {
+      try { localStorage.setItem("irhcf-answer-feedback-" + Date.now(), JSON.stringify({ value, answer: String(originalText).slice(0, 2000), at: new Date().toISOString() })); } catch (_) {}
+      bar.querySelectorAll("[data-feedback]").forEach(el => { el.classList.remove("selected"); el.setAttribute("aria-pressed", "false"); });
+      feedback.classList.add("selected"); feedback.setAttribute("aria-pressed", "true");
+      setStatus(value === "helpful" ? "Urakoze ku bitekerezo byawe." : "Urakoze. Igisubizo cyashyizweho ikimenyetso ngo gisuzumwe.", "normal");
+    }, "message-feedback");
+    feedback.dataset.feedback = value; feedback.setAttribute("aria-pressed", "false");
+  }
+  button("Dashboard", "Open main dashboard", () => { const launch = document.getElementById("dashboardButton"); if (launch) launch.click(); });
+  wrapper.appendChild(bar);
+}
+
 // ============================================================
 // ADD CHAT MESSAGE
 // ============================================================
@@ -5890,6 +5962,8 @@ function addMessage(
   body.appendChild(
     meta
   );
+
+  if (role === "ai") addAssistantActions(body, message, text);
 
   if (role === "user") {
 
@@ -7550,7 +7624,7 @@ async function sendMessage() {
           body:
             JSON.stringify({
               message:
-                taskText,
+                buildLengthAwarePrompt(taskText),
 
               sessionId:
                 activeSessionId,
