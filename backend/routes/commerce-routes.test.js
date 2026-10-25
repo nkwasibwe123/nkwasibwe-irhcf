@@ -33,7 +33,10 @@ test("commerce schema initializer creates indexed products and user-owned orders
   assert.match(calls[0], /CREATE TABLE IF NOT EXISTS commerce_product_reviews/);
   assert.match(calls[0], /UNIQUE \(user_id, product_id\)/);
   assert.match(calls[0], /CREATE TABLE IF NOT EXISTS commerce_orders/);
+  assert.match(calls[0], /CREATE TABLE IF NOT EXISTS commerce_sellers/);
   assert.match(calls[0], /CREATE TABLE IF NOT EXISTS commerce_addresses/);
+  assert.match(calls[0], /CREATE TABLE IF NOT EXISTS commerce_order_items/);
+  assert.match(calls[0], /fulfillment_status TEXT NOT NULL DEFAULT 'pending'/);
   assert.match(calls[0], /shipping_address JSONB/);
   assert.match(calls[0], /requires_shipping BOOLEAN NOT NULL DEFAULT TRUE/);
   assert.match(calls[0], /CREATE TABLE IF NOT EXISTS commerce_order_items/);
@@ -99,11 +102,11 @@ test("checkout fails closed when payment secrets are not configured", async () =
   });
 });
 
-test("product creation fails closed when no commerce admin is configured", async () => {
+test("product creation fails closed when neither admin nor approved seller is configured", async () => {
   const app = express();
   app.use(express.json());
   app.use("/api/commerce", createCommerceRouter({
-    pool: { async query() { throw new Error("product write must not be reached"); } },
+    pool: { async query(sql) { if (sql.includes("SELECT status FROM commerce_sellers")) return { rows: [] }; throw new Error("product write must not be reached"); } },
     authenticateToken: (req, res, next) => { req.user = { id: 7, email: "buyer@example.com" }; next(); },
     env: {}
   }));
@@ -115,7 +118,7 @@ test("product creation fails closed when no commerce admin is configured", async
     });
     assert.equal(response.status, 403);
     const payload = await response.json();
-    assert.equal(payload.code, "COMMERCE_ADMIN_REQUIRED");
+    assert.equal(payload.code, "APPROVED_SELLER_REQUIRED");
   });
 });
 
@@ -260,5 +263,54 @@ test("order details are not disclosed to a different account", async () => {
   await withServer(app,async base=>{
     const response=await fetch(base+"/api/commerce/orders/12");
     assert.equal(response.status,404);assert.equal((await response.json()).code,"ORDER_NOT_FOUND");assert.deepEqual(params,[12,55]);
+  });
+});
+
+
+test("seller applications are created for the authenticated account and start pending", async () => {
+  const app=express();app.use(express.json());let params;
+  app.use("/api/commerce",createCommerceRouter({
+    pool:{async query(sql,values){params=values;assert.match(sql,/INSERT INTO commerce_sellers/);return{rows:[{user_id:values[0],shop_name:values[1],status:"pending"}]};}},
+    authenticateToken:(req,res,next)=>{req.user={id:81,email:"seller@example.com"};next();},env:{}
+  }));
+  await withServer(app,async base=>{
+    const response=await fetch(base+"/api/commerce/seller/apply",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({shopName:"Kigali Books",description:"Books",contactPhone:"+250780000000"})});
+    assert.equal(response.status,201);const payload=await response.json();assert.equal(payload.seller.status,"pending");assert.equal(params[0],81);assert.equal(params[3],"seller@example.com");
+  });
+});
+
+test("approved seller creates products owned by that seller account", async () => {
+  const app=express();app.use(express.json());let insertParams,insertSql;
+  app.use("/api/commerce",createCommerceRouter({
+    pool:{async query(sql,params){if(sql.includes("SELECT status FROM commerce_sellers"))return{rows:[{status:"approved"}]};insertSql=sql;insertParams=params;return{rows:[{id:"12",name:params[0],seller_user_id:params[9],price_minor:params[3]}]};}},
+    authenticateToken:(req,res,next)=>{req.user={id:33,email:"seller@example.com"};next();},env:{}
+  }));
+  await withServer(app,async base=>{
+    const response=await fetch(base+"/api/commerce/products",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:"Seller book",priceMinor:5000,currency:"RWF",stockQuantity:5,requiresShipping:false})});
+    assert.equal(response.status,201);assert.match(insertSql,/seller_user_id/);assert.equal(insertParams[9],33);assert.equal((await response.json()).product.seller_user_id,33);
+  });
+});
+
+test("seller cannot update another seller's product", async () => {
+  const app=express();app.use(express.json());let updateSql,updateParams;
+  app.use("/api/commerce",createCommerceRouter({
+    pool:{async query(sql,params){if(sql.includes("SELECT status FROM commerce_sellers"))return{rows:[{status:"approved"}]};updateSql=sql;updateParams=params;return{rows:[]};}},
+    authenticateToken:(req,res,next)=>{req.user={id:33,email:"seller@example.com"};next();},env:{}
+  }));
+  await withServer(app,async base=>{
+    const response=await fetch(base+"/api/commerce/products/88",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:"Hijack attempt"})});
+    assert.equal(response.status,404);assert.match(updateSql,/seller_user_id=\$\d+/);assert.equal(updateParams[updateParams.length-1],33);
+  });
+});
+
+test("seller fulfillment follows allowed transitions and requires a paid owned order", async () => {
+  const app=express();app.use(express.json());let updated=false;
+  app.use("/api/commerce",createCommerceRouter({
+    pool:{async query(sql){if(sql.includes("SELECT status FROM commerce_sellers"))return{rows:[{status:"approved"}]};if(sql.includes("SELECT oi.fulfillment_status"))return{rows:[{fulfillment_status:"pending",payment_status:"paid"}]};updated=true;return{rows:[{id:"9",fulfillment_status:"delivered"}]};}},
+    authenticateToken:(req,res,next)=>{req.user={id:33,email:"seller@example.com"};next();},env:{}
+  }));
+  await withServer(app,async base=>{
+    const response=await fetch(base+"/api/commerce/seller/order-items/9/fulfillment",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({status:"delivered"})});
+    assert.equal(response.status,409);assert.equal((await response.json()).code,"FULFILLMENT_TRANSITION_INVALID");assert.equal(updated,false);
   });
 });
