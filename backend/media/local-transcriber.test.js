@@ -69,6 +69,6 @@ test("Render Whisper cache marker stores a plain SHA-256 fingerprint line", () =
   const fs = require("node:fs");
   const scriptPath = require("node:path").join(__dirname, "../scripts/setup-local-transcriber.sh");
   const script = fs.readFileSync(scriptPath, "utf8");
-  assert.ok(script.includes(String.raw`printf '%s\\n' "$FINGERPRINT"`));
+  assert.match(script, /printf '%s\n' "\$FINGERPRINT"/);
   assert.ok(script.includes('CURRENT_FINGERPRINT" = "$(cat "$VERIFIED_MARKER")'));
 });
