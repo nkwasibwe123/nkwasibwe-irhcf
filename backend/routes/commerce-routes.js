@@ -105,6 +105,8 @@ async function ensureCommerceSchema(pool) {
       provider_transaction_id TEXT,
       checkout_url TEXT,
       shipping_address JSONB,
+      idempotency_key TEXT,
+      request_fingerprint TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
       paid_at TIMESTAMPTZ
@@ -119,6 +121,10 @@ async function ensureCommerceSchema(pool) {
     ALTER TABLE commerce_orders ADD COLUMN IF NOT EXISTS coupon_code TEXT;
     ALTER TABLE commerce_orders ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
     ALTER TABLE commerce_orders ADD COLUMN IF NOT EXISTS stock_released_at TIMESTAMPTZ;
+    ALTER TABLE commerce_orders ADD COLUMN IF NOT EXISTS idempotency_key TEXT;
+    ALTER TABLE commerce_orders ADD COLUMN IF NOT EXISTS request_fingerprint TEXT;
+    CREATE UNIQUE INDEX IF NOT EXISTS commerce_orders_user_idempotency_unique
+      ON commerce_orders(user_id,idempotency_key) WHERE idempotency_key IS NOT NULL;
     UPDATE commerce_orders SET expires_at=created_at + INTERVAL '30 minutes' WHERE expires_at IS NULL AND status='pending';
     CREATE INDEX IF NOT EXISTS idx_commerce_orders_user_created ON commerce_orders(user_id, created_at DESC);
     CREATE TABLE IF NOT EXISTS commerce_refund_requests (
@@ -324,6 +330,49 @@ async function releaseExpiredReservations(pool, limit = 100) {
   let released = 0;
   for (const row of expired.rows) if (await releaseOrderReservations(pool,row.id,"cancelled",true)) released++;
   return released;
+}
+
+function sendExistingCheckoutReplay(res, order, requestFingerprint) {
+  if (String(order.request_fingerprint || "") !== requestFingerprint) {
+    return res.status(409).json({
+      success: false,
+      code: "IDEMPOTENCY_KEY_REUSED",
+      error: "This checkout key was already used with different cart or delivery details. Start a new checkout."
+    });
+  }
+  const base = {
+    success: true,
+    orderId: order.id,
+    txRef: order.tx_ref,
+    currency: order.currency,
+    subtotalMinor: Number(order.subtotal_minor),
+    discountMinor: Number(order.discount_minor),
+    shippingMinor: Number(order.shipping_minor),
+    taxMinor: Number(order.tax_minor),
+    taxRateBps: Number(order.tax_rate_bps),
+    platformFeeBps: Number(order.platform_fee_bps),
+    totalMinor: Number(order.total_minor),
+    couponCode: order.coupon_code || null,
+    idempotentReplay: true
+  };
+  if (order.status === "paid") {
+    return res.status(200).json({ ...base, paymentStatus: "paid" });
+  }
+  if (order.status === "pending" && order.checkout_url) {
+    return res.status(200).json({ ...base, checkoutUrl: order.checkout_url, paymentStatus: "pending" });
+  }
+  if (order.status === "pending") {
+    return res.status(409).json({
+      success: false,
+      code: "CHECKOUT_IN_PROGRESS",
+      error: "This checkout request is still being prepared. Wait briefly and retry with the same key."
+    });
+  }
+  return res.status(409).json({
+    success: false,
+    code: "IDEMPOTENCY_KEY_ALREADY_USED",
+    error: "This checkout key belongs to a finished or failed order. Start a new checkout with a new key."
+  });
 }
 
 function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.fetch, env = process.env } = {}) {
@@ -1093,6 +1142,23 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
       if (quantities.get(id) > MAX_QUANTITY) return res.status(400).json({ success: false, code: "CART_QUANTITY_LIMIT", error: "A product quantity cannot exceed 99." });
     }
 
+    const idempotencyKey = String(req.get("Idempotency-Key") || "").trim();
+    if (!/^[A-Za-z0-9._:-]{16,128}$/.test(idempotencyKey)) {
+      return res.status(400).json({
+        success: false,
+        code: "IDEMPOTENCY_KEY_REQUIRED",
+        error: "Provide an Idempotency-Key between 16 and 128 safe characters for checkout."
+      });
+    }
+    const couponCode = String(req.body?.couponCode || "").trim().toUpperCase().slice(0, 40) || null;
+    const requestFingerprint = crypto.createHash("sha256").update(JSON.stringify({
+      items: [...quantities.entries()]
+        .map(([productId, quantity]) => ({ productId: Number(productId), quantity }))
+        .sort((a, b) => a.productId - b.productId),
+      addressId: safeInteger(req.body?.addressId, 1, Number.MAX_SAFE_INTEGER) || null,
+      couponCode
+    })).digest("hex");
+
     try { await releaseExpiredReservations(pool); }
     catch (error) { return res.status(503).json({ success: false, code: "STOCK_RESERVATION_CLEANUP_FAILED", error: "Could not safely release expired stock reservations." }); }
     const client = typeof pool.connect === "function" ? await pool.connect() : null;
@@ -1106,10 +1172,17 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
     let shippingMinor = 0;
     let taxMinor = 0;
     let taxRateBps = 0;
-    let couponCode = String(req.body?.couponCode || "").trim().toUpperCase().slice(0, 40) || null;
     let currency;
     try {
       await client.query("BEGIN");
+      const existingResult = await client.query(
+        "SELECT id,tx_ref,status,currency,total_minor,subtotal_minor,discount_minor,shipping_minor,tax_minor,tax_rate_bps,platform_fee_bps,coupon_code,checkout_url,request_fingerprint FROM commerce_orders WHERE user_id=$1 AND idempotency_key=$2 FOR UPDATE",
+        [req.user.id, idempotencyKey]
+      );
+      if (existingResult.rows.length) {
+        await client.query("ROLLBACK");
+        return sendExistingCheckoutReplay(res, existingResult.rows[0], requestFingerprint);
+      }
       const ids = [...quantities.keys()];
       const productResult = await client.query(
         "SELECT p.id, p.name, p.price_minor, p.currency, p.stock_quantity, p.requires_shipping, p.seller_user_id FROM commerce_products p WHERE p.active = TRUE AND (p.seller_user_id IS NULL OR EXISTS (SELECT 1 FROM commerce_sellers s WHERE s.user_id=p.seller_user_id AND s.status='approved')) AND p.id = ANY($1::bigint[]) FOR UPDATE",
@@ -1204,8 +1277,8 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
       }
       txRef = "irhcf_" + crypto.randomUUID();
       const order = await client.query(
-        "INSERT INTO commerce_orders (user_id, tx_ref, status, currency, total_minor, subtotal_minor, discount_minor, shipping_minor, tax_minor, tax_rate_bps, platform_fee_bps, coupon_code, provider, shipping_address, expires_at) VALUES ($1,$2,'pending',$3,$4,$5,$6,$7,$8,$9,$10,$11,'flutterwave',$12::jsonb,CURRENT_TIMESTAMP + INTERVAL '30 minutes') RETURNING id,expires_at",
-        [req.user.id, txRef, currency, totalMinor, subtotalMinor, discountMinor, shippingMinor, taxMinor, taxRateBps, platformFeeBps, couponCode, shippingAddress ? JSON.stringify(shippingAddress) : null]
+        "INSERT INTO commerce_orders (user_id, tx_ref, status, currency, total_minor, subtotal_minor, discount_minor, shipping_minor, tax_minor, tax_rate_bps, platform_fee_bps, coupon_code, provider, shipping_address, idempotency_key, request_fingerprint, expires_at) VALUES ($1,$2,'pending',$3,$4,$5,$6,$7,$8,$9,$10,$11,'flutterwave',$12::jsonb,$13,$14,CURRENT_TIMESTAMP + INTERVAL '30 minutes') RETURNING id,expires_at",
+        [req.user.id, txRef, currency, totalMinor, subtotalMinor, discountMinor, shippingMinor, taxMinor, taxRateBps, platformFeeBps, couponCode, shippingAddress ? JSON.stringify(shippingAddress) : null, idempotencyKey, requestFingerprint]
       );
       orderId = order.rows[0].id;
       orderExpiresAt = order.rows[0].expires_at;
@@ -1224,6 +1297,15 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
       await client.query("COMMIT");
     } catch (error) {
       try { await client.query("ROLLBACK"); } catch {}
+      if (error?.code === "23505" && error?.constraint === "commerce_orders_user_idempotency_unique") {
+        try {
+          const existing = await pool.query(
+            "SELECT id,tx_ref,status,currency,total_minor,subtotal_minor,discount_minor,shipping_minor,tax_minor,tax_rate_bps,platform_fee_bps,coupon_code,checkout_url,request_fingerprint FROM commerce_orders WHERE user_id=$1 AND idempotency_key=$2 LIMIT 1",
+            [req.user.id, idempotencyKey]
+          );
+          if (existing.rows.length) return sendExistingCheckoutReplay(res, existing.rows[0], requestFingerprint);
+        } catch {}
+      }
       return res.status(500).json({ success: false, code: "ORDER_CREATE_FAILED", error: "Could not create the order." });
     } finally {
       client.release();
