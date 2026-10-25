@@ -17,10 +17,16 @@ test("video edit API is authenticated and enforces bounded video input", () => {
   assert.match(server, /videoBase64: output\.toString\("base64"\)/);
 });
 
-test("video edit API reports unsupported subtitle burn-in instead of silently ignoring it", () => {
+test("video edit API forwards optional subtitles to the FFmpeg renderer", () => {
   const server = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
-  assert.match(server, /VIDEO_SUBTITLES_NOT_IMPLEMENTED/);
-  assert.match(server, /status\(501\)/);
+  const html = fs.readFileSync(path.join(__dirname, "..", "..", "index.html"), "utf8");
+  const app = fs.readFileSync(path.join(__dirname, "..", "..", "app.js"), "utf8");
+  assert.doesNotMatch(server, /VIDEO_SUBTITLES_NOT_IMPLEMENTED/);
+  assert.match(server, /subtitles:\s*req\.body\?\.subtitles/);
+  assert.match(html, /id="videoEditorSubtitles" rows="3" maxlength="20000" placeholder=/);
+  assert.doesNotMatch(html, /id="videoEditorSubtitles"[^>]*disabled/);
+  assert.match(app, /subtitles:\s*document\.getElementById\("videoEditorSubtitles"\)\?\.value \|\| null/);
+  assert.match(html, /app\.js\?v=2\.0\.45/);
 });
 
 test("video edit API does not accept arbitrary video MIME types or output formats", () => {
