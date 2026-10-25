@@ -92,6 +92,8 @@ async function ensureCommerceSchema(pool) {
       tax_minor BIGINT NOT NULL DEFAULT 0 CHECK (tax_minor >= 0),
       tax_rate_bps INTEGER NOT NULL DEFAULT 0 CHECK (tax_rate_bps BETWEEN 0 AND 3000),
       coupon_code TEXT,
+      expires_at TIMESTAMPTZ,
+      stock_released_at TIMESTAMPTZ,
       provider TEXT NOT NULL DEFAULT 'flutterwave',
       provider_transaction_id TEXT,
       checkout_url TEXT,
@@ -107,6 +109,8 @@ async function ensureCommerceSchema(pool) {
     ALTER TABLE commerce_orders ADD COLUMN IF NOT EXISTS tax_minor BIGINT NOT NULL DEFAULT 0;
     ALTER TABLE commerce_orders ADD COLUMN IF NOT EXISTS tax_rate_bps INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE commerce_orders ADD COLUMN IF NOT EXISTS coupon_code TEXT;
+    ALTER TABLE commerce_orders ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
+    ALTER TABLE commerce_orders ADD COLUMN IF NOT EXISTS stock_released_at TIMESTAMPTZ;
     CREATE INDEX IF NOT EXISTS idx_commerce_orders_user_created ON commerce_orders(user_id, created_at DESC);
     CREATE TABLE IF NOT EXISTS commerce_refund_requests (
       id BIGSERIAL PRIMARY KEY,
@@ -154,6 +158,15 @@ async function ensureCommerceSchema(pool) {
     ALTER TABLE commerce_order_items ADD COLUMN IF NOT EXISTS seller_user_id INTEGER REFERENCES commerce_sellers(user_id) ON DELETE SET NULL;
     ALTER TABLE commerce_order_items ADD COLUMN IF NOT EXISTS fulfillment_status TEXT NOT NULL DEFAULT 'pending';
     CREATE INDEX IF NOT EXISTS idx_commerce_order_items_seller ON commerce_order_items(seller_user_id, fulfillment_status, id);
+    CREATE TABLE IF NOT EXISTS commerce_stock_reservations (
+      order_id BIGINT NOT NULL REFERENCES commerce_orders(id) ON DELETE CASCADE,
+      product_id BIGINT NOT NULL REFERENCES commerce_products(id) ON DELETE RESTRICT,
+      quantity INTEGER NOT NULL CHECK (quantity BETWEEN 1 AND 99),
+      expires_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (order_id, product_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_commerce_stock_reservations_expiry ON commerce_stock_reservations(expires_at);
     CREATE INDEX IF NOT EXISTS idx_commerce_order_items_order ON commerce_order_items(order_id);
     CREATE TABLE IF NOT EXISTS commerce_cart_items (
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -206,6 +219,40 @@ function calculateTaxMinor(subtotalMinor, discountMinor, shippingMinor, taxRateB
   if (!Number.isSafeInteger(taxableMinor) || taxableMinor < 0 || !Number.isSafeInteger(taxRateBps) || taxRateBps < 0 || taxRateBps > 3000) return null;
   const taxMinor = Number((BigInt(taxableMinor) * BigInt(taxRateBps)) / 10000n);
   return Number.isSafeInteger(taxMinor) && taxMinor >= 0 ? taxMinor : null;
+}
+async function releaseOrderReservations(pool, orderId, finalStatus = "failed", onlyIfExpired = false) {
+  if (!pool || typeof pool.connect !== "function") throw new Error("Transactional database support is required to release stock reservations.");
+  if (!["failed","cancelled"].includes(finalStatus)) throw new Error("Invalid final order status.");
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const orderResult = await client.query("SELECT id,status,expires_at FROM commerce_orders WHERE id=$1 FOR UPDATE", [orderId]);
+    const order = orderResult.rows[0];
+    if (!order || order.status !== "pending" || (onlyIfExpired && (!order.expires_at || new Date(order.expires_at).getTime() > Date.now()))) {
+      await client.query("ROLLBACK");
+      return false;
+    }
+    const reservations = await client.query("SELECT product_id,quantity FROM commerce_stock_reservations WHERE order_id=$1 FOR UPDATE", [orderId]);
+    for (const reservation of reservations.rows) {
+      await client.query("UPDATE commerce_products SET stock_quantity=stock_quantity+$2,updated_at=CURRENT_TIMESTAMP WHERE id=$1", [reservation.product_id,reservation.quantity]);
+    }
+    await client.query("DELETE FROM commerce_stock_reservations WHERE order_id=$1", [orderId]);
+    await client.query("UPDATE commerce_orders SET status=$2,stock_released_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=$1 AND status='pending'", [orderId,finalStatus]);
+    await client.query("COMMIT");
+    return true;
+  } catch (error) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+async function releaseExpiredReservations(pool, limit = 100) {
+  if (!pool || typeof pool.connect !== "function") return 0;
+  const expired = await pool.query("SELECT id FROM commerce_orders WHERE status='pending' AND expires_at<=CURRENT_TIMESTAMP ORDER BY expires_at LIMIT $1", [Math.min(500,Math.max(1,limit))]);
+  let released = 0;
+  for (const row of expired.rows) if (await releaseOrderReservations(pool,row.id,"cancelled",true)) released++;
+  return released;
 }
 
 function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.fetch, env = process.env } = {}) {
