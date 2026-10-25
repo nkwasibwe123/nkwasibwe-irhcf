@@ -154,6 +154,16 @@ function toProviderAmount(minor, currency) {
 function fromProviderAmount(amount, currency) {
   return Math.round(Number(amount) * (["RWF", "UGX", "XAF", "XOF", "JPY"].includes(currency) ? 1 : 100));
 }
+function calculateCouponDiscount(coupon, subtotalMinor, currency) {
+  if (!coupon) return { discountMinor: 0, error: null };
+  if (coupon.currency !== currency) return { discountMinor: 0, error: "Coupon currency does not match the cart." };
+  if (subtotalMinor < Number(coupon.min_subtotal_minor || 0)) return { discountMinor: 0, error: "The cart does not meet this coupon's minimum subtotal." };
+  const value = Number(coupon.discount_value);
+  if (!Number.isSafeInteger(value) || value <= 0) return { discountMinor: 0, error: "Coupon discount is invalid." };
+  const discountMinor = coupon.discount_type === "percent" ? Math.floor(subtotalMinor * value / 100) : Math.min(subtotalMinor, value);
+  if (!Number.isSafeInteger(discountMinor) || discountMinor < 0 || discountMinor >= subtotalMinor) return { discountMinor: 0, error: "Coupon must leave a positive order total." };
+  return { discountMinor, error: null };
+}
 
 function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.fetch, env = process.env } = {}) {
   if (!pool || typeof pool.query !== "function") throw new Error("Commerce router requires a database pool.");
@@ -172,6 +182,74 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
     });
     next();
   }
+  router.post("/coupons", authenticateToken, requireCommerceAdmin, async (req, res) => {
+    const code = String(req.body?.code || "").trim().toUpperCase();
+    const description = String(req.body?.description || "").trim().slice(0, 500);
+    const discountType = String(req.body?.discountType || "");
+    const discountValue = safeInteger(req.body?.discountValue, 1, discountType === "percent" ? 90 : Number.MAX_SAFE_INTEGER);
+    const currency = String(req.body?.currency || "RWF").toUpperCase();
+    const minSubtotalMinor = safeInteger(req.body?.minSubtotalMinor ?? 0, 0, Number.MAX_SAFE_INTEGER);
+    const parseDate = value => value ? new Date(value) : null;
+    const startsAt = parseDate(req.body?.startsAt), expiresAt = parseDate(req.body?.expiresAt);
+    if (!/^[A-Z0-9_-]{3,40}$/.test(code) || !["percent","fixed"].includes(discountType) || !discountValue || minSubtotalMinor === null || !CURRENCIES.has(currency) ||
+        (startsAt && !Number.isFinite(startsAt.getTime())) || (expiresAt && !Number.isFinite(expiresAt.getTime())) ||
+        (startsAt && expiresAt && expiresAt <= startsAt)) {
+      return res.status(400).json({ success: false, error: "Provide a valid code, discount type/value, currency, minimum subtotal and valid date range.", code: "COUPON_INPUT_INVALID" });
+    }
+    try {
+      const result = await pool.query("INSERT INTO commerce_coupons (code,description,discount_type,discount_value,currency,min_subtotal_minor,starts_at,expires_at,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id,code,description,discount_type,discount_value,currency,min_subtotal_minor,active,starts_at,expires_at,redeemed_count", [code,description,discountType,discountValue,currency,minSubtotalMinor,startsAt,expiresAt,req.user.id]);
+      return res.status(201).json({ success: true, coupon: result.rows[0] });
+    } catch (error) {
+      if (error?.code === "23505") return res.status(409).json({ success: false, error: "That coupon code already exists.", code: "COUPON_CODE_CONFLICT" });
+      return res.status(500).json({ success: false, error: "Could not create coupon.", code: "COUPON_CREATE_FAILED" });
+    }
+  });
+
+  router.get("/coupons", authenticateToken, requireCommerceAdmin, async (req, res) => {
+    try {
+      const result = await pool.query("SELECT id,code,description,discount_type,discount_value,currency,min_subtotal_minor,active,starts_at,expires_at,redeemed_count,created_at FROM commerce_coupons ORDER BY created_at DESC LIMIT 200");
+      return res.json({ success: true, coupons: result.rows });
+    } catch (error) {
+      return res.status(500).json({ success: false, error: "Could not load coupons.", code: "COUPONS_LOAD_FAILED" });
+    }
+  });
+
+  router.patch("/coupons/:couponId", authenticateToken, requireCommerceAdmin, async (req, res) => {
+    const couponId = safeInteger(req.params.couponId, 1, Number.MAX_SAFE_INTEGER);
+    if (!couponId || typeof req.body?.active !== "boolean") return res.status(400).json({ success: false, error: "A coupon ID and active boolean are required.", code: "COUPON_INPUT_INVALID" });
+    try {
+      const result = await pool.query("UPDATE commerce_coupons SET active=$2 WHERE id=$1 RETURNING id,code,active,redeemed_count", [couponId,req.body.active]);
+      if (!result.rows.length) return res.status(404).json({ success: false, error: "Coupon not found.", code: "COUPON_NOT_FOUND" });
+      return res.json({ success: true, coupon: result.rows[0] });
+    } catch (error) {
+      return res.status(500).json({ success: false, error: "Could not update coupon.", code: "COUPON_UPDATE_FAILED" });
+    }
+  });
+
+  router.post("/quote", authenticateToken, async (req, res) => {
+    const input = req.body?.items;
+    if (!Array.isArray(input) || input.length < 1 || input.length > MAX_ITEMS) return res.status(400).json({ success: false, error: "Provide between 1 and 50 cart items.", code: "CART_INVALID" });
+    const quantities = new Map();
+    for (const item of input) {
+      const id=safeInteger(item?.productId,1,Number.MAX_SAFE_INTEGER), quantity=safeInteger(item?.quantity,1,MAX_QUANTITY);
+      if(!id||!quantity)return res.status(400).json({success:false,error:"Invalid cart item.",code:"CART_ITEM_INVALID"});
+      quantities.set(id,(quantities.get(id)||0)+quantity);
+      if(quantities.get(id)>MAX_QUANTITY)return res.status(400).json({success:false,error:"A product quantity cannot exceed 99.",code:"CART_QUANTITY_LIMIT"});
+    }
+    try {
+      const products=await pool.query("SELECT id,price_minor,currency,stock_quantity FROM commerce_products WHERE active=TRUE AND id=ANY($1::bigint[])",[[...quantities.keys()]]);
+      if(products.rows.length!==quantities.size)return res.status(400).json({success:false,error:"One or more products are unavailable.",code:"PRODUCT_UNAVAILABLE"});
+      const currencies=new Set(products.rows.map(row=>row.currency));
+      if(currencies.size!==1||!CURRENCIES.has(products.rows[0].currency))return res.status(400).json({success:false,error:"Cart items must use the same supported currency.",code:"CURRENCY_MISMATCH"});
+      const byId=new Map(products.rows.map(row=>[String(row.id),row]));let subtotalMinor=0;
+      for(const [id,quantity] of quantities){const product=byId.get(String(id));const unit=Number(product.price_minor);if(Number(product.stock_quantity)<quantity)return res.status(409).json({success:false,error:"A product does not have enough stock.",code:"INSUFFICIENT_STOCK"});if(!Number.isSafeInteger(unit)||unit<0||!Number.isSafeInteger(unit*quantity))return res.status(400).json({success:false,error:"Product price is invalid.",code:"PRICE_INVALID"});subtotalMinor+=unit*quantity;if(!Number.isSafeInteger(subtotalMinor))return res.status(400).json({success:false,error:"Cart total is invalid.",code:"TOTAL_INVALID"});}
+      if(subtotalMinor<=0)return res.status(400).json({success:false,error:"Order subtotal must be greater than zero.",code:"TOTAL_INVALID"});
+      const currency=products.rows[0].currency;const couponCode=String(req.body?.couponCode||"").trim().toUpperCase().slice(0,40)||null;let discountMinor=0;
+      if(couponCode){const couponResult=await pool.query("SELECT code,discount_type,discount_value,currency,min_subtotal_minor FROM commerce_coupons WHERE code=$1 AND active=TRUE AND (starts_at IS NULL OR starts_at<=CURRENT_TIMESTAMP) AND (expires_at IS NULL OR expires_at>CURRENT_TIMESTAMP) LIMIT 1",[couponCode]);if(!couponResult.rows.length)return res.status(400).json({success:false,error:"Coupon is invalid, inactive or expired.",code:"COUPON_INVALID"});const calculation=calculateCouponDiscount(couponResult.rows[0],subtotalMinor,currency);if(calculation.error)return res.status(400).json({success:false,error:calculation.error,code:"COUPON_NOT_APPLICABLE"});discountMinor=calculation.discountMinor;}
+      return res.json({success:true,currency,subtotalMinor,discountMinor,totalMinor:subtotalMinor-discountMinor,couponCode});
+    } catch(error){return res.status(500).json({success:false,error:"Could not calculate cart quote.",code:"QUOTE_FAILED"});}
+  });
+
   async function requireProductManager(req, res, next) {
     if (isCommerceAdmin(req)) return next();
     try {
