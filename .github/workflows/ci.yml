@@ -27,6 +27,35 @@ jobs:
           node-version: ${{ matrix.node-version }}
       - name: Install dependencies
         run: npm install
+      - name: Validate root lockfile and report frontend build dependency audit
+        shell: bash
+        run: |
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          git diff --exit-code -- package-lock.json
+          (npm audit --json) > /tmp/irhcf-root-audit.json || true
+          node - <<'NODE'
+          const fs = require("node:fs");
+          let report = {};
+          try {
+            report = JSON.parse(fs.readFileSync("/tmp/irhcf-root-audit.json", "utf8"));
+          } catch {
+            console.log("Root dependency audit did not return parseable JSON.");
+            process.exit(0);
+          }
+          const totals = report.metadata?.vulnerabilities || {};
+          console.log("Root dependency audit totals:", JSON.stringify(totals));
+          for (const [name, item] of Object.entries(report.vulnerabilities || {})) {
+            const via = (item.via || []).map(entry => typeof entry === "string" ? entry : {
+              name: entry.name, title: entry.title, range: entry.range, url: entry.url
+            });
+            const finding = { name, severity: item.severity, range: item.range, fixAvailable: item.fixAvailable, via };
+            console.log("ROOT_AUDIT_FINDING", JSON.stringify(finding));
+            const annotation = (name + " (" + item.severity + ") range " + item.range +
+              "; fixAvailable=" + JSON.stringify(item.fixAvailable))
+              .replace(/%/g, "%25").replace(/\\r/g, "%0D").replace(/\\n/g, "%0A");
+            console.log("::warning title=Root dependency vulnerability::" + annotation);
+          }
+          NODE
       - name: Validate backend lockfile and report dependency audit
         shell: bash
         run: |
