@@ -863,3 +863,24 @@ test("replayed successful Flutterwave webhook is idempotent for an already-paid 
     assert.equal(queries.length, 1);
   });
 });
+
+
+test("Flutterwave webhook rejects non-ASCII signature values without throwing", async () => {
+  const app = express();
+  app.use(express.json());
+  app.use("/api/commerce", createCommerceRouter({
+    pool: { async query() { throw new Error("Database must not be reached for invalid signatures."); } },
+    authenticateToken: (req, res, next) => next(),
+    env: { FLW_SECRET_HASH: "abc", FLW_SECRET_KEY: "test-provider-key" },
+    fetchImpl: async () => { throw new Error("Provider must not be called for invalid signatures."); }
+  }));
+  await withServer(app, async base => {
+    const response = await fetch(base + "/api/commerce/webhook/flutterwave", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "verif-hash": "ééé" },
+      body: JSON.stringify({ data: { id: 1, tx_ref: "test" } })
+    });
+    assert.equal(response.status, 401);
+    assert.equal((await response.json()).code, "WEBHOOK_SIGNATURE_INVALID");
+  });
+});
