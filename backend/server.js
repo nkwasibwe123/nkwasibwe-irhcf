@@ -32563,7 +32563,7 @@ const capabilityDiscoveryWorker = capabilityDiscoveryEnabled
           const result = await searchIRHCF(query, { limit: Math.min(5, maxItems), web: true });
           if (!result?.webSearchPerformed || !Array.isArray(result.results)) continue;
           for (const item of result.results) {
-            if (!item?.url || !/^https?:\\/\\//i.test(item.url)) continue;
+            if (!item?.url || !/^https?:\/\//i.test(item.url)) continue;
             const title = String(item.title || "").trim().slice(0, 180);
             const description = String(item.snippet || "").trim().slice(0, 1600);
             if (!title || !description) continue;
