@@ -1299,7 +1299,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
       try { await client.query("ROLLBACK"); } catch {}
       if (error?.code === "23505" && error?.constraint === "commerce_orders_user_idempotency_unique") {
         try {
-          const existing = await pool.query(
+          const existing = await client.query(
             "SELECT id,tx_ref,status,currency,total_minor,subtotal_minor,discount_minor,shipping_minor,tax_minor,tax_rate_bps,platform_fee_bps,coupon_code,checkout_url,request_fingerprint FROM commerce_orders WHERE user_id=$1 AND idempotency_key=$2 LIMIT 1",
             [req.user.id, idempotencyKey]
           );
