@@ -60,7 +60,7 @@ function webpDimensions(buffer) {
     const b1 = buffer[21], b2 = buffer[22], b3 = buffer[23], b4 = buffer[24];
     return validatePhotoDimensions(
       1 + (b1 | ((b2 & 0x3f) << 8)),
-      1 + ((b2 >> 6) | (b3 << 2) | ((b4 & 0x0f) << 10))
+      1 + ((b2 >> 6) | (b3 << 2) | ((b4 & 0x3f) << 10))
     );
   }
   if (chunk === "VP8 " && buffer.length >= 30 &&
