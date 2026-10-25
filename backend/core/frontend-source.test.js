@@ -548,3 +548,13 @@ test("Chat with Friends includes poll creation and authenticated poll voting UI"
   assert.match(html,/\/vote/);
   assert.match(html,/poll\.options/);
 });
+
+test("Chat with Friends allows deleting only the current user's own messages",()=>{
+  const route=fs.readFileSync(path.join(__dirname,"..","routes","social-routes.js"),"utf8");
+  const html=fs.readFileSync(path.join(__dirname,"..","..","friends.html"),"utf8");
+  assert.match(route,/router\.delete\("\/conversations\/:conversationId\/messages\/:messageId"/);
+  assert.match(route,/DELETE FROM social_messages WHERE id=\$1 AND conversation_id=\$2 AND sender_id=\$3 RETURNING id/);
+  assert.match(html,/Delete your message/);
+  assert.match(html,/method:"DELETE"/);
+  assert.match(html,/Delete this message\? This cannot be undone\./);
+});
