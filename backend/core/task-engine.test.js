@@ -506,3 +506,125 @@ test("project revision endpoint carries verified prior files into an authenticat
   assert.match(createdInput.task, /GS Kitazigurwa/);
 });
 
+test("artifact download is scoped to the authenticated user's task", async () => {
+  const lookups = [];
+  const engine = {
+    getTask: async (taskId, userId) => {
+      lookups.push({ taskId, userId });
+      return null;
+    }
+  };
+  const router = createTaskRouter({
+    engine,
+    authenticateToken: (_req, _res, next) => next()
+  });
+  const layer = router.stack.find(item => item.route?.path === "/:id/artifacts/:filename");
+  assert.ok(layer, "artifact download route must be registered");
+  const handler = layer.route.stack[1].handle;
+  const response = {
+    statusCode: 200,
+    headers: {},
+    setHeader(name, value) { this.headers[name] = value; },
+    status(code) { this.statusCode = code; return this; },
+    json(body) { this.body = body; return this; },
+    send(body) { this.body = body; return this; }
+  };
+
+  await handler({
+    params: { id: "44", filename: "index.html" },
+    user: { id: "user-b" }
+  }, response);
+
+  assert.deepEqual(lookups, [{ taskId: 44, userId: "user-b" }]);
+  assert.equal(response.statusCode, 404);
+  assert.equal(response.body.code, "TASK_NOT_FOUND");
+  assert.equal(response.body.success, false);
+});
+
+test("artifact download serves only a verified artifact and sets safe download headers", async () => {
+  const engine = {
+    getTask: async (taskId, userId) => {
+      assert.equal(taskId, 45);
+      assert.equal(userId, "owner-1");
+      return {
+        id: 45,
+        user_id: "owner-1",
+        result: JSON.stringify({
+          taskAction: {
+            artifacts: [
+              { name: "index.html", content: "<!doctype html><html><body>ok</body></html>", verified: true, mimeType: "text/html; charset=utf-8" },
+              { name: "private.txt", content: "must not be downloadable", verified: false, mimeType: "text/plain" }
+            ]
+          }
+        })
+      };
+    }
+  };
+  const router = createTaskRouter({
+    engine,
+    authenticateToken: (_req, _res, next) => next()
+  });
+  const layer = router.stack.find(item => item.route?.path === "/:id/artifacts/:filename");
+  const handler = layer.route.stack[1].handle;
+  const response = {
+    statusCode: 200,
+    headers: {},
+    setHeader(name, value) { this.headers[name] = value; },
+    status(code) { this.statusCode = code; return this; },
+    json(body) { this.body = body; return this; },
+    send(body) { this.body = body; return this; }
+  };
+
+  await handler({
+    params: { id: "45", filename: "index.html" },
+    user: { id: "owner-1" }
+  }, response);
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body, "<!doctype html><html><body>ok</body></html>");
+  assert.equal(response.headers["Content-Type"], "text/html; charset=utf-8");
+  assert.equal(response.headers["X-Content-Type-Options"], "nosniff");
+  assert.equal(response.headers["Content-Disposition"], 'attachment; filename="index.html"');
+
+  const blocked = {
+    statusCode: 200,
+    headers: {},
+    setHeader(name, value) { this.headers[name] = value; },
+    status(code) { this.statusCode = code; return this; },
+    json(body) { this.body = body; return this; },
+    send(body) { this.body = body; return this; }
+  };
+  await handler({
+    params: { id: "45", filename: "private.txt" },
+    user: { id: "owner-1" }
+  }, blocked);
+  assert.equal(blocked.statusCode, 404);
+  assert.equal(blocked.body.code, "TASK_ARTIFACT_NOT_FOUND");
+});
+
+test("artifact download rejects malformed task identifiers before querying storage", async () => {
+  let lookups = 0;
+  const engine = { getTask: async () => { lookups++; return null; } };
+  const router = createTaskRouter({
+    engine,
+    authenticateToken: (_req, _res, next) => next()
+  });
+  const layer = router.stack.find(item => item.route?.path === "/:id/artifacts/:filename");
+  const handler = layer.route.stack[1].handle;
+  const response = {
+    statusCode: 200,
+    status(code) { this.statusCode = code; return this; },
+    json(body) { this.body = body; return this; },
+    setHeader() {},
+    send(body) { this.body = body; return this; }
+  };
+
+  await handler({
+    params: { id: "../45", filename: "index.html" },
+    user: { id: "owner-1" }
+  }, response);
+
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.code, "TASK_ID_INVALID");
+  assert.equal(lookups, 0);
+});
