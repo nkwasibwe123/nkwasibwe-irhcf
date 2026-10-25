@@ -78,7 +78,7 @@
       like.type="button";like.addEventListener("click",()=>react(post.id,"like",like));actions.append(like);
       const love=node("button","feed-action","❤️ Love");
       love.type="button";love.addEventListener("click",()=>react(post.id,"love",love));actions.append(love);
-      if(Number(post.author_id)===Number(window.IRHCF_USER_ID)){
+      if(post.is_mine){
         const del=node("button","feed-action","Delete");
         del.type="button";del.addEventListener("click",()=>removePost(post.id));actions.append(del);
       }
