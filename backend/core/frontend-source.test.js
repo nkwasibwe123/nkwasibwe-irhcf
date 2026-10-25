@@ -661,3 +661,18 @@ test("marketplace quote UI displays server-calculated shipping and tax and block
   assert.match(routes,/SHIPPING_RATE_NOT_CONFIGURED/);
   assert.match(routes,/tax_rate_bps INTEGER/);
 });
+
+
+test("marketplace stock reservation expiry is connected to hosted checkout and product availability", () => {
+  const root=path.join(__dirname,"..","..");
+  const html=fs.readFileSync(path.join(root,"market.html"),"utf8");
+  const routes=fs.readFileSync(path.join(root,"backend","routes","commerce-routes.js"),"utf8");
+  assert.match(html,/30-minute link/);
+  assert.match(routes,/CREATE TABLE IF NOT EXISTS commerce_stock_reservations/);
+  assert.match(routes,/stock_quantity=stock_quantity-\$2/);
+  assert.match(routes,/stock_quantity=stock_quantity\+\$2/);
+  assert.match(routes,/configuration: \{ session_duration: 30, max_retry_attempt: 3 \}/);
+  assert.match(routes,/link_expiration: new Date\(orderExpiresAt\)\.toISOString\(\)/);
+  assert.match(routes,/releaseExpiredReservations\(pool\)/);
+  assert.match(routes,/reservation_release AS \(DELETE FROM commerce_stock_reservations/);
+});

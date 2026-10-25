@@ -92,6 +92,8 @@ async function ensureCommerceSchema(pool) {
       tax_minor BIGINT NOT NULL DEFAULT 0 CHECK (tax_minor >= 0),
       tax_rate_bps INTEGER NOT NULL DEFAULT 0 CHECK (tax_rate_bps BETWEEN 0 AND 3000),
       coupon_code TEXT,
+      expires_at TIMESTAMPTZ,
+      stock_released_at TIMESTAMPTZ,
       provider TEXT NOT NULL DEFAULT 'flutterwave',
       provider_transaction_id TEXT,
       checkout_url TEXT,
@@ -107,6 +109,9 @@ async function ensureCommerceSchema(pool) {
     ALTER TABLE commerce_orders ADD COLUMN IF NOT EXISTS tax_minor BIGINT NOT NULL DEFAULT 0;
     ALTER TABLE commerce_orders ADD COLUMN IF NOT EXISTS tax_rate_bps INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE commerce_orders ADD COLUMN IF NOT EXISTS coupon_code TEXT;
+    ALTER TABLE commerce_orders ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
+    ALTER TABLE commerce_orders ADD COLUMN IF NOT EXISTS stock_released_at TIMESTAMPTZ;
+    UPDATE commerce_orders SET expires_at=created_at + INTERVAL '30 minutes' WHERE expires_at IS NULL AND status='pending';
     CREATE INDEX IF NOT EXISTS idx_commerce_orders_user_created ON commerce_orders(user_id, created_at DESC);
     CREATE TABLE IF NOT EXISTS commerce_refund_requests (
       id BIGSERIAL PRIMARY KEY,
@@ -154,6 +159,15 @@ async function ensureCommerceSchema(pool) {
     ALTER TABLE commerce_order_items ADD COLUMN IF NOT EXISTS seller_user_id INTEGER REFERENCES commerce_sellers(user_id) ON DELETE SET NULL;
     ALTER TABLE commerce_order_items ADD COLUMN IF NOT EXISTS fulfillment_status TEXT NOT NULL DEFAULT 'pending';
     CREATE INDEX IF NOT EXISTS idx_commerce_order_items_seller ON commerce_order_items(seller_user_id, fulfillment_status, id);
+    CREATE TABLE IF NOT EXISTS commerce_stock_reservations (
+      order_id BIGINT NOT NULL REFERENCES commerce_orders(id) ON DELETE CASCADE,
+      product_id BIGINT NOT NULL REFERENCES commerce_products(id) ON DELETE RESTRICT,
+      quantity INTEGER NOT NULL CHECK (quantity BETWEEN 1 AND 99),
+      expires_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (order_id, product_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_commerce_stock_reservations_expiry ON commerce_stock_reservations(expires_at);
     CREATE INDEX IF NOT EXISTS idx_commerce_order_items_order ON commerce_order_items(order_id);
     CREATE TABLE IF NOT EXISTS commerce_cart_items (
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -206,6 +220,40 @@ function calculateTaxMinor(subtotalMinor, discountMinor, shippingMinor, taxRateB
   if (!Number.isSafeInteger(taxableMinor) || taxableMinor < 0 || !Number.isSafeInteger(taxRateBps) || taxRateBps < 0 || taxRateBps > 3000) return null;
   const taxMinor = Number((BigInt(taxableMinor) * BigInt(taxRateBps)) / 10000n);
   return Number.isSafeInteger(taxMinor) && taxMinor >= 0 ? taxMinor : null;
+}
+async function releaseOrderReservations(pool, orderId, finalStatus = "failed", onlyIfExpired = false) {
+  if (!pool || typeof pool.connect !== "function") throw new Error("Transactional database support is required to release stock reservations.");
+  if (!["failed","cancelled"].includes(finalStatus)) throw new Error("Invalid final order status.");
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const orderResult = await client.query("SELECT id,status,expires_at FROM commerce_orders WHERE id=$1 FOR UPDATE", [orderId]);
+    const order = orderResult.rows[0];
+    if (!order || order.status !== "pending" || (onlyIfExpired && (!order.expires_at || new Date(order.expires_at).getTime() > Date.now()))) {
+      await client.query("ROLLBACK");
+      return false;
+    }
+    const reservations = await client.query("SELECT product_id,quantity FROM commerce_stock_reservations WHERE order_id=$1 FOR UPDATE", [orderId]);
+    for (const reservation of reservations.rows) {
+      await client.query("UPDATE commerce_products SET stock_quantity=stock_quantity+$2,updated_at=CURRENT_TIMESTAMP WHERE id=$1", [reservation.product_id,reservation.quantity]);
+    }
+    await client.query("DELETE FROM commerce_stock_reservations WHERE order_id=$1", [orderId]);
+    await client.query("UPDATE commerce_orders SET status=$2,stock_released_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=$1 AND status='pending'", [orderId,finalStatus]);
+    await client.query("COMMIT");
+    return true;
+  } catch (error) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+async function releaseExpiredReservations(pool, limit = 100) {
+  if (!pool || typeof pool.connect !== "function") return 0;
+  const expired = await pool.query("SELECT id FROM commerce_orders WHERE status='pending' AND expires_at<=CURRENT_TIMESTAMP ORDER BY expires_at LIMIT $1", [Math.min(500,Math.max(1,limit))]);
+  let released = 0;
+  for (const row of expired.rows) if (await releaseOrderReservations(pool,row.id,"cancelled",true)) released++;
+  return released;
 }
 
 function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.fetch, env = process.env } = {}) {
@@ -280,6 +328,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
       if(quantities.get(id)>MAX_QUANTITY)return res.status(400).json({success:false,error:"A product quantity cannot exceed 99.",code:"CART_QUANTITY_LIMIT"});
     }
     try {
+      await releaseExpiredReservations(pool);
       const products=await pool.query("SELECT p.id,p.price_minor,p.currency,p.stock_quantity,p.requires_shipping FROM commerce_products p WHERE p.active=TRUE AND (p.seller_user_id IS NULL OR EXISTS (SELECT 1 FROM commerce_sellers s WHERE s.user_id=p.seller_user_id AND s.status='approved')) AND p.id=ANY($1::bigint[])",[[...quantities.keys()]]);
       if(products.rows.length!==quantities.size)return res.status(400).json({success:false,error:"One or more products are unavailable.",code:"PRODUCT_UNAVAILABLE"});
       const currencies=new Set(products.rows.map(row=>row.currency));
@@ -504,6 +553,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
 
   router.get("/products", async (req, res) => {
     try {
+      await releaseExpiredReservations(pool);
       const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 50));
       const search = String(req.query.q || "").trim().slice(0, 120);
       const category = String(req.query.category || "").trim().slice(0, 80);
@@ -680,8 +730,9 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
 
   router.get("/orders", authenticateToken, async (req, res) => {
     try {
+      await releaseExpiredReservations(pool);
       const result = await pool.query(
-        "SELECT id, tx_ref, status, currency, total_minor, subtotal_minor, discount_minor, shipping_minor, tax_minor, tax_rate_bps, coupon_code, provider, checkout_url, shipping_address, created_at, updated_at, paid_at FROM commerce_orders WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100",
+        "SELECT id, tx_ref, status, currency, total_minor, subtotal_minor, discount_minor, shipping_minor, tax_minor, tax_rate_bps, coupon_code, provider, checkout_url, shipping_address, expires_at, created_at, updated_at, paid_at FROM commerce_orders WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100",
         [req.user.id]
       );
       return res.json({ success: true, orders: result.rows });
@@ -694,7 +745,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
     const orderId = safeInteger(req.params.orderId, 1, Number.MAX_SAFE_INTEGER);
     if (!orderId) return res.status(400).json({ success: false, error: "Invalid order ID.", code: "ORDER_ID_INVALID" });
     try {
-      const result = await pool.query("SELECT id, tx_ref, status, currency, total_minor, subtotal_minor, discount_minor, shipping_minor, tax_minor, tax_rate_bps, coupon_code, provider, provider_transaction_id, checkout_url, shipping_address, created_at, updated_at, paid_at FROM commerce_orders WHERE id=$1 AND user_id=$2 LIMIT 1", [orderId, req.user.id]);
+      const result = await pool.query("SELECT id, tx_ref, status, currency, total_minor, subtotal_minor, discount_minor, shipping_minor, tax_minor, tax_rate_bps, coupon_code, provider, provider_transaction_id, checkout_url, shipping_address, expires_at, stock_released_at, created_at, updated_at, paid_at FROM commerce_orders WHERE id=$1 AND user_id=$2 LIMIT 1", [orderId, req.user.id]);
       if (!result.rows.length) return res.status(404).json({ success: false, error: "Order not found.", code: "ORDER_NOT_FOUND" });
       const items = await pool.query("SELECT product_id, product_name, quantity, unit_price_minor, line_total_minor, fulfillment_status FROM commerce_order_items WHERE order_id=$1 ORDER BY id", [orderId]);
       return res.json({ success: true, order: result.rows[0], items: items.rows });
@@ -775,9 +826,12 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
       if (quantities.get(id) > MAX_QUANTITY) return res.status(400).json({ success: false, code: "CART_QUANTITY_LIMIT", error: "A product quantity cannot exceed 99." });
     }
 
+    try { await releaseExpiredReservations(pool); }
+    catch (error) { return res.status(503).json({ success: false, code: "STOCK_RESERVATION_CLEANUP_FAILED", error: "Could not safely release expired stock reservations." }); }
     const client = typeof pool.connect === "function" ? await pool.connect() : null;
     if (!client) return res.status(503).json({ success: false, code: "CHECKOUT_TRANSACTION_UNAVAILABLE", error: "Secure checkout requires transactional database support." });
     let orderId;
+    let orderExpiresAt;
     let txRef;
     let totalMinor;
     let subtotalMinor;
@@ -883,15 +937,22 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
       }
       txRef = "irhcf_" + crypto.randomUUID();
       const order = await client.query(
-        "INSERT INTO commerce_orders (user_id, tx_ref, status, currency, total_minor, subtotal_minor, discount_minor, shipping_minor, tax_minor, tax_rate_bps, coupon_code, provider, shipping_address) VALUES ($1,$2,'pending',$3,$4,$5,$6,$7,$8,$9,$10,'flutterwave',$11::jsonb) RETURNING id",
+        "INSERT INTO commerce_orders (user_id, tx_ref, status, currency, total_minor, subtotal_minor, discount_minor, shipping_minor, tax_minor, tax_rate_bps, coupon_code, provider, shipping_address, expires_at) VALUES ($1,$2,'pending',$3,$4,$5,$6,$7,$8,$9,$10,'flutterwave',$11::jsonb,CURRENT_TIMESTAMP + INTERVAL '30 minutes') RETURNING id,expires_at",
         [req.user.id, txRef, currency, totalMinor, subtotalMinor, discountMinor, shippingMinor, taxMinor, taxRateBps, couponCode, shippingAddress ? JSON.stringify(shippingAddress) : null]
       );
       orderId = order.rows[0].id;
+      orderExpiresAt = order.rows[0].expires_at;
       for (const item of items) {
         await client.query(
           "INSERT INTO commerce_order_items (order_id, product_id, product_name, quantity, unit_price_minor, line_total_minor, seller_user_id) VALUES ($1,$2,$3,$4,$5,$6,$7)",
           [orderId, item.product.id, item.product.name, item.quantity, item.unit, item.line, item.product.seller_user_id || null]
         );
+        const stockUpdate = await client.query("UPDATE commerce_products SET stock_quantity=stock_quantity-$2,updated_at=CURRENT_TIMESTAMP WHERE id=$1 AND stock_quantity >= $2 RETURNING id", [item.product.id,item.quantity]);
+        if (!stockUpdate.rows.length) {
+          await client.query("ROLLBACK");
+          return res.status(409).json({ success: false, code: "INSUFFICIENT_STOCK", error: "Stock changed before checkout could reserve it." });
+        }
+        await client.query("INSERT INTO commerce_stock_reservations (order_id,product_id,quantity,expires_at) VALUES ($1,$2,$3,$4)", [orderId,item.product.id,item.quantity,orderExpiresAt]);
       }
       await client.query("COMMIT");
     } catch (error) {
@@ -906,7 +967,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
     const customerEmail = String(req.user.email || "").trim().slice(0, 254);
     const redirectUrl = String(env.FLW_REDIRECT_URL || "").trim();
     if (!customerEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail) || !redirectUrl) {
-      await pool.query("UPDATE commerce_orders SET status='failed', updated_at=CURRENT_TIMESTAMP WHERE id=$1 AND status='pending'", [orderId]);
+      await releaseOrderReservations(pool, orderId, "failed");
       return res.status(503).json({ success: false, code: "CHECKOUT_CONFIGURATION_INCOMPLETE", error: "A verified customer email and FLW_REDIRECT_URL are required for hosted checkout." });
     }
     try {
@@ -920,19 +981,21 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
           redirect_url: redirectUrl,
           customer: { email: customerEmail },
           customizations: { title: "Nkwasibwe Market", description: "Order " + orderId },
+          configuration: { session_duration: 30, max_retry_attempt: 3 },
+          link_expiration: new Date(orderExpiresAt).toISOString(),
           meta: { order_id: String(orderId), user_id: String(req.user.id) }
         })
       });
       const payload = await response.json();
       const checkoutUrl = payload?.data?.link;
       if (!response.ok || payload?.status !== "success" || typeof checkoutUrl !== "string" || !checkoutUrl.startsWith("https://")) {
-        await pool.query("UPDATE commerce_orders SET status='failed', updated_at=CURRENT_TIMESTAMP WHERE id=$1 AND status='pending'", [orderId]);
+        await releaseOrderReservations(pool, orderId, "failed");
         return res.status(502).json({ success: false, code: "CHECKOUT_PROVIDER_FAILED", error: "Payment provider did not create a valid hosted checkout." });
       }
       await pool.query("UPDATE commerce_orders SET checkout_url=$2, updated_at=CURRENT_TIMESTAMP WHERE id=$1 AND status='pending'", [orderId, checkoutUrl]);
       return res.status(201).json({ success: true, orderId, txRef, currency, subtotalMinor, discountMinor, shippingMinor, taxMinor, taxRateBps, totalMinor, couponCode, checkoutUrl, paymentStatus: "pending" });
     } catch (error) {
-      await pool.query("UPDATE commerce_orders SET status='failed', updated_at=CURRENT_TIMESTAMP WHERE id=$1 AND status='pending'", [orderId]);
+      await releaseOrderReservations(pool, orderId, "failed");
       return res.status(502).json({ success: false, code: "CHECKOUT_PROVIDER_UNAVAILABLE", error: "Payment provider could not be reached. No payment has been confirmed." });
     }
   });
@@ -954,19 +1017,24 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
       });
       const verified = await verifiedResponse.json();
       const data = verified?.data;
-      if (!verifiedResponse.ok || verified?.status !== "success" || data?.status !== "successful" || String(data?.tx_ref) !== txRef) {
+      if (!verifiedResponse.ok || verified?.status !== "success" || !data || String(data?.tx_ref) !== txRef) {
         return res.status(400).json({ success: false, error: "Payment could not be verified with the provider.", code: "PAYMENT_NOT_VERIFIED" });
       }
-      const orderResult = await pool.query("SELECT id, status, currency, total_minor, coupon_code FROM commerce_orders WHERE tx_ref=$1", [txRef]);
+      const orderResult = await pool.query("SELECT id, status, currency, total_minor, coupon_code, expires_at FROM commerce_orders WHERE tx_ref=$1", [txRef]);
       const order = orderResult.rows[0];
       if (!order) return res.status(404).json({ success: false, error: "Order not found.", code: "ORDER_NOT_FOUND" });
       if (order.status === "paid") return res.json({ success: true, duplicate: true });
+      if (["failed","cancelled"].includes(String(data.status))) {
+        if (order.status === "pending") await releaseOrderReservations(pool,order.id,"failed");
+        return res.json({ success: true, orderId: order.id, paymentStatus: "failed" });
+      }
+      if (data.status !== "successful") return res.status(400).json({ success: false, error: "Payment is not in a final successful state.", code: "PAYMENT_NOT_SUCCESSFUL" });
       const verifiedAmount = fromProviderAmount(data.amount, data.currency);
       if (String(data.currency) !== order.currency || verifiedAmount !== Number(order.total_minor)) {
         return res.status(400).json({ success: false, error: "Payment amount or currency does not match the order.", code: "PAYMENT_MISMATCH" });
       }
       const updated = await pool.query(
-        "WITH paid_order AS (UPDATE commerce_orders SET status='paid', provider_transaction_id=$2, paid_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=$1 AND status='pending' RETURNING id,coupon_code), coupon_update AS (UPDATE commerce_coupons c SET redeemed_count=c.redeemed_count+1 FROM paid_order p WHERE c.code=p.coupon_code AND p.coupon_code IS NOT NULL RETURNING c.id) SELECT id FROM paid_order",
+        "WITH paid_order AS (UPDATE commerce_orders SET status='paid', provider_transaction_id=$2, paid_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=$1 AND status='pending' RETURNING id,coupon_code), coupon_update AS (UPDATE commerce_coupons c SET redeemed_count=c.redeemed_count+1 FROM paid_order p WHERE c.code=p.coupon_code AND p.coupon_code IS NOT NULL RETURNING c.id), reservation_release AS (DELETE FROM commerce_stock_reservations r USING paid_order p WHERE r.order_id=p.id RETURNING r.order_id) SELECT id FROM paid_order",
         [order.id, String(transactionId)]
       );
       if (!updated.rows.length) return res.status(409).json({ success: false, error: "Order is no longer pending.", code: "ORDER_STATE_CONFLICT" });
@@ -979,4 +1047,4 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
   return router;
 }
 
-module.exports = { MAX_ITEMS, MAX_QUANTITY, CURRENCIES, ensureCommerceSchema, createCommerceRouter, toProviderAmount, fromProviderAmount, calculateCouponDiscount, getShippingRateMinor, getTaxRateBps, calculateTaxMinor };
+module.exports = { MAX_ITEMS, MAX_QUANTITY, CURRENCIES, ensureCommerceSchema, createCommerceRouter, toProviderAmount, fromProviderAmount, calculateCouponDiscount, getShippingRateMinor, getTaxRateBps, calculateTaxMinor, releaseOrderReservations, releaseExpiredReservations };
