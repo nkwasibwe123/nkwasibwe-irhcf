@@ -886,4 +886,6 @@ test("marketplace checkout sends a persistent idempotency key and trusts only se
   assert.match(routes,/CREATE UNIQUE INDEX IF NOT EXISTS commerce_orders_user_idempotency_unique/);
   assert.match(routes,/IDEMPOTENCY_KEY_REUSED/);
   assert.match(routes,/IDEMPOTENCY_KEY_REQUIRED/);
+  const server=fs.readFileSync(path.join(root,"backend","server.js"),"utf8");
+  assert.match(server,/"Idempotency-Key"/);
 });
