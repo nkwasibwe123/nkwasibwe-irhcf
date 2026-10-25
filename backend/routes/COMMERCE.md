@@ -12,6 +12,8 @@ The commerce API is mounted at `/api/commerce`.
 - `PATCH /api/commerce/seller/order-items/:itemId/fulfillment` — update fulfillment for a seller-owned paid order item using allowed status transitions.
 - `POST /api/commerce/products` — create a product; requires a configured administrator or an approved seller. Seller-created products are owned by that seller account.
 - `PATCH /api/commerce/products/:productId` — update a product; administrators can manage all products, while sellers can manage only products they own.
+- `PUT /api/commerce/products/:productId/image` — upload a JPEG, PNG or WebP product image (max 2 MiB), with byte-signature verification and product ownership enforcement.
+- `GET /api/commerce/products/:productId/image` — deliver the stored public image for an active product from an approved seller or the platform.
 - `GET /api/commerce/cart` — read the signed-in user's persisted cart.
 - `GET /api/commerce/addresses`, `POST /api/commerce/addresses`, `PUT /api/commerce/addresses/:addressId/default`, `DELETE /api/commerce/addresses/:addressId` — private account-owned delivery address book.
 - `GET /api/commerce/orders/:orderId` — order details and line items; the order must belong to the signed-in account.
@@ -53,3 +55,8 @@ Set the Flutterwave webhook destination to `https://nkwasibwe-irhcf.onrender.com
 - Physical-product quotes and checkout fail closed if no rate exists for the selected country and currency. Digital/non-shipping carts use zero shipping.
 - `COMMERCE_TAX_BPS` is an integer tax rate in basis points (`1000` = 10%). It defaults to zero; the business owner must configure a legally appropriate rate with a qualified tax adviser before real sales. Tax is calculated on subtotal minus coupon discount plus shipping.
 - Order records keep subtotal, discount, shipping, tax, tax rate and charged total separately so the buyer can inspect the breakdown.
+
+
+## Product image storage
+
+Product images are currently stored in PostgreSQL as `BYTEA` blobs, limited to 2 MiB each and JPEG/PNG/WebP only. This keeps the first version self-contained without a paid image host, but increases database size and backup time; for a high-volume marketplace, migrate images to object storage with signed upload URLs and CDN delivery.
