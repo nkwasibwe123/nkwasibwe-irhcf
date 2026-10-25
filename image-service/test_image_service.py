@@ -7,6 +7,7 @@ from io import BytesIO
 from unittest.mock import patch
 
 from PIL import Image
+from fastapi import HTTPException
 
 import app as image_app
 
