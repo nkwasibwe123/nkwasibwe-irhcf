@@ -9,6 +9,19 @@ const CURRENCIES = new Set(["RWF", "USD", "EUR", "GBP", "UGX", "KES", "TZS", "NG
 
 async function ensureCommerceSchema(pool) {
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS commerce_sellers (
+      user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      shop_name TEXT NOT NULL CHECK (length(trim(shop_name)) BETWEEN 2 AND 120),
+      description TEXT NOT NULL DEFAULT '' CHECK (length(description) <= 3000),
+      contact_email TEXT NOT NULL,
+      contact_phone TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected','suspended')),
+      reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      reviewed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_commerce_sellers_status ON commerce_sellers(status, created_at DESC);
     CREATE TABLE IF NOT EXISTS commerce_products (
       id BIGSERIAL PRIMARY KEY,
       name TEXT NOT NULL CHECK (length(trim(name)) BETWEEN 1 AND 180),
@@ -21,11 +34,14 @@ async function ensureCommerceSchema(pool) {
       image_url TEXT,
       category TEXT NOT NULL DEFAULT 'General' CHECK (length(trim(category)) BETWEEN 1 AND 80),
       requires_shipping BOOLEAN NOT NULL DEFAULT TRUE,
+      seller_user_id INTEGER REFERENCES commerce_sellers(user_id) ON DELETE SET NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
     ALTER TABLE commerce_products ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'General';
     ALTER TABLE commerce_products ADD COLUMN IF NOT EXISTS requires_shipping BOOLEAN NOT NULL DEFAULT TRUE;
+    ALTER TABLE commerce_products ADD COLUMN IF NOT EXISTS seller_user_id INTEGER REFERENCES commerce_sellers(user_id) ON DELETE SET NULL;
+    CREATE INDEX IF NOT EXISTS idx_commerce_products_seller ON commerce_products(seller_user_id, active, id);
     CREATE INDEX IF NOT EXISTS idx_commerce_products_active ON commerce_products(active, id);
     CREATE TABLE IF NOT EXISTS commerce_wishlist_items (
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -86,8 +102,13 @@ async function ensureCommerceSchema(pool) {
       product_name TEXT NOT NULL,
       quantity INTEGER NOT NULL CHECK (quantity BETWEEN 1 AND 99),
       unit_price_minor BIGINT NOT NULL CHECK (unit_price_minor >= 0),
-      line_total_minor BIGINT NOT NULL CHECK (line_total_minor >= 0)
+      line_total_minor BIGINT NOT NULL CHECK (line_total_minor >= 0),
+      seller_user_id INTEGER REFERENCES commerce_sellers(user_id) ON DELETE SET NULL,
+      fulfillment_status TEXT NOT NULL DEFAULT 'pending' CHECK (fulfillment_status IN ('pending','processing','shipped','delivered','cancelled'))
     );
+    ALTER TABLE commerce_order_items ADD COLUMN IF NOT EXISTS seller_user_id INTEGER REFERENCES commerce_sellers(user_id) ON DELETE SET NULL;
+    ALTER TABLE commerce_order_items ADD COLUMN IF NOT EXISTS fulfillment_status TEXT NOT NULL DEFAULT 'pending';
+    CREATE INDEX IF NOT EXISTS idx_commerce_order_items_seller ON commerce_order_items(seller_user_id, fulfillment_status, id);
     CREATE INDEX IF NOT EXISTS idx_commerce_order_items_order ON commerce_order_items(order_id);
     CREATE TABLE IF NOT EXISTS commerce_cart_items (
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -118,20 +139,126 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
   if (typeof authenticateToken !== "function") throw new Error("Commerce router requires authentication middleware.");
   const router = express.Router();
 
+  function isCommerceAdmin(req) {
+    const allowed = String(env.COMMERCE_ADMIN_USER_IDS || "").split(",").map(value => value.trim()).filter(Boolean);
+    return allowed.includes(String(req.user?.id ?? ""));
+  }
   function requireCommerceAdmin(req, res, next) {
-    const allowed = String(env.COMMERCE_ADMIN_USER_IDS || "")
-      .split(",").map(value => value.trim()).filter(Boolean);
-    if (!allowed.includes(String(req.user?.id ?? ""))) {
-      return res.status(403).json({
-        success: false,
-        error: "Commerce product management is restricted to configured administrators.",
-        code: "COMMERCE_ADMIN_REQUIRED"
-      });
-    }
+    if (!isCommerceAdmin(req)) return res.status(403).json({
+      success: false,
+      error: "Commerce administration is restricted to configured administrators.",
+      code: "COMMERCE_ADMIN_REQUIRED"
+    });
     next();
   }
+  async function requireProductManager(req, res, next) {
+    if (isCommerceAdmin(req)) return next();
+    try {
+      const result = await pool.query("SELECT status FROM commerce_sellers WHERE user_id=$1 LIMIT 1", [req.user.id]);
+      if (result.rows[0]?.status !== "approved") return res.status(403).json({
+        success: false,
+        error: "Apply to become a seller and wait for approval before managing products.",
+        code: "APPROVED_SELLER_REQUIRED"
+      });
+      return next();
+    } catch (error) {
+      return res.status(500).json({ success: false, error: "Could not verify seller access.", code: "SELLER_ACCESS_CHECK_FAILED" });
+    }
+  }
 
-  router.post("/products", authenticateToken, requireCommerceAdmin, async (req, res) => {
+  router.get("/seller/profile", authenticateToken, async (req, res) => {
+    try {
+      const result = await pool.query("SELECT user_id, shop_name, description, contact_email, contact_phone, status, created_at, updated_at FROM commerce_sellers WHERE user_id=$1 LIMIT 1", [req.user.id]);
+      return res.json({ success: true, seller: result.rows[0] || null });
+    } catch (error) {
+      return res.status(500).json({ success: false, error: "Could not load seller profile.", code: "SELLER_PROFILE_LOAD_FAILED" });
+    }
+  });
+
+  router.post("/seller/apply", authenticateToken, async (req, res) => {
+    const shopName = String(req.body?.shopName || "").trim().slice(0, 120);
+    const description = String(req.body?.description || "").trim().slice(0, 3000);
+    const contactEmail = String(req.body?.contactEmail || req.user.email || "").trim().slice(0, 254);
+    const contactPhone = String(req.body?.contactPhone || "").trim().slice(0, 40);
+    if (shopName.length < 2 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail) || contactPhone.length < 3) {
+      return res.status(400).json({ success: false, error: "Shop name, valid contact email and phone are required.", code: "SELLER_APPLICATION_INVALID" });
+    }
+    try {
+      const result = await pool.query(
+        "INSERT INTO commerce_sellers (user_id,shop_name,description,contact_email,contact_phone,status) VALUES ($1,$2,$3,$4,$5,'pending') ON CONFLICT (user_id) DO UPDATE SET shop_name=EXCLUDED.shop_name,description=EXCLUDED.description,contact_email=EXCLUDED.contact_email,contact_phone=EXCLUDED.contact_phone,status=CASE WHEN commerce_sellers.status='approved' THEN 'approved' ELSE 'pending' END,updated_at=CURRENT_TIMESTAMP RETURNING user_id,shop_name,description,contact_email,contact_phone,status,created_at,updated_at",
+        [req.user.id,shopName,description,contactEmail,contactPhone]
+      );
+      return res.status(201).json({ success: true, seller: result.rows[0] });
+    } catch (error) {
+      return res.status(500).json({ success: false, error: "Could not submit seller application.", code: "SELLER_APPLICATION_FAILED" });
+    }
+  });
+
+  router.get("/seller/applications", authenticateToken, requireCommerceAdmin, async (req, res) => {
+    try {
+      const result = await pool.query("SELECT user_id,shop_name,description,contact_email,contact_phone,status,created_at FROM commerce_sellers ORDER BY CASE status WHEN 'pending' THEN 0 ELSE 1 END, created_at DESC LIMIT 200");
+      return res.json({ success: true, applications: result.rows });
+    } catch (error) {
+      return res.status(500).json({ success: false, error: "Could not load seller applications.", code: "SELLER_APPLICATIONS_LOAD_FAILED" });
+    }
+  });
+
+  router.patch("/seller/applications/:userId", authenticateToken, requireCommerceAdmin, async (req, res) => {
+    const userId = safeInteger(req.params.userId, 1, Number.MAX_SAFE_INTEGER);
+    const status = String(req.body?.status || "");
+    if (!userId || !["approved","rejected","suspended"].includes(status)) return res.status(400).json({ success: false, error: "A valid seller ID and status are required.", code: "SELLER_REVIEW_INPUT_INVALID" });
+    try {
+      const result = await pool.query("UPDATE commerce_sellers SET status=$2,reviewed_by=$3,reviewed_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE user_id=$1 RETURNING user_id,shop_name,status,reviewed_at", [userId,status,req.user.id]);
+      if (!result.rows.length) return res.status(404).json({ success: false, error: "Seller application not found.", code: "SELLER_NOT_FOUND" });
+      return res.json({ success: true, seller: result.rows[0] });
+    } catch (error) {
+      return res.status(500).json({ success: false, error: "Could not review seller application.", code: "SELLER_REVIEW_FAILED" });
+    }
+  });
+
+  router.get("/seller/products", authenticateToken, async (req, res) => {
+    try {
+      const seller = await pool.query("SELECT status FROM commerce_sellers WHERE user_id=$1 LIMIT 1", [req.user.id]);
+      if (seller.rows[0]?.status !== "approved" && !isCommerceAdmin(req)) return res.status(403).json({ success: false, error: "Only approved sellers can manage seller products.", code: "APPROVED_SELLER_REQUIRED" });
+      const result = await pool.query("SELECT id,name,description,sku,price_minor,currency,stock_quantity,image_url,category,requires_shipping,active,created_at,updated_at FROM commerce_products WHERE seller_user_id=$1 ORDER BY created_at DESC LIMIT 200", [req.user.id]);
+      return res.json({ success: true, products: result.rows });
+    } catch (error) {
+      return res.status(500).json({ success: false, error: "Could not load seller products.", code: "SELLER_PRODUCTS_LOAD_FAILED" });
+    }
+  });
+
+  router.get("/seller/orders", authenticateToken, async (req, res) => {
+    try {
+      const seller = await pool.query("SELECT status FROM commerce_sellers WHERE user_id=$1 LIMIT 1", [req.user.id]);
+      if (seller.rows[0]?.status !== "approved") return res.status(403).json({ success: false, error: "Only approved sellers can view seller orders.", code: "APPROVED_SELLER_REQUIRED" });
+      const result = await pool.query("SELECT oi.id AS item_id, o.id AS order_id, o.status AS payment_status, o.paid_at, o.currency, oi.product_name, oi.quantity, oi.line_total_minor, oi.fulfillment_status, o.shipping_address FROM commerce_order_items oi JOIN commerce_orders o ON o.id=oi.order_id WHERE oi.seller_user_id=$1 AND o.status='paid' ORDER BY o.paid_at DESC LIMIT 200", [req.user.id]);
+      return res.json({ success: true, orders: result.rows });
+    } catch (error) {
+      return res.status(500).json({ success: false, error: "Could not load seller orders.", code: "SELLER_ORDERS_LOAD_FAILED" });
+    }
+  });
+
+  router.patch("/seller/order-items/:itemId/fulfillment", authenticateToken, async (req, res) => {
+    const itemId = safeInteger(req.params.itemId, 1, Number.MAX_SAFE_INTEGER);
+    const nextStatus = String(req.body?.status || "");
+    if (!itemId || !["processing","shipped","delivered","cancelled"].includes(nextStatus)) return res.status(400).json({ success: false, error: "A valid item ID and fulfillment status are required.", code: "FULFILLMENT_INPUT_INVALID" });
+    try {
+      const seller = await pool.query("SELECT status FROM commerce_sellers WHERE user_id=$1 LIMIT 1", [req.user.id]);
+      if (seller.rows[0]?.status !== "approved") return res.status(403).json({ success: false, error: "Only approved sellers can update fulfillment.", code: "APPROVED_SELLER_REQUIRED" });
+      const item = await pool.query("SELECT oi.fulfillment_status, o.status AS payment_status FROM commerce_order_items oi JOIN commerce_orders o ON o.id=oi.order_id WHERE oi.id=$1 AND oi.seller_user_id=$2 LIMIT 1", [itemId,req.user.id]);
+      if (!item.rows.length) return res.status(404).json({ success: false, error: "Seller order item not found.", code: "SELLER_ORDER_ITEM_NOT_FOUND" });
+      if (item.rows[0].payment_status !== "paid") return res.status(409).json({ success: false, error: "Only paid orders can be fulfilled.", code: "ORDER_NOT_PAID" });
+      const current = item.rows[0].fulfillment_status;
+      const allowed = ({ pending:["processing","cancelled"], processing:["shipped","cancelled"], shipped:["delivered"], delivered:[], cancelled:[] })[current] || [];
+      if (!allowed.includes(nextStatus)) return res.status(409).json({ success: false, error: "That fulfillment status transition is not allowed.", code: "FULFILLMENT_TRANSITION_INVALID" });
+      const updated = await pool.query("UPDATE commerce_order_items SET fulfillment_status=$2 WHERE id=$1 AND seller_user_id=$3 RETURNING id,fulfillment_status", [itemId,nextStatus,req.user.id]);
+      return res.json({ success: true, item: updated.rows[0] });
+    } catch (error) {
+      return res.status(500).json({ success: false, error: "Could not update fulfillment.", code: "FULFILLMENT_UPDATE_FAILED" });
+    }
+  });
+
+  router.post("/products", authenticateToken, requireProductManager, async (req, res) => {
     const name = String(req.body?.name || "").trim().slice(0, 180);
     const description = String(req.body?.description || "").trim().slice(0, 5000);
     const sku = req.body?.sku == null ? null : String(req.body.sku).trim().slice(0, 80);
@@ -141,6 +268,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
     const imageUrl = req.body?.imageUrl == null || req.body.imageUrl === "" ? null : String(req.body.imageUrl).trim();
     const category = String(req.body?.category || "General").trim().slice(0, 80) || "General";
     const requiresShipping = req.body?.requiresShipping !== false;
+    const sellerUserId = isCommerceAdmin(req) ? null : req.user.id;
     if (!name || !priceMinor || stockQuantity === null || !CURRENCIES.has(currency)) {
       return res.status(400).json({ success: false, error: "Name, positive priceMinor, supported currency and valid stockQuantity are required.", code: "PRODUCT_INPUT_INVALID" });
     }
@@ -150,8 +278,8 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
     }
     try {
       const result = await pool.query(
-        "INSERT INTO commerce_products (name, description, sku, price_minor, currency, stock_quantity, image_url, category, requires_shipping, active) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,TRUE) RETURNING id, name, description, sku, price_minor, currency, stock_quantity, image_url, category, requires_shipping, active, created_at",
-        [name, description, sku || null, priceMinor, currency, stockQuantity, imageUrl, category, requiresShipping]
+        "INSERT INTO commerce_products (name, description, sku, price_minor, currency, stock_quantity, image_url, category, requires_shipping, seller_user_id, active) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,TRUE) RETURNING id, name, description, sku, price_minor, currency, stock_quantity, image_url, category, requires_shipping, seller_user_id, active, created_at",
+        [name, description, sku || null, priceMinor, currency, stockQuantity, imageUrl, category, requiresShipping, sellerUserId]
       );
       return res.status(201).json({ success: true, product: result.rows[0] });
     } catch (error) {
@@ -160,7 +288,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
     }
   });
 
-  router.patch("/products/:productId", authenticateToken, requireCommerceAdmin, async (req, res) => {
+  router.patch("/products/:productId", authenticateToken, requireProductManager, async (req, res) => {
     const productId = safeInteger(req.params.productId, 1, Number.MAX_SAFE_INTEGER);
     if (!productId) return res.status(400).json({ success: false, error: "Invalid product ID.", code: "PRODUCT_ID_INVALID" });
     const fields = [];
@@ -212,9 +340,13 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
     }
     if (!fields.length) return res.status(400).json({ success: false, error: "No editable product fields were provided.", code: "PRODUCT_UPDATE_EMPTY" });
     values.push(productId);
+    const productIdParam = values.length;
+    values.push(isCommerceAdmin(req), req.user.id);
+    const adminParam = values.length - 1;
+    const userIdParam = values.length;
     try {
       const result = await pool.query(
-        "UPDATE commerce_products SET " + fields.join(", ") + ", updated_at=CURRENT_TIMESTAMP WHERE id=$" + values.length + " RETURNING id, name, description, sku, price_minor, currency, stock_quantity, image_url, category, requires_shipping, active, updated_at",
+        "UPDATE commerce_products SET " + fields.join(", ") + ", updated_at=CURRENT_TIMESTAMP WHERE id=$" + productIdParam + " AND ($" + adminParam + "::boolean OR seller_user_id=$" + userIdParam + ") RETURNING id, name, description, sku, price_minor, currency, stock_quantity, image_url, category, requires_shipping, seller_user_id, active, updated_at",
         values
       );
       if (!result.rows.length) return res.status(404).json({ success: false, error: "Product not found.", code: "PRODUCT_NOT_FOUND" });
@@ -233,7 +365,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
       const sort = String(req.query.sort || "newest");
       const orderBy = ({ newest: "p.id DESC", price_asc: "p.price_minor ASC, p.id DESC", price_desc: "p.price_minor DESC, p.id DESC", name_asc: "p.name ASC, p.id DESC", rating: "rating_average DESC, p.id DESC" })[sort] || "p.id DESC";
       const result = await pool.query(
-        "SELECT p.id, p.name, p.description, p.sku, p.price_minor, p.currency, p.stock_quantity, p.image_url, p.category, p.requires_shipping, COALESCE(rv.rating_average, 0) AS rating_average, COALESCE(rv.review_count, 0) AS review_count FROM commerce_products p LEFT JOIN (SELECT product_id, ROUND(AVG(rating)::numeric, 1) AS rating_average, COUNT(*)::int AS review_count FROM commerce_product_reviews GROUP BY product_id) rv ON rv.product_id=p.id WHERE p.active=TRUE AND ($1='' OR p.name ILIKE '%' || $1 || '%' OR p.description ILIKE '%' || $1 || '%' OR p.sku ILIKE '%' || $1 || '%') AND ($2='' OR p.category=$2) ORDER BY " + orderBy + " LIMIT $3",
+        "SELECT p.id, p.name, p.description, p.sku, p.price_minor, p.currency, p.stock_quantity, p.image_url, p.category, p.requires_shipping, COALESCE(s.shop_name, 'Nkwasibwe Market') AS seller_name, COALESCE(rv.rating_average, 0) AS rating_average, COALESCE(rv.review_count, 0) AS review_count FROM commerce_products p LEFT JOIN commerce_sellers s ON s.user_id=p.seller_user_id AND s.status='approved' LEFT JOIN (SELECT product_id, ROUND(AVG(rating)::numeric, 1) AS rating_average, COUNT(*)::int AS review_count FROM commerce_product_reviews GROUP BY product_id) rv ON rv.product_id=p.id WHERE p.active=TRUE AND ($1='' OR p.name ILIKE '%' || $1 || '%' OR p.description ILIKE '%' || $1 || '%' OR p.sku ILIKE '%' || $1 || '%') AND ($2='' OR p.category=$2) ORDER BY " + orderBy + " LIMIT $3",
         [search, category, limit]
       );
       const categories = await pool.query("SELECT DISTINCT category FROM commerce_products WHERE active=TRUE ORDER BY category LIMIT 100");
@@ -419,7 +551,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
     try {
       const result = await pool.query("SELECT id, tx_ref, status, currency, total_minor, provider, provider_transaction_id, checkout_url, shipping_address, created_at, updated_at, paid_at FROM commerce_orders WHERE id=$1 AND user_id=$2 LIMIT 1", [orderId, req.user.id]);
       if (!result.rows.length) return res.status(404).json({ success: false, error: "Order not found.", code: "ORDER_NOT_FOUND" });
-      const items = await pool.query("SELECT product_id, product_name, quantity, unit_price_minor, line_total_minor FROM commerce_order_items WHERE order_id=$1 ORDER BY id", [orderId]);
+      const items = await pool.query("SELECT product_id, product_name, quantity, unit_price_minor, line_total_minor, fulfillment_status FROM commerce_order_items WHERE order_id=$1 ORDER BY id", [orderId]);
       return res.json({ success: true, order: result.rows[0], items: items.rows });
     } catch (error) {
       return res.status(500).json({ success: false, error: "Could not load order details.", code: "ORDER_DETAILS_FAILED" });
@@ -460,7 +592,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
       await client.query("BEGIN");
       const ids = [...quantities.keys()];
       const productResult = await client.query(
-        "SELECT id, name, price_minor, currency, stock_quantity, requires_shipping FROM commerce_products WHERE active = TRUE AND id = ANY($1::bigint[]) FOR UPDATE",
+        "SELECT id, name, price_minor, currency, stock_quantity, requires_shipping, seller_user_id FROM commerce_products WHERE active = TRUE AND id = ANY($1::bigint[]) FOR UPDATE",
         [ids]
       );
       if (productResult.rows.length !== ids.length) {
@@ -521,8 +653,8 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
       orderId = order.rows[0].id;
       for (const item of items) {
         await client.query(
-          "INSERT INTO commerce_order_items (order_id, product_id, product_name, quantity, unit_price_minor, line_total_minor) VALUES ($1,$2,$3,$4,$5,$6)",
-          [orderId, item.product.id, item.product.name, item.quantity, item.unit, item.line]
+          "INSERT INTO commerce_order_items (order_id, product_id, product_name, quantity, unit_price_minor, line_total_minor, seller_user_id) VALUES ($1,$2,$3,$4,$5,$6,$7)",
+          [orderId, item.product.id, item.product.name, item.quantity, item.unit, item.line, item.product.seller_user_id || null]
         );
       }
       await client.query("COMMIT");

@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Nkwasibwe Market — browse products, manage your cart and securely check out.">
   <title>Nkwasibwe Market</title>
-  <link rel="stylesheet" href="market.css?v=3">
-  <script defer src="market.js?v=3"></script>
+  <link rel="stylesheet" href="market.css?v=4">
+  <script defer src="market.js?v=4"></script>
 </head>
 <body>
   <header class="market-header">
@@ -40,9 +40,11 @@
       <div class="section-heading"><div><h2>My orders & payments</h2><p>Orders and payment status are visible only to the signed-in account. Nkwasibwe does not store card numbers.</p></div><button id="ordersButton" type="button">Load orders</button></div>
       <div id="ordersList" class="orders-list"><p class="muted">Sign in to view your orders.</p></div>
     </section>
+    <section class="seller-section"><div class="section-heading"><div><h2>Sell on Nkwasibwe Market</h2><p>Apply for a shop. Products and paid orders are assigned to the approved seller account.</p></div><button id="sellerRefreshButton" type="button">Refresh seller workspace</button></div><div id="sellerStatus" class="notice" role="status">Loading seller status…</div><form id="sellerApplicationForm" class="seller-application-form"><label>Shop name<input name="shopName" maxlength="120" required></label><label>Shop description<textarea name="description" maxlength="3000" rows="3"></textarea></label><div class="form-row"><label>Contact email<input name="contactEmail" type="email" maxlength="254" required></label><label>Contact phone<input name="contactPhone" maxlength="40" required></label></div><button class="primary-button" type="submit">Submit / update seller application</button><p id="sellerMessage" class="muted" role="status"></p></form><div class="seller-dashboard-grid"><div><div class="section-heading"><h3>My products</h3><button id="sellerProductsButton" type="button">Refresh products</button></div><div id="sellerProductsList" class="seller-list"><p class="muted">Sign in and get seller approval to manage products.</p></div></div><div><div class="section-heading"><h3>My paid orders</h3><button id="sellerOrdersButton" type="button">Refresh orders</button></div><div id="sellerOrdersList" class="seller-list"><p class="muted">Seller orders appear here after approval and confirmed payments.</p></div></div></div></section>
     <details class="admin-section">
-      <summary>Product management (authorized administrators only)</summary>
-      <p class="muted">This form works only for user IDs configured in the server's COMMERCE_ADMIN_USER_IDS setting.</p>
+      <summary>Product & seller administration (authorized administrators / approved sellers)</summary>
+      <p class="muted">Approved sellers can manage their own products. Platform administrators are configured in COMMERCE_ADMIN_USER_IDS.</p>
+      <div class="admin-applications"><div class="section-heading"><h3>Seller applications</h3><button id="sellerApplicationsButton" type="button">Load applications (admin)</button></div><div id="sellerApplicationsList" class="seller-list"><p class="muted">Only configured administrators can review seller applications.</p></div></div>
       <form id="productForm">
         <label>Product name<input name="name" maxlength="180" required></label>
         <label>Category<input name="category" maxlength="80" value="General" required placeholder="e.g. Electronics, Clothing, Home"></label><label class="checkbox-label"><input name="requiresShipping" type="checkbox" checked> Physical product (requires delivery address)</label>
