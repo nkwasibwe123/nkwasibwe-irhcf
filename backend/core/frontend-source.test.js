@@ -504,3 +504,18 @@ test("verified project artifacts expose a revision action that carries forward t
   assert.match(engine, /===== EXISTING FILE: /);
 });
 
+
+test("assistant answers expose action controls and long-form length specifications", () => {
+  const app = fs.readFileSync(path.join(__dirname, "..", "..", "app.js"), "utf8");
+  const css = fs.readFileSync(path.join(__dirname, "..", "..", "style.css"), "utf8");
+  for (const label of ["Copy", "Edit", "Read aloud", "Share", "Helpful", "Not helpful", "Dashboard"]) assert.ok(app.includes(label), "missing action: " + label);
+  assert.match(app, /navigator\.clipboard/);
+  assert.match(app, /speechSynthesis\.speak/);
+  assert.match(app, /navigator\.share/);
+  assert.match(css, /\.message-actions\s*\{/);
+  assert.match(app, /function getRequestedOutputLength\(/);
+  assert.match(app, /function buildLengthAwarePrompt\(/);
+  assert.match(app, /buildLengthAwarePrompt\(taskText\)/);
+  assert.match(app, /5000/);
+  assert.match(app, /20000/);
+});
