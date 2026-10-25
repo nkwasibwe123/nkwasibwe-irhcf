@@ -97,6 +97,7 @@ async function ensureCommerceSchema(pool) {
       shipping_minor BIGINT NOT NULL DEFAULT 0 CHECK (shipping_minor >= 0),
       tax_minor BIGINT NOT NULL DEFAULT 0 CHECK (tax_minor >= 0),
       tax_rate_bps INTEGER NOT NULL DEFAULT 0 CHECK (tax_rate_bps BETWEEN 0 AND 3000),
+      platform_fee_bps INTEGER NOT NULL DEFAULT 0 CHECK (platform_fee_bps BETWEEN 0 AND 3000),
       coupon_code TEXT,
       expires_at TIMESTAMPTZ,
       stock_released_at TIMESTAMPTZ,
@@ -114,6 +115,7 @@ async function ensureCommerceSchema(pool) {
     ALTER TABLE commerce_orders ADD COLUMN IF NOT EXISTS shipping_minor BIGINT NOT NULL DEFAULT 0;
     ALTER TABLE commerce_orders ADD COLUMN IF NOT EXISTS tax_minor BIGINT NOT NULL DEFAULT 0;
     ALTER TABLE commerce_orders ADD COLUMN IF NOT EXISTS tax_rate_bps INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE commerce_orders ADD COLUMN IF NOT EXISTS platform_fee_bps INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE commerce_orders ADD COLUMN IF NOT EXISTS coupon_code TEXT;
     ALTER TABLE commerce_orders ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
     ALTER TABLE commerce_orders ADD COLUMN IF NOT EXISTS stock_released_at TIMESTAMPTZ;
@@ -174,6 +176,34 @@ async function ensureCommerceSchema(pool) {
       PRIMARY KEY (order_id, product_id)
     );
     CREATE INDEX IF NOT EXISTS idx_commerce_stock_reservations_expiry ON commerce_stock_reservations(expires_at);
+    CREATE TABLE IF NOT EXISTS commerce_seller_ledger (
+      id BIGSERIAL PRIMARY KEY,
+      seller_user_id INTEGER NOT NULL REFERENCES commerce_sellers(user_id) ON DELETE RESTRICT,
+      order_id BIGINT NOT NULL REFERENCES commerce_orders(id) ON DELETE RESTRICT,
+      order_item_id BIGINT NOT NULL UNIQUE REFERENCES commerce_order_items(id) ON DELETE RESTRICT,
+      currency TEXT NOT NULL,
+      gross_minor BIGINT NOT NULL CHECK (gross_minor >= 0),
+      platform_fee_minor BIGINT NOT NULL CHECK (platform_fee_minor >= 0),
+      net_minor BIGINT NOT NULL CHECK (net_minor >= 0),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_commerce_seller_ledger_balance ON commerce_seller_ledger(seller_user_id,currency,created_at DESC);
+    CREATE TABLE IF NOT EXISTS commerce_payout_requests (
+      id BIGSERIAL PRIMARY KEY,
+      seller_user_id INTEGER NOT NULL REFERENCES commerce_sellers(user_id) ON DELETE RESTRICT,
+      amount_minor BIGINT NOT NULL CHECK (amount_minor > 0),
+      currency TEXT NOT NULL,
+      destination_reference TEXT NOT NULL CHECK (length(trim(destination_reference)) BETWEEN 3 AND 200),
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected','paid')),
+      admin_note TEXT NOT NULL DEFAULT '',
+      provider_transfer_reference TEXT,
+      reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      reviewed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_commerce_payouts_seller ON commerce_payout_requests(seller_user_id,currency,status,created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_commerce_payouts_status ON commerce_payout_requests(status,created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_commerce_order_items_order ON commerce_order_items(order_id);
     CREATE TABLE IF NOT EXISTS commerce_cart_items (
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -220,6 +250,17 @@ function getTaxRateBps(env = process.env) {
   const raw = env.COMMERCE_TAX_BPS == null || env.COMMERCE_TAX_BPS === "" ? "0" : String(env.COMMERCE_TAX_BPS);
   const value = Number(raw);
   return Number.isSafeInteger(value) && value >= 0 && value <= 3000 ? value : null;
+}
+function getPlatformFeeBps(env = process.env) {
+  const raw = env.COMMERCE_PLATFORM_FEE_BPS == null || env.COMMERCE_PLATFORM_FEE_BPS === "" ? "0" : String(env.COMMERCE_PLATFORM_FEE_BPS);
+  const value = Number(raw);
+  return Number.isSafeInteger(value) && value >= 0 && value <= 3000 ? value : null;
+}
+function calculateSellerNetMinor(grossMinor, platformFeeBps) {
+  if (!Number.isSafeInteger(grossMinor) || grossMinor < 0 || !Number.isSafeInteger(platformFeeBps) || platformFeeBps < 0 || platformFeeBps > 3000) return null;
+  const feeMinor=Number((BigInt(grossMinor)*BigInt(platformFeeBps))/10000n);
+  const netMinor=grossMinor-feeMinor;
+  return Number.isSafeInteger(feeMinor)&&Number.isSafeInteger(netMinor)&&netMinor>=0?{feeMinor,netMinor}:null;
 }
 function calculateTaxMinor(subtotalMinor, discountMinor, shippingMinor, taxRateBps) {
   const taxableMinor = subtotalMinor - discountMinor + shippingMinor;
