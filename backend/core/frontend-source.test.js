@@ -590,3 +590,21 @@ test("Nkwasibwe Market includes searchable categories, account-private favourite
   assert.match(routes, /const customerEmail = String\(req\.user\.email \|\| ""\)/);
   assert.doesNotMatch(routes, /req\.user\.email \|\| req\.body\?\.email/);
 });
+
+
+test("marketplace delivery addresses, shipping requirements and account-scoped order details are wired end to end", () => {
+  const root = path.join(__dirname, "..", "..");
+  const html = fs.readFileSync(path.join(root, "market.html"), "utf8");
+  const js = fs.readFileSync(path.join(root, "market.js"), "utf8");
+  const routes = fs.readFileSync(path.join(root, "backend", "routes", "commerce-routes.js"), "utf8");
+  for (const id of ["addressForm","addressesList","shippingAddressSelect","shippingAddressWrap","addressMessage"]) assert.ok(html.includes('id="'+id+'"'), "missing marketplace address UI: "+id);
+  assert.match(js, /async function loadAddresses\(\)/);
+  assert.match(js, /\/addresses/);
+  assert.match(js, /\/orders\/\+encodeURIComponent\(order\.id\)/);
+  assert.match(js, /addressId:\$\("shippingAddressSelect"\)\.value/);
+  assert.match(routes, /WHERE user_id=\$1 ORDER BY is_default DESC/);
+  assert.match(routes, /WHERE id=\$1 AND user_id=\$2/);
+  assert.match(routes, /SHIPPING_ADDRESS_NOT_FOUND/);
+  assert.match(routes, /shipping_address JSONB/);
+  assert.match(routes, /requires_shipping BOOLEAN NOT NULL DEFAULT TRUE/);
+});
