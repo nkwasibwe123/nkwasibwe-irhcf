@@ -244,10 +244,10 @@ test("specialist selection supports up to eight bounded agents for complex tasks
   assert.equal(selectSpecialists(team, 3, "Build a website").length, 3);
 });
 
-test("recommended specialist budget scales with team size but never exceeds eight", () => {
-  assert.equal(recommendedSpecialistCount({ count: 3 }), 5);
-  assert.equal(recommendedSpecialistCount({ count: 6 }), 6);
-  assert.equal(recommendedSpecialistCount({ count: 14 }), 8);
-  assert.equal(recommendedSpecialistCount({ specialists: [{ id: "a" }, { id: "b" }] }), 5);
-  assert.equal(recommendedSpecialistCount({ count: 14 }, { minimum: 2, maximum: 4 }), 4);
+test("recommended specialist budget reflects available agents and never exceeds eight", () => {
+  assert.equal(recommendedSpecialistCount({ count: 3 }), 0);
+  assert.equal(recommendedSpecialistCount({ count: 6, specialists: Array.from({ length: 6 }, (_, i) => ({ id: "a" + i })) }), 6);
+  assert.equal(recommendedSpecialistCount({ count: 14, specialists: Array.from({ length: 14 }, (_, i) => ({ id: "a" + i })) }), 8);
+  assert.equal(recommendedSpecialistCount({ specialists: [{ id: "a" }, { id: "b" }] }), 2);
+  assert.equal(recommendedSpecialistCount({ count: 14, specialists: Array.from({ length: 14 }, (_, i) => ({ id: "a" + i })) }, { minimum: 2, maximum: 4 }), 4);
 });
