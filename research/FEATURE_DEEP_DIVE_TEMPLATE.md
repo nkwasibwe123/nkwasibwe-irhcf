@@ -13,7 +13,7 @@ Use this before implementation and update it as the feature changes. A feature i
 - Dependencies and downstream features:
 
 ## 2. Research requirement (minimum six distinct relevant source sites)
-Record at least six current sources from distinct websites/products. Count distinct sites, not the number of URLs on one provider's documentation domain. Prefer official documentation for API/permission claims. Prefer official documentation for API/permission claims. Do not copy feature names without testing feasibility.
+Record at least six current sources from distinct websites/products. Count distinct sites, not the number of URLs on one provider's documentation domain. Prefer official documentation for API and permission claims. Do not copy feature names without testing feasibility.
 
 | Source/product | Exact page or evidence | Capability pattern | Limitations/cost/permissions | What IRHCF adopts or rejects |
 |---|---|---|---|---|
