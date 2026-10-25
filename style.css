@@ -2790,3 +2790,12 @@ body { background: #fff; color: var(--text); }
 .irhcf-artifact-preview-dialog iframe{display:block;width:100%;height:calc(100% - 58px);border:0;background:#fff}
 .task-preview-button{background:#176b54!important;color:#fff!important;border-color:#176b54!important}
 @media(max-width:600px){.irhcf-artifact-preview-dialog{width:100vw;max-width:100vw;height:92dvh;max-height:92dvh;border-radius:12px}.irhcf-preview-toolbar{padding:10px;flex-wrap:wrap}}
+
+/* Answer action bar: compact, touch-friendly and responsive. */
+.message-actions { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin:8px 0 2px; max-width:100%; }
+.message-action-button { appearance:none; border:1px solid var(--border-light); border-radius:8px; padding:6px 9px; background:transparent; color:var(--text-secondary); font:inherit; font-size:12px; line-height:1.25; cursor:pointer; min-height:32px; touch-action:manipulation; }
+.message-action-button:hover, .message-action-button:focus-visible { color:var(--text); border-color:var(--primary); outline:2px solid transparent; }
+.message-action-button.selected, .message-action-button[aria-pressed="true"] { color:var(--success); border-color:var(--success); background:rgba(50,196,141,.09); }
+.message-save-edit[hidden] { display:none; }
+.message.ai[contenteditable="true"] { outline:2px solid var(--primary); border-radius:8px; padding:8px; white-space:pre-wrap; }
+@media (max-width:600px) { .message-actions { gap:5px; } .message-action-button { min-height:36px; padding:7px 8px; font-size:12px; } }
