@@ -15,17 +15,73 @@ function photoError(message, code) {
   return error;
 }
 
+function validatePhotoDimensions(width, height) {
+  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) ||
+      width < 1 || height < 1 || width > 8192 || height > 8192 ||
+      width * height > 40_000_000) {
+    throw photoError("Photo dimensions are invalid or exceed the 40-megapixel safety limit.", "PHOTO_IMAGE_DIMENSIONS_INVALID");
+  }
+  return { width, height };
+}
+
+function jpegDimensions(buffer) {
+  let offset = 2;
+  const startOfFrame = new Set([0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf]);
+  while (offset + 4 < buffer.length) {
+    if (buffer[offset] !== 0xff) { offset++; continue; }
+    while (offset < buffer.length && buffer[offset] === 0xff) offset++;
+    if (offset >= buffer.length) break;
+    const marker = buffer[offset++];
+    if (marker === 0xd8 || marker === 0xd9 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) continue;
+    if (marker === 0xda) break;
+    if (offset + 2 > buffer.length) break;
+    const length = buffer.readUInt16BE(offset);
+    if (length < 2 || offset + length > buffer.length) break;
+    if (startOfFrame.has(marker)) {
+      if (length < 7) break;
+      const height = buffer.readUInt16BE(offset + 3);
+      const width = buffer.readUInt16BE(offset + 5);
+      return validatePhotoDimensions(width, height);
+    }
+    offset += length;
+  }
+  throw photoError("Could not read JPEG dimensions.", "PHOTO_IMAGE_DIMENSIONS_INVALID");
+}
+
+function webpDimensions(buffer) {
+  const chunk = buffer.toString("ascii", 12, 16);
+  if (chunk === "VP8X" && buffer.length >= 30) {
+    return validatePhotoDimensions(
+      1 + buffer[24] + (buffer[25] << 8) + (buffer[26] << 16),
+      1 + buffer[27] + (buffer[28] << 8) + (buffer[29] << 16)
+    );
+  }
+  if (chunk === "VP8L" && buffer.length >= 25 && buffer[20] === 0x2f) {
+    const b1 = buffer[21], b2 = buffer[22], b3 = buffer[23], b4 = buffer[24];
+    return validatePhotoDimensions(
+      1 + (b1 | ((b2 & 0x3f) << 8)),
+      1 + ((b2 >> 6) | (b3 << 2) | ((b4 & 0x0f) << 10))
+    );
+  }
+  if (chunk === "VP8 " && buffer.length >= 30 &&
+      buffer[23] === 0x9d && buffer[24] === 0x01 && buffer[25] === 0x2a) {
+    return validatePhotoDimensions(buffer.readUInt16LE(26) & 0x3fff, buffer.readUInt16LE(28) & 0x3fff);
+  }
+  throw photoError("Could not read WEBP dimensions.", "PHOTO_IMAGE_DIMENSIONS_INVALID");
+}
+
 function detectPhotoImageType(mimeType, buffer) {
   const type = String(mimeType || "").toLowerCase();
   if (!Buffer.isBuffer(buffer) || !buffer.length) {
     throw photoError("Choose a non-empty photo.", "PHOTO_IMAGE_INVALID");
   }
   const isJpeg = buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
-  const isPng = buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+  const isPng = buffer.length >= 24 && buffer.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) &&
+    buffer.toString("ascii", 12, 16) === "IHDR";
   const isWebp = buffer.length >= 12 && buffer.toString("ascii", 0, 4) === "RIFF" && buffer.toString("ascii", 8, 12) === "WEBP";
-  if (type === "image/jpeg" && isJpeg) return "jpg";
-  if (type === "image/png" && isPng) return "png";
-  if (type === "image/webp" && isWebp) return "webp";
+  if (type === "image/jpeg" && isJpeg) { jpegDimensions(buffer); return "jpg"; }
+  if (type === "image/png" && isPng) { validatePhotoDimensions(buffer.readUInt32BE(16), buffer.readUInt32BE(20)); return "png"; }
+  if (type === "image/webp" && isWebp) { webpDimensions(buffer); return "webp"; }
   throw photoError("The declared photo type does not match a supported JPEG, PNG or WEBP file.", "PHOTO_IMAGE_INVALID");
 }
 
