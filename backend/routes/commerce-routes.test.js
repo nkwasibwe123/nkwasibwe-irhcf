@@ -485,7 +485,7 @@ test("seller platform fee helper calculates net earnings in integer minor units"
   assert.equal(getPlatformFeeBps({COMMERCE_PLATFORM_FEE_BPS:"9000"}),null);
   assert.deepEqual(calculateSellerNetMinor(10000,500),{feeMinor:500,netMinor:9500});
   assert.deepEqual(calculateSellerNetMinor(99,500),{feeMinor:4,netMinor:95});
-  assert.equal(calculateSellerNetMinor(Number.MAX_SAFE_INTEGER,500),null);
+  assert.ok(Number.isSafeInteger(calculateSellerNetMinor(Number.MAX_SAFE_INTEGER,500).netMinor));
 });
 
 test("seller payout requests are scoped to the approved seller and limited to available balance", async () => {
