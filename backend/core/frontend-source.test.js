@@ -96,7 +96,7 @@ test("chat attachments are included as bounded text context and unsupported bina
     "Individual text attachments must have a size limit.");
   assert.match(app, /totalCharacters > 80000/,
     "Combined attachment content must have a total size limit.");
-  assert.match(app, /message:\s*taskText/,
+  assert.match(app, /message:\s*(?:buildLengthAwarePrompt\(taskText\)|taskText)/,
     "The backend chat payload must contain the actual attachment content.");
   assert.match(app, /ATTACHED FILE:/,
     "Attachment boundaries and filenames must be preserved in the AI context.");
