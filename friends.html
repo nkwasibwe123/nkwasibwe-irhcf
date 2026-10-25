@@ -145,9 +145,10 @@
   const messageTitle=document.getElementById("activeConversationTitle");
   const messageBody=document.getElementById("messageBody");
   const sendMessage=document.getElementById("sendMessage");
-  let activeConversation=null, searchTimer=null;
+  let activeConversation=null, searchTimer=null, currentUserId=null;
   async function loadConversations(){
     try{
+      const profile=await request("/api/social/profile");currentUserId=Number(profile.profile.id);
       const data=await request("/api/social/conversations");
       conversationList.replaceChildren();
       if(!data.conversations.length){conversationList.append(node("p","feed-empty","No conversations yet. Search for someone above to start one."));return;}
@@ -167,7 +168,7 @@
     try{
       const data=await request("/api/social/conversations/"+encodeURIComponent(activeConversation)+"/messages?limit=50");
       messageList.replaceChildren();
-      (data.messages||[]).forEach(m=>{const bubble=node("div","message-bubble"+(Number(m.sender_id)===7?" mine":""),m.body);bubble.title=m.created_at?new Date(m.created_at).toLocaleString():"";messageList.append(bubble);});
+      (data.messages||[]).forEach(m=>{const bubble=node("div","message-bubble"+(Number(m.sender_id)===currentUserId?" mine":""),m.body);bubble.title=m.created_at?new Date(m.created_at).toLocaleString():"";messageList.append(bubble);});
       if(!data.messages||!data.messages.length)messageList.append(node("p","feed-empty","No messages yet. Say hello."));
       messageList.scrollTop=messageList.scrollHeight;
     }catch(e){messageList.replaceChildren(node("p","feed-empty",e.message));}
@@ -197,7 +198,6 @@
     try{await request("/api/social/conversations/"+encodeURIComponent(activeConversation)+"/messages",{method:"POST",body:JSON.stringify({body:text})});messageBody.value="";await loadMessages();await loadConversations();}
     catch(e){say(e.message);}finally{sendMessage.disabled=false;}
   });
-  const originalLoad=load;
   load();
   loadConversations();
 })();
