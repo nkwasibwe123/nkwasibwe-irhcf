@@ -173,8 +173,7 @@ function createSocialRouter({ pool, authenticateToken } = {}) {
       const checks=[
         {key:"displayName",label:"Choose a display name",complete:Boolean(profile.display_name.trim()),href:"#socialProfileForm"},
         {key:"bio",label:"Add a short bio",complete:Boolean(profile.bio.trim()),href:"#socialProfileForm"},
-        {key:"avatar",label:"Add a profile photo",complete:Boolean(profile.avatar_url.trim()),href:"#socialProfileForm"},
-        {key:"email",label:"Confirm your account email",complete:Boolean(profile.email),href:"#account"}
+        {key:"avatar",label:"Add a profile photo",complete:Boolean(profile.avatar_url.trim()),href:"#socialProfileForm"}
       ];
       const completed=checks.filter(item=>item.complete).length;
       return res.json({success:true,completion:{percent:Math.round(completed/checks.length*100),completed,total:checks.length,checks,profile:{name:profile.name,displayName:profile.display_name}}});
