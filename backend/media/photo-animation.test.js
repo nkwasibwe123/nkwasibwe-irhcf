@@ -8,12 +8,44 @@ const path = require("node:path");
 const { EventEmitter } = require("node:events");
 const { detectPhotoImageType, buildPhotoAnimationArgs, animatePhotoFile } = require("./photo-animation");
 
-test("photo input type is checked against file signatures, not only browser MIME", () => {
-  assert.equal(detectPhotoImageType("image/jpeg", Buffer.from([0xff, 0xd8, 0xff, 0x00])), "jpg");
-  assert.equal(detectPhotoImageType("image/png", Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])), "png");
-  assert.equal(detectPhotoImageType("image/webp", Buffer.from("RIFF0000WEBP", "ascii")), "webp");
-  assert.throws(() => detectPhotoImageType("image/png", Buffer.from([0xff, 0xd8, 0xff])), { code: "PHOTO_IMAGE_INVALID" });
+function pngHeader(width = 10, height = 10) {
+  const buffer = Buffer.alloc(24);
+  Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).copy(buffer, 0);
+  buffer.writeUInt32BE(13, 8);
+  buffer.write("IHDR", 12, "ascii");
+  buffer.writeUInt32BE(width, 16);
+  buffer.writeUInt32BE(height, 20);
+  return buffer;
+}
+
+function jpegHeader(width = 10, height = 10) {
+  const buffer = Buffer.from([0xff,0xd8,0xff,0xc0,0x00,0x11,0x08,0,0,0,0,0x03,0x01,0x11,0,0x02,0x11,0,0x03,0x11,0,0xff,0xd9]);
+  buffer.writeUInt16BE(height, 7);
+  buffer.writeUInt16BE(width, 9);
+  return buffer;
+}
+
+function webpHeader(width = 10, height = 10) {
+  const buffer = Buffer.alloc(30);
+  buffer.write("RIFF", 0, "ascii");
+  buffer.writeUInt32LE(22, 4);
+  buffer.write("WEBP", 8, "ascii");
+  buffer.write("VP8X", 12, "ascii");
+  buffer.writeUInt32LE(10, 16);
+  const w = width - 1, h = height - 1;
+  buffer[24] = w & 255; buffer[25] = (w >> 8) & 255; buffer[26] = (w >> 16) & 255;
+  buffer[27] = h & 255; buffer[28] = (h >> 8) & 255; buffer[29] = (h >> 16) & 255;
+  return buffer;
+}
+
+
+test("photo input type and dimensions are checked against file signatures, not only browser MIME", () => {
+  assert.equal(detectPhotoImageType("image/jpeg", jpegHeader()), "jpg");
+  assert.equal(detectPhotoImageType("image/png", pngHeader()), "png");
+  assert.equal(detectPhotoImageType("image/webp", webpHeader()), "webp");
+  assert.throws(() => detectPhotoImageType("image/png", jpegHeader()), { code: "PHOTO_IMAGE_INVALID" });
   assert.throws(() => detectPhotoImageType("image/gif", Buffer.from("GIF89a")), { code: "PHOTO_IMAGE_INVALID" });
+  assert.throws(() => detectPhotoImageType("image/png", pngHeader(9000, 9000)), { code: "PHOTO_IMAGE_DIMENSIONS_INVALID" });
 });
 
 test("photo animation arguments are fixed to bounded output and safe motion presets", () => {
@@ -41,7 +73,7 @@ test("photo animation runs FFmpeg and verifies an MP4 output signature", async (
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "irhcf-photo-animation-test-"));
   const inputPath = path.join(directory, "input.png");
   const outputPath = path.join(directory, "output.mp4");
-  fs.writeFileSync(inputPath, Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+  fs.writeFileSync(inputPath, pngHeader());
   let capturedArgs;
   const fakeSpawn = (_command, args) => {
     capturedArgs = args;
