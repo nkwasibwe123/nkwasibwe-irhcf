@@ -29,6 +29,7 @@ const { getVideoProviderStatus } = require("./media/video-provider-status");
 const { checkRateLimitEntry } = require("./core/rate-limit-store");
 const { getTrustedClientIP } = require("./core/client-ip");
 const { validateCriticalConfig } = require("./core/production-config");
+const { getLocalImageServiceStatus } = require("./core/media-provider-status");
 
 // ============================================================
 // INTERNAL MODULES
@@ -30720,7 +30721,8 @@ app.get(
           openai: Boolean(OPENAI_API_KEY),
           elevenLabs: Boolean(ELEVENLABS_API_KEY),
           videoGeneration: "not_integrated",
-          musicGeneration: "not_integrated"
+          musicGeneration: "not_integrated",
+          localImageService: getLocalImageServiceStatus()
         },
 
         // Search readiness reflects configuration only, not a guarantee
