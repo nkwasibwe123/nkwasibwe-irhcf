@@ -566,3 +566,21 @@ test("receipt is not available to another account or for unpaid orders", async (
     response=await fetch(base+"/api/commerce/orders/42/receipt");assert.equal(response.status,409);assert.equal((await response.json()).code,"ORDER_NOT_PAID");
   });
 });
+
+
+test("marketplace status reports readiness booleans without exposing provider secrets", async () => {
+  const app=express();
+  app.use("/api/commerce",createCommerceRouter({pool:{async query(){return{rows:[]};}},authenticateToken:(req,res,next)=>next(),env:{FLW_SECRET_KEY:"private-key-value",FLW_SECRET_HASH:"private-hash-value",FLW_REDIRECT_URL:"https://market.example.test/return",COMMERCE_SHIPPING_RATES_JSON:'{"Rwanda":{"RWF":1500}}',COMMERCE_TAX_BPS:"1800",COMMERCE_PLATFORM_FEE_BPS:"500"}}));
+  await withServer(app,async base=>{
+    const response=await fetch(base+"/api/commerce/status");assert.equal(response.status,200);const body=await response.json();
+    assert.equal(body.payments.checkoutReady,true);assert.equal(body.payments.webhookReady,true);assert.deepEqual(body.shipping.configuredCountries,["Rwanda"]);assert.equal(body.tax.rateBps,1800);assert.equal(body.sellerPayouts.platformFeeBps,500);assert.equal(body.sellerPayouts.automatedTransfers,false);
+    assert.doesNotMatch(JSON.stringify(body),/private-key-value|private-hash-value/);
+  });
+});
+
+test("marketplace status explains missing payment and shipping configuration without revealing values", async () => {
+  const app=express();app.use("/api/commerce",createCommerceRouter({pool:{async query(){return{rows:[]};}},authenticateToken:(req,res,next)=>next(),env:{}}));
+  await withServer(app,async base=>{
+    const response=await fetch(base+"/api/commerce/status");const body=await response.json();assert.equal(body.payments.checkoutReady,false);assert.equal(body.payments.webhookReady,false);assert.deepEqual(body.payments.missingCheckoutSettings,["FLW_SECRET_KEY","FLW_REDIRECT_URL"]);assert.deepEqual(body.shipping.configuredCountries,[]);assert.equal(body.tax.explicitlyConfigured,false);
+  });
+});
