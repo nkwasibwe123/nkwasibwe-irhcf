@@ -28,10 +28,9 @@ test("local transcriber setup reuses a healthy cached binary and model", () => {
   fs.writeFileSync(model, "cached model");
   fs.writeFileSync(binary, "#!/bin/sh\nexit 0\n");
   fs.chmodSync(binary, 0o755);
-  const fingerprintInput = [binary, model].map(file =>
-    crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex") + "  " + file + "\n"
-  ).join("");
-  const fingerprint = crypto.createHash("sha256").update(fingerprintInput).digest("hex");
+  const sums = spawnSync("sha256sum", [binary, model], { encoding: "utf8" });
+  assert.equal(sums.status, 0, sums.stderr);
+  const fingerprint = crypto.createHash("sha256").update(sums.stdout).digest("hex");
   fs.writeFileSync(path.join(modelDir, ".verified-ggml-tiny.sha256"), fingerprint + "\n");
 
   for (const tool of ["git", "cmake", "c++", "curl"]) {
