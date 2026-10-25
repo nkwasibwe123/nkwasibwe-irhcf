@@ -465,7 +465,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
       const sort = String(req.query.sort || "newest");
       const orderBy = ({ newest: "p.id DESC", price_asc: "p.price_minor ASC, p.id DESC", price_desc: "p.price_minor DESC, p.id DESC", name_asc: "p.name ASC, p.id DESC", rating: "rating_average DESC, p.id DESC" })[sort] || "p.id DESC";
       const result = await pool.query(
-        "SELECT p.id, p.name, p.description, p.sku, p.price_minor, p.currency, p.stock_quantity, p.image_url, p.category, p.requires_shipping, COALESCE(s.shop_name, 'Nkwasibwe Market') AS seller_name, COALESCE(rv.rating_average, 0) AS rating_average, COALESCE(rv.review_count, 0) AS review_count FROM commerce_products p LEFT JOIN commerce_sellers s ON s.user_id=p.seller_user_id AND s.status='approved' LEFT JOIN (SELECT product_id, ROUND(AVG(rating)::numeric, 1) AS rating_average, COUNT(*)::int AS review_count FROM commerce_product_reviews GROUP BY product_id) rv ON rv.product_id=p.id WHERE p.active=TRUE AND ($1='' OR p.name ILIKE '%' || $1 || '%' OR p.description ILIKE '%' || $1 || '%' OR p.sku ILIKE '%' || $1 || '%') AND ($2='' OR p.category=$2) ORDER BY " + orderBy + " LIMIT $3",
+        "SELECT p.id, p.name, p.description, p.sku, p.price_minor, p.currency, p.stock_quantity, p.image_url, p.category, p.requires_shipping, COALESCE(s.shop_name, 'Nkwasibwe Market') AS seller_name, COALESCE(rv.rating_average, 0) AS rating_average, COALESCE(rv.review_count, 0) AS review_count FROM commerce_products p LEFT JOIN commerce_sellers s ON s.user_id=p.seller_user_id AND s.status='approved' LEFT JOIN (SELECT product_id, ROUND(AVG(rating)::numeric, 1) AS rating_average, COUNT(*)::int AS review_count FROM commerce_product_reviews GROUP BY product_id) rv ON rv.product_id=p.id WHERE p.active=TRUE AND (p.seller_user_id IS NULL OR s.user_id IS NOT NULL) AND ($1='' OR p.name ILIKE '%' || $1 || '%' OR p.description ILIKE '%' || $1 || '%' OR p.sku ILIKE '%' || $1 || '%') AND ($2='' OR p.category=$2) ORDER BY " + orderBy + " LIMIT $3",
         [search, category, limit]
       );
       const categories = await pool.query("SELECT DISTINCT category FROM commerce_products WHERE active=TRUE ORDER BY category LIMIT 100");
@@ -743,7 +743,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
       await client.query("BEGIN");
       const ids = [...quantities.keys()];
       const productResult = await client.query(
-        "SELECT id, name, price_minor, currency, stock_quantity, requires_shipping, seller_user_id FROM commerce_products WHERE active = TRUE AND id = ANY($1::bigint[]) FOR UPDATE",
+        "SELECT p.id, p.name, p.price_minor, p.currency, p.stock_quantity, p.requires_shipping, p.seller_user_id FROM commerce_products p WHERE p.active = TRUE AND (p.seller_user_id IS NULL OR EXISTS (SELECT 1 FROM commerce_sellers s WHERE s.user_id=p.seller_user_id AND s.status='approved')) AND p.id = ANY($1::bigint[]) FOR UPDATE",
         [ids]
       );
       if (productResult.rows.length !== ids.length) {
