@@ -39,6 +39,20 @@
     link.href = "index.html";
     $("authNotice").append(link, document.createTextNode("."));
   }
+  async function loadMarketplaceStatus() {
+    const box=$("marketReadiness");
+    try{
+      const status=await request("/status");const notes=[];
+      if(!status.payments?.checkoutReady)notes.push("Hosted checkout needs Render settings "+(status.payments?.missingCheckoutSettings||["FLW_SECRET_KEY","FLW_REDIRECT_URL"]).join(" and ")+".");
+      if(!status.payments?.webhookReady)notes.push("Payment verification webhook needs FLW_SECRET_HASH.");
+      if(!(status.shipping?.configuredCountries||[]).length)notes.push("Physical-product checkout is blocked until COMMERCE_SHIPPING_RATES_JSON has country/currency rates.");
+      if(!status.tax?.valid)notes.push("Tax configuration is invalid; set COMMERCE_TAX_BPS between 0 and 3000.");
+      else if(!status.tax?.explicitlyConfigured)notes.push("Tax currently defaults to 0 basis points; configure the legally appropriate rate before real sales.");
+      if(status.sellerPayouts?.automatedTransfers===false)notes.push("Seller balances are account-separated, but payouts still require an external provider transfer and admin-recorded reference.");
+      box.textContent=notes.length?"Marketplace setup checklist: "+notes.join(" "):"Payment configuration detected. Complete provider sandbox tests before accepting real payments.";
+      box.setAttribute("data-ready",status.payments?.checkoutReady&&status.payments?.webhookReady?"true":"false");
+    }catch(error){box.textContent="Could not check marketplace setup: "+error.message;}
+  }
   async function addToCart(product) {
     if (!token()) { $("checkoutMessage").textContent = "Please sign in through Nkwasibwe IRHCF first."; return; }
     const current = state.cart.find(item => String(item.product_id) === String(product.id));
@@ -405,5 +419,5 @@
   $("reloadButton").addEventListener("click",async()=>{showAuthNotice();await Promise.all([loadProducts(),loadCart(),loadWishlist(),loadAddresses()]);if(token())await loadOrders();});
   $("wishlistButton").addEventListener("click",loadWishlist);
   $("ordersButton").addEventListener("click",loadOrders);
-  showAuthNotice();loadProducts();loadCart();loadWishlist();loadAddresses();loadSellerProfile();loadSellerProducts();loadSellerOrders();loadSellerPayouts();if(token())loadOrders();
+  showAuthNotice();loadMarketplaceStatus();loadProducts();loadCart();loadWishlist();loadAddresses();loadSellerProfile();loadSellerProducts();loadSellerOrders();loadSellerPayouts();if(token())loadOrders();
 })();
