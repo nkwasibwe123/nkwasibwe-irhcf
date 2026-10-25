@@ -4122,7 +4122,7 @@ app.post("/api/media/video/photo-animation", authenticateToken, async (req, res)
     const code = String(error?.code || "PHOTO_ANIMATION_FAILED");
     const status = code === "FFMPEG_UNAVAILABLE" ? 503 :
       code === "PHOTO_ANIMATION_TIMEOUT" ? 504 :
-      ["PHOTO_IMAGE_INVALID", "PHOTO_ANIMATION_MOTION_INVALID", "PHOTO_ANIMATION_DURATION_INVALID", "PHOTO_ANIMATION_SIZE_INVALID", "PHOTO_ANIMATION_OUTPUT_FORMAT"].includes(code) ? 400 : 500;
+      ["PHOTO_IMAGE_INVALID", "PHOTO_IMAGE_DIMENSIONS_INVALID", "PHOTO_ANIMATION_MOTION_INVALID", "PHOTO_ANIMATION_DURATION_INVALID", "PHOTO_ANIMATION_SIZE_INVALID", "PHOTO_ANIMATION_OUTPUT_FORMAT"].includes(code) ? 400 : 500;
     console.error("[MEDIA_PHOTO_ANIMATION] Failed:", { code, message: String(error?.message || "Photo animation failed").slice(0, 300) });
     return res.status(status).json({
       success: false,
