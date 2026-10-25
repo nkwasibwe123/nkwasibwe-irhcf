@@ -584,7 +584,7 @@ test("marketplace status reports readiness booleans without exposing provider se
 test("marketplace status explains missing payment and shipping configuration without revealing values", async () => {
   const app=express();app.use("/api/commerce",createCommerceRouter({pool:{async query(){return{rows:[]};}},authenticateToken:(req,res,next)=>next(),env:{}}));
   await withServer(app,async base=>{
-    const response=await fetch(base+"/api/commerce/status");const body=await response.json();assert.equal(body.payments.checkoutReady,false);assert.equal(body.payments.webhookReady,false);assert.deepEqual(body.payments.missingCheckoutSettings,["FLW_SECRET_KEY","FLW_REDIRECT_URL"]);assert.deepEqual(body.shipping.configuredCountries,[]);assert.equal(body.tax.explicitlyConfigured,false);
+    const response=await fetch(base+"/api/commerce/status");const body=await response.json();assert.equal(body.payments.checkoutReady,false);assert.equal(body.payments.webhookReady,false);assert.deepEqual(body.payments.missingCheckoutSettings,["FLW_SECRET_KEY","FLW_SECRET_HASH","FLW_REDIRECT_URL"]);assert.deepEqual(body.shipping.configuredCountries,[]);assert.equal(body.tax.explicitlyConfigured,false);
   });
 });
 
