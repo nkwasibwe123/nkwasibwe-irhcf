@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Nkwasibwe Market — browse products, manage your cart and securely check out.">
   <title>Nkwasibwe Market</title>
-  <link rel="stylesheet" href="market.css?v=7">
-  <script defer src="market.js?v=7"></script>
+  <link rel="stylesheet" href="market.css?v=8">
+  <script defer src="market.js?v=8"></script>
 </head>
 <body>
   <header class="market-header">
@@ -54,6 +54,7 @@
         <div class="form-row"><label>Price (minor units)<input name="priceMinor" type="number" min="1" step="1" required></label><label>Currency<select name="currency"><option>RWF</option><option>USD</option><option>EUR</option><option>GBP</option><option>KES</option><option>UGX</option><option>TZS</option><option>NGN</option><option>ZAR</option></select></label></div>
         <label>Stock quantity<input name="stockQuantity" type="number" min="0" step="1" value="0" required></label>
         <label>Product image URL (HTTPS)<input name="imageUrl" type="url" placeholder="https://…"></label>
+        <label>Or upload product photo (JPEG / PNG / WebP, max 2 MiB)<input name="imageFile" type="file" accept="image/jpeg,image/png,image/webp"></label>
         <label>SKU (optional)<input name="sku" maxlength="80"></label>
         <button class="primary-button" type="submit">Create product</button>
         <p id="adminMessage" class="muted" role="status"></p>

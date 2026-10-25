@@ -42,6 +42,9 @@ test("commerce schema initializer creates indexed products and user-owned orders
   assert.match(calls[0], /tax_minor BIGINT/);
   assert.match(calls[0], /tax_rate_bps INTEGER/);
   assert.match(calls[0], /CREATE TABLE IF NOT EXISTS commerce_stock_reservations/);
+  assert.match(calls[0], /image_data BYTEA/);
+  assert.match(calls[0], /image_mime_type TEXT/);
+  assert.match(calls[0], /image_byte_size INTEGER/);
   assert.match(calls[0], /expires_at TIMESTAMPTZ/);
   assert.match(calls[0], /CREATE TABLE IF NOT EXISTS commerce_addresses/);
   assert.match(calls[0], /CREATE TABLE IF NOT EXISTS commerce_order_items/);
@@ -432,4 +435,43 @@ test("expired pending orders release reserved stock and become cancelled atomica
 
 test("reservation expiry cleanup is safe when transaction support is unavailable", async () => {
   assert.equal(await releaseExpiredReservations({async query(){throw new Error("should not query without connect");}}),0);
+});
+
+
+test("approved seller can upload a size-limited image with matching PNG signature", async () => {
+  const app=express();app.use(express.json({limit:"10mb"}));let updateParams,updateSql;
+  app.use("/api/commerce",createCommerceRouter({
+    pool:{async query(sql,params){if(sql.includes("SELECT status FROM commerce_sellers"))return{rows:[{status:"approved"}]};if(sql.includes("UPDATE commerce_products SET image_data")){updateSql=sql;updateParams=params;return{rows:[{id:"5",image_byte_size:8}]};}return{rows:[]};}},
+    authenticateToken:(req,res,next)=>{req.user={id:33,email:"seller@example.com"};next();},env:{}
+  }));
+  const png=Buffer.from([137,80,78,71,13,10,26,10]);
+  await withServer(app,async base=>{
+    const response=await fetch(base+"/api/commerce/products/5/image",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({mimeType:"image/png",dataBase64:png.toString("base64")})});
+    assert.equal(response.status,200);assert.equal((await response.json()).imageByteSize,8);assert.match(updateSql,/seller_user_id=\$6/);assert.equal(updateParams[5],33);assert.equal(updateParams[3],"image/png");
+  });
+});
+
+test("product image upload rejects a forged image MIME type before writing to the database", async () => {
+  const app=express();app.use(express.json());let wrote=false;
+  app.use("/api/commerce",createCommerceRouter({
+    pool:{async query(sql){if(sql.includes("SELECT status FROM commerce_sellers"))return{rows:[{status:"approved"}]};if(sql.includes("UPDATE commerce_products SET image_data"))wrote=true;return{rows:[]};}},
+    authenticateToken:(req,res,next)=>{req.user={id:33,email:"seller@example.com"};next();},env:{}
+  }));
+  await withServer(app,async base=>{
+    const response=await fetch(base+"/api/commerce/products/5/image",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({mimeType:"image/png",dataBase64:Buffer.from("not an image").toString("base64")})});
+    assert.equal(response.status,400);assert.equal((await response.json()).code,"PRODUCT_IMAGE_SIGNATURE_INVALID");assert.equal(wrote,false);
+  });
+});
+
+test("public product image delivery sets the stored MIME type and nosniff header", async () => {
+  const app=express();
+  const png=Buffer.from([137,80,78,71,13,10,26,10]);
+  app.use("/api/commerce",createCommerceRouter({
+    pool:{async query(sql){assert.match(sql,/image_data IS NOT NULL/);return{rows:[{image_data:png,image_mime_type:"image/png"}]};}},
+    authenticateToken:(req,res,next)=>next(),env:{}
+  }));
+  await withServer(app,async base=>{
+    const response=await fetch(base+"/api/commerce/products/5/image");
+    assert.equal(response.status,200);assert.equal(response.headers.get("content-type"),"image/png");assert.equal(response.headers.get("x-content-type-options"),"nosniff");assert.deepEqual(Buffer.from(await response.arrayBuffer()),png);
+  });
 });

@@ -49,6 +49,14 @@
     $("checkoutMessage").textContent = product.name + " added to your cart.";
     await loadCart();
   }
+  async function uploadProductImage(productId, file) {
+    if(!file||!file.size)throw new Error("Choose an image file first.");
+    if(!["image/jpeg","image/png","image/webp"].includes(file.type))throw new Error("Only JPEG, PNG and WebP images are supported.");
+    if(file.size>2*1024*1024)throw new Error("Product images must be 2 MiB or smaller.");
+    const dataUrl=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result||""));reader.onerror=()=>reject(new Error("Could not read the image file."));reader.readAsDataURL(file);});
+    const comma=dataUrl.indexOf(",");if(comma<0)throw new Error("Could not encode the image file.");
+    return request("/products/"+encodeURIComponent(productId)+"/image",{method:"PUT",body:JSON.stringify({mimeType:file.type,dataBase64:dataUrl.slice(comma+1)})});
+  }
   async function loadReviews(product, target) {
     target.replaceChildren(element("p", "muted", "Loading reviews…"));
     try {
@@ -105,7 +113,7 @@
     if(!products.length){grid.append(element("p","muted","No products match these filters."));return;}
     for(const product of products){
       const card=element("article","product-card");
-      const imageUrl=String(product.image_url||"");
+      const imageUrl=product.has_image_upload?API+"/products/"+encodeURIComponent(product.id)+"/image":String(product.image_url||"");
       if(imageUrl.startsWith("https://")){
         const image=element("img","product-image"); image.src=imageUrl; image.alt=String(product.name||"Product"); image.loading="lazy"; image.referrerPolicy="no-referrer";
         image.addEventListener("error",()=>image.replaceWith(element("div","product-placeholder","▧")),{once:true}); card.append(image);
@@ -156,9 +164,11 @@
       for(const product of result.products||[]){
         const row=element("article","seller-row"),info=element("div","cart-info");
         info.append(element("strong","",product.name),element("small","",money(product.price_minor,product.currency)+" · stock "+product.stock_quantity+" · "+(product.active?"Active":"Hidden")));
+        const imageInput=document.createElement("input");imageInput.type="file";imageInput.accept="image/jpeg,image/png,image/webp";imageInput.setAttribute("aria-label","Upload image for "+product.name);
+        const upload=element("button","","Upload image");upload.type="button";upload.addEventListener("click",async()=>{upload.disabled=true;try{await uploadProductImage(product.id,imageInput.files?.[0]);$("sellerMessage").textContent="Image saved for "+product.name+".";await Promise.all([loadSellerProducts(),loadProducts()]);}catch(error){$("sellerMessage").textContent=error.message;upload.disabled=false;}});
         const toggle=element("button","",product.active?"Hide product":"Publish product");toggle.type="button";
         toggle.addEventListener("click",async()=>{toggle.disabled=true;try{await request("/products/"+encodeURIComponent(product.id),{method:"PATCH",body:JSON.stringify({active:!product.active})});await Promise.all([loadSellerProducts(),loadProducts()]);}catch(error){$("sellerMessage").textContent=error.message;toggle.disabled=false;}});
-        row.append(info,toggle);box.append(row);
+        row.append(info,imageInput,upload,toggle);box.append(row);
       }
     }catch(error){box.replaceChildren(element("p","muted","Seller product workspace: "+error.message));}
   }
@@ -352,7 +362,7 @@
   $("productForm").addEventListener("submit",async event=>{
     event.preventDefault();const form=new FormData(event.currentTarget);const message=$("adminMessage");message.textContent="Creating product…";
     const body={name:String(form.get("name")||"").trim(),category:String(form.get("category")||"General").trim(),requiresShipping:form.get("requiresShipping")==="on",description:String(form.get("description")||"").trim(),priceMinor:Number(form.get("priceMinor")),currency:String(form.get("currency")||"RWF"),stockQuantity:Number(form.get("stockQuantity")),imageUrl:String(form.get("imageUrl")||"").trim()||null,sku:String(form.get("sku")||"").trim()||null};
-    try{const result=await request("/products",{method:"POST",body:JSON.stringify(body)});message.textContent="Product created: "+result.product.name;event.currentTarget.reset();await Promise.all([loadProducts(),loadSellerProducts()]);}
+    try{const result=await request("/products",{method:"POST",body:JSON.stringify(body)});const imageFile=form.get("imageFile");let imageWarning="";if(imageFile&&imageFile.size){try{await uploadProductImage(result.product.id,imageFile);}catch(error){imageWarning=" Product was created, but image upload failed: "+error.message;}}message.textContent="Product created: "+result.product.name+imageWarning;event.currentTarget.reset();await Promise.all([loadProducts(),loadSellerProducts()]);}
     catch(error){message.textContent=error.message;}
   });
   $("productSearch").addEventListener("input",()=>{clearTimeout(window.marketSearchTimer);window.marketSearchTimer=setTimeout(loadProducts,180);});
