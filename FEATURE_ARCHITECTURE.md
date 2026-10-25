@@ -200,6 +200,118 @@ These sources informed the initial baseline. They do not replace per-feature res
 7. Preview/deploy occurs only after verification and required user approval.
 8. Tests cover invalid project input, runner unavailable, timeout, dependency failure, missing env vars, cross-account access, retry/cancel and mobile status visibility.
 
-## 9. Definition of done
+## 9. Feature research record — Nkwasibwe Market (initial research)
+
+**Status: researched baseline; code and deployed payment flows still require separate verification.**
+
+### Sources reviewed (six distinct official documentation/product sources)
+
+1. Stripe Connect marketplace overview: seller onboarding and verification, payouts, fees, balances and reporting: https://stripe.com/connect/marketplaces
+2. Stripe API idempotency guidance: retry payment-related API requests without accidentally creating duplicate operations: https://docs.stripe.com/api/errors
+3. Adyen for Platforms overview: onboard and verify sellers, split funds, manage payouts, risk and reconciliation: https://docs.adyen.com/adyen-for-platforms-model
+4. Adyen payment flow guide: split sale, platform commission, payment fees and seller proceeds; balance accounts and settlement timing: https://docs.adyen.com/platforms/quickstart-guide/payments/
+5. PayPal seller onboarding overview: seller onboarding before/after payment, risk/compliance checks and limitations by onboarding mode: https://developer.paypal.com/platforms/seller-onboarding
+6. PayPal checkout webhook guidance: distinguish approval, pending, completed, denied and reversed states; do not fulfill pending payments: https://developer.paypal.com/payment-methods/webhooks/
+7. PayPal multiseller payments guide: one buyer checkout can settle as separate transactions to multiple merchants: https://developer.paypal.com/platforms/checkout/standard/customize/multiseller-payments
+8. WooCommerce Marketplace vendor product management: vendor dashboard, sales/earnings/refund reporting and quality updates: https://developer.woocommerce.com/docs/woo-marketplace/managing-products/
+9. WooCommerce Marketplace submission requirements: functional, UX, security and compatibility review before launch: https://developer.woocommerce.com/docs/woo-marketplace/getting-started
+
+### Comparison and Nkwasibwe synthesis
+
+| Pattern | Evidence from sources | Nkwasibwe design implication |
+|---|---|---|
+| Seller onboarding and eligibility | Stripe, Adyen and PayPal require onboarding/verification appropriate to the payment model | Keep seller application separate from seller approval and payment-provider verification; show each status distinctly |
+| Hosted/provider-managed checkout | Stripe Connect and PayPal/Adyen provide provider-managed payment flows | Keep card/bank credentials with the provider; Nkwasibwe stores references and status only |
+| Reliable retries | Stripe idempotency documentation | Every external money-moving request must use a stable idempotency key and persist provider references |
+| Payment state versus order state | PayPal webhook events distinguish pending, completed, denied and reversed | Never ship, grant downloads or mark an order paid based only on a browser redirect or a pending event |
+| Multi-seller accounting | Adyen splits funds; PayPal multiseller checkout may create separate merchant transactions | Derive seller allocations from server-owned order items and a ledger, not browser-supplied seller IDs |
+| Payout safety and reconciliation | Stripe/Adyen support payout controls, reporting and reconciliation | Keep payout eligibility, reserved balance, paid balance, refunds and reconciliation auditable per seller and currency |
+| Vendor quality and operations | WooCommerce uses vendor dashboards, analytics, updates and review | Seller workspace should include product lifecycle, inventory, orders, fulfillment, analytics and support/moderation |
+
+### Current-repository observations and explicit limits
+
+The existing commerce implementation already has product/catalog search, categories/sorting, seller applications and approval, seller-owned product access, wishlists, reviews, addresses, carts/orders, stock reservations, refunds, seller ledger and payout requests. Its documented payout flow currently records an externally performed transfer reference and **does not send money automatically**. The existing status endpoint distinguishes checkout configuration, webhook configuration and manual payouts. These are repository observations, not proof of live end-to-end payment success.
+
+Do not claim the marketplace is production-ready until the actual configured provider's signed webhook verification, duplicate-event handling, payment/order amount-currency-reference matching, refund lifecycle, concurrency-safe inventory, account isolation, payout ledger and live/sandbox end-to-end checkout have all been tested. Confirm provider availability and local legal/compliance requirements for Rwanda before enabling real money movement.
+
+### Acceptance criteria for Nkwasibwe Market
+
+1. A buyer sees only active products and accurate currency/price/stock; search, category, sorting and product details work on mobile.
+2. Seller application, approval, suspension and seller ownership checks are enforced on the server for every seller route.
+3. Checkout prices and seller allocations are recomputed from database records inside a transaction; browser totals and seller IDs are never trusted.
+4. Inventory reservations are atomic under concurrent checkouts, expire safely, and cannot be released twice.
+5. Payment callbacks are authenticated using the provider's documented signature/verification mechanism, and events are idempotent.
+6. An order becomes paid only after verified provider evidence matches the order reference, amount and currency; pending/failed/reversed states never trigger fulfillment.
+7. Refunds create auditable order, provider and seller-ledger changes; repeated events do not double-reverse balances.
+8. Seller available balance is calculated by currency after refunds, completed payouts and pending/approved payout reservations; concurrent payout requests cannot overspend it.
+9. Buyer order/address/cart data and seller products/orders/earnings are scoped to the authenticated account; cross-account tests must fail.
+10. Provider outages, missing credentials, invalid signatures, duplicate callbacks, amount mismatch, expired checkout, insufficient stock and payout failures produce safe, traceable errors.
+11. Live payment and automatic payout are labelled unavailable unless a real provider integration is configured and verified. Do not store raw card or bank credentials.
+12. Automated tests and a provider sandbox walkthrough pass before enabling production money movement.
+
+## 10. Feature research record — Chat with Friends & Social Integrations (initial research)
+
+**Status: researched baseline; actual messaging, realtime calling and third-party API access require separate code and provider verification.**
+
+### Sources reviewed (seven distinct official product/API sources)
+
+1. WhatsApp Business Platform developer hub: direct integration, API reference, webhooks, policy, opt-in, rate limits and pricing: https://whatsappbusiness.com/developers/developer-hub/
+2. Meta WhatsApp messages API collection: send text/media/templates, message IDs, read state and delivery status via webhooks: https://www.postman.com/meta/whatsapp-business-platform/folder/o48mro7/messages
+3. Telegram Bot API: HTTPS methods, message/file handling, bot identity and API limits: https://core.telegram.org/bots/api
+4. TikTok Content Posting API: authorized direct posting, verified-domain media URLs, scopes and app audit requirements: https://developers.tiktok.com/docs/en/content-posting-api-get-started
+5. YouTube Data API: OAuth/API-key access, channel/video/playlist/comment resources and permission requirements: https://developers.google.com/youtube/v3/docs/
+6. LinkedIn API access: OAuth 2.0, explicit permissions and partner approval for restricted features: https://learn.microsoft.com/en-us/linkedin/shared/authentication/getting-access
+7. LinkedIn Posts API: create/retrieve text, image, video and document posts with member/organization scopes: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/posts-api?view=li-lms-2026-09
+
+### Comparison and Nkwasibwe synthesis
+
+| Product/API pattern | Constraint or capability | Nkwasibwe design implication |
+|---|---|---|
+| First-party messaging APIs | WhatsApp Business APIs are business messaging, with opt-in, templates/policies, webhooks and rate limits | Do not describe this as a replacement for personal WhatsApp; implement only supported business flows with consent |
+| Bot-based messaging | Telegram Bot API is for bots, not an unrestricted clone of the full Telegram client | Label Telegram bot integration honestly; use official user-authorized capabilities only where available |
+| Content publishing | TikTok posting requires approved scopes, authorized users, media constraints and app audit for public visibility | Show connected-account status, required permissions, upload progress and provider-reported publish status |
+| Video/channel management | YouTube uses API resources and OAuth for private or modifying actions | Separate public search/metadata from actions requiring channel authorization; apply quota budgets |
+| Professional social publishing | LinkedIn posting depends on OAuth permissions and may require partner approval | Display permission gaps clearly and never promise posting features the connected app cannot access |
+| Delivery status | Messaging APIs expose IDs and webhook/event states | Persist provider message IDs and event history; show queued/sent/delivered/read/failed only when supported evidence exists |
+| Platform-specific policy | APIs have different eligibility, rate, consent and content rules | Use an adapter per provider with a shared UI, rather than pretending all networks expose identical functionality |
+
+### Product hierarchy
+
+- **Chat with Friends**
+  - Identity and profile: profile visibility, online state only if supported, avatar and privacy.
+  - Friends: search, requests, accept/decline, block, report and mutual-privacy rules.
+  - Messaging: one-to-one/group threads, attachments, reply/forward, reactions, edit/delete policy, search, unread state and message delivery receipts.
+  - Safety: spam/rate limits, report queue, block enforcement, moderation and account controls.
+  - Calls: voice/video call signaling, permission handling, reconnect, network failure, mute/camera controls and call history; do not expose as working until realtime media infrastructure is integrated and tested.
+  - Feed: posts, media, comments, reactions, shares, bookmarks, visibility and reporting.
+- **Connected Social Accounts**
+  - OAuth consent and least-privilege scopes.
+  - Token storage/refresh/revocation and account disconnect.
+  - Per-provider capabilities and quota/permission diagnostics.
+  - Drafts, preview, explicit publish confirmation, provider job ID, result URL and error details.
+  - Webhook verification, deduplication and event audit.
+- **Phoenix-style downloads**
+  - Accept only supported/publicly accessible URLs and user-provided files within lawful/platform-permitted limits.
+  - Validate scheme/host, avoid SSRF to internal IPs, limit redirects, size, duration and concurrency, and scan/validate file types.
+  - Respect copyright, access controls, rate limits and platform terms; do not bypass DRM, paywalls, private access or technical protections.
+  - Show source, quality/format choices, queue status, cancellation, storage retention and real downloadable output.
+
+### Acceptance criteria
+
+1. Private messages, friend lists, contacts and attachments are always scoped to authenticated participants; cross-account access tests must fail.
+2. Blocked users cannot message, call or interact in ways prohibited by the selected privacy policy.
+3. Message send/retry is idempotent where supported; failures are traceable and do not silently duplicate messages.
+4. Delivery/read indicators are based on server/provider receipts, never fabricated by the client.
+5. Uploads validate file size, MIME and byte signature; downloads enforce SSRF-safe URL validation, redirect/size/time limits and retention cleanup.
+6. Each social provider has an explicit capability matrix showing supported, unavailable, permission-required and quota-blocked actions.
+7. OAuth uses state/CSRF protection, least-privilege scopes, secure token storage, expiry/refresh handling and disconnect/revocation.
+8. Webhook signatures and event IDs are verified/deduplicated; out-of-order events cannot regress a final state incorrectly.
+9. Feed pagination, search, comments, reactions and moderation are tested for empty, malformed, abusive and high-volume cases.
+10. Calls remain labelled unavailable until signaling, media transport, permission UX, reconnection and mobile/network end-to-end tests pass.
+11. Every third-party integration is tested in its sandbox/test account, and real production access is enabled only after the provider grants necessary permissions.
+12. UI language follows the selected interface setting while message replies respect the user's message language unless they explicitly override it.
+
+
+## 11. Definition of done
 
 A feature is verified only when its five-source research record is complete, code is merged through review, automated tests pass, the real deployed end-to-end workflow succeeds where applicable, security/account isolation/mobile/failure paths are checked, promised outputs are real and downloadable, UI status matches backend state, and limitations/provider requirements/costs are visible.
