@@ -580,7 +580,7 @@ test("Nkwasibwe Market includes searchable categories, account-private favourite
   assert.match(html, /id="wishlistList"/);
   assert.match(html, /My orders &amp; payments|My orders & payments/);
   assert.match(js, /\/wishlist/);
-  assert.match(js, /\/products\/\+encodeURIComponent\(product\.id\)\+"\/reviews"/);
+  assert.ok(js.includes('"/products/"+encodeURIComponent(product.id)+"/reviews"'));
   assert.match(js, /verified-buyer|Review after purchase/);
   assert.match(css, /\.market-filters/);
   assert.match(routes, /CREATE TABLE IF NOT EXISTS commerce_wishlist_items/);
