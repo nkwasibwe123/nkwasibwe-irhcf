@@ -203,3 +203,8 @@ These sources informed the initial baseline. They do not replace per-feature res
 ## 9. Definition of done
 
 A feature is verified only when its five-source research record is complete, code is merged through review, automated tests pass, the real deployed end-to-end workflow succeeds where applicable, security/account isolation/mobile/failure paths are checked, promised outputs are real and downloadable, UI status matches backend state, and limitations/provider requirements/costs are visible.
+
+
+## 10. Feature research record — Chat with Friends & Social Integrations
+
+The seven-source comparison, provider capability matrix, detailed feature hierarchy, and completion evidence requirements are maintained in [research/SOCIAL_FEATURE_RESEARCH.md](research/SOCIAL_FEATURE_RESEARCH.md). Use [research/FEATURE_DEEP_DIVE_TEMPLATE.md](research/FEATURE_DEEP_DIVE_TEMPLATE.md) for every additional main feature before implementation or completion claims.
