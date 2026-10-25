@@ -8,7 +8,7 @@ const path = require("node:path");
 const { EventEmitter } = require("node:events");
 const { spawnSync } = require("node:child_process");
 const ffmpegPath = require("ffmpeg-static");
-const { buildFfmpegArgs, editVideoFile } = require("./video-editor");
+const { buildFfmpegArgs, buildSubtitleContent, escapeSubtitleFilterPath, editVideoFile } = require("./video-editor");
 
 test("FFmpeg arguments include a real color filter and MP4 codec settings", () => {
   const args = buildFfmpegArgs("/tmp/input.mp4", "/tmp/output.mp4", {
