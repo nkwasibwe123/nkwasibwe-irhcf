@@ -183,6 +183,55 @@ These sources informed the initial baseline. They do not replace per-feature res
 7. Preview/deploy occurs only after verification and required user approval.
 8. Tests cover invalid project input, runner unavailable, timeout, dependency failure, missing env vars, cross-account access, retry/cancel and mobile status visibility.
 
-## 8. Definition of done
+## 8. Feature research record — Nkwasibwe Market (initial research)
+
+**Status: researched baseline; code and deployed payment flows still require separate verification.**
+
+### Sources reviewed (six distinct official documentation/product sources)
+
+1. Stripe Connect marketplace overview: seller onboarding and verification, payouts, fees, balances and reporting: https://stripe.com/connect/marketplaces
+2. Stripe API idempotency guidance: retry payment-related API requests without accidentally creating duplicate operations: https://docs.stripe.com/api/errors
+3. Adyen for Platforms overview: onboard and verify sellers, split funds, manage payouts, risk and reconciliation: https://docs.adyen.com/adyen-for-platforms-model
+4. Adyen payment flow guide: split sale, platform commission, payment fees and seller proceeds; balance accounts and settlement timing: https://docs.adyen.com/platforms/quickstart-guide/payments/
+5. PayPal seller onboarding overview: seller onboarding before/after payment, risk/compliance checks and limitations by onboarding mode: https://developer.paypal.com/platforms/seller-onboarding
+6. PayPal checkout webhook guidance: distinguish approval, pending, completed, denied and reversed states; do not fulfill pending payments: https://developer.paypal.com/payment-methods/webhooks/
+7. PayPal multiseller payments guide: one buyer checkout can settle as separate transactions to multiple merchants: https://developer.paypal.com/platforms/checkout/standard/customize/multiseller-payments
+8. WooCommerce Marketplace vendor product management: vendor dashboard, sales/earnings/refund reporting and quality updates: https://developer.woocommerce.com/docs/woo-marketplace/managing-products/
+9. WooCommerce Marketplace submission requirements: functional, UX, security and compatibility review before launch: https://developer.woocommerce.com/docs/woo-marketplace/getting-started
+
+### Comparison and Nkwasibwe synthesis
+
+| Pattern | Evidence from sources | Nkwasibwe design implication |
+|---|---|---|
+| Seller onboarding and eligibility | Stripe, Adyen and PayPal require onboarding/verification appropriate to the payment model | Keep seller application separate from seller approval and payment-provider verification; show each status distinctly |
+| Hosted/provider-managed checkout | Stripe Connect and PayPal/Adyen provide provider-managed payment flows | Keep card/bank credentials with the provider; Nkwasibwe stores references and status only |
+| Reliable retries | Stripe idempotency documentation | Every external money-moving request must use a stable idempotency key and persist provider references |
+| Payment state versus order state | PayPal webhook events distinguish pending, completed, denied and reversed | Never ship, grant downloads or mark an order paid based only on a browser redirect or a pending event |
+| Multi-seller accounting | Adyen splits funds; PayPal multiseller checkout may create separate merchant transactions | Derive seller allocations from server-owned order items and a ledger, not browser-supplied seller IDs |
+| Payout safety and reconciliation | Stripe/Adyen support payout controls, reporting and reconciliation | Keep payout eligibility, reserved balance, paid balance, refunds and reconciliation auditable per seller and currency |
+| Vendor quality and operations | WooCommerce uses vendor dashboards, analytics, updates and review | Seller workspace should include product lifecycle, inventory, orders, fulfillment, analytics and support/moderation |
+
+### Current-repository observations and explicit limits
+
+The existing commerce implementation already has product/catalog search, categories/sorting, seller applications and approval, seller-owned product access, wishlists, reviews, addresses, carts/orders, stock reservations, refunds, seller ledger and payout requests. Its documented payout flow currently records an externally performed transfer reference and **does not send money automatically**. The existing status endpoint distinguishes checkout configuration, webhook configuration and manual payouts. These are repository observations, not proof of live end-to-end payment success.
+
+Do not claim the marketplace is production-ready until the actual configured provider's signed webhook verification, duplicate-event handling, payment/order amount-currency-reference matching, refund lifecycle, concurrency-safe inventory, account isolation, payout ledger and live/sandbox end-to-end checkout have all been tested. Confirm provider availability and local legal/compliance requirements for Rwanda before enabling real money movement.
+
+### Acceptance criteria for Nkwasibwe Market
+
+1. A buyer sees only active products and accurate currency/price/stock; search, category, sorting and product details work on mobile.
+2. Seller application, approval, suspension and seller ownership checks are enforced on the server for every seller route.
+3. Checkout prices and seller allocations are recomputed from database records inside a transaction; browser totals and seller IDs are never trusted.
+4. Inventory reservations are atomic under concurrent checkouts, expire safely, and cannot be released twice.
+5. Payment callbacks are authenticated using the provider's documented signature/verification mechanism, and events are idempotent.
+6. An order becomes paid only after verified provider evidence matches the order reference, amount and currency; pending/failed/reversed states never trigger fulfillment.
+7. Refunds create auditable order, provider and seller-ledger changes; repeated events do not double-reverse balances.
+8. Seller available balance is calculated by currency after refunds, completed payouts and pending/approved payout reservations; concurrent payout requests cannot overspend it.
+9. Buyer order/address/cart data and seller products/orders/earnings are scoped to the authenticated account; cross-account tests must fail.
+10. Provider outages, missing credentials, invalid signatures, duplicate callbacks, amount mismatch, expired checkout, insufficient stock and payout failures produce safe, traceable errors.
+11. Live payment and automatic payout are labelled unavailable unless a real provider integration is configured and verified. Do not store raw card or bank credentials.
+12. Automated tests and a provider sandbox walkthrough pass before enabling production money movement.
+
+## 9. Definition of done
 
 A feature is verified only when its five-source research record is complete, code is merged through review, automated tests pass, the real deployed end-to-end workflow succeeds where applicable, security/account isolation/mobile/failure paths are checked, promised outputs are real and downloadable, UI status matches backend state, and limitations/provider requirements/costs are visible.
