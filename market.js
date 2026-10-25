@@ -3,11 +3,11 @@
   const API = "https://nkwasibwe-irhcf.onrender.com/api/commerce";
   const TOKEN_KEY = "nkwasibwe_auth_token";
   const $ = id => document.getElementById(id);
-  const state = { products: [], cart: [], orders: [] };
+  const state = { products: [], cart: [], orders: [], wishlist: [] };
   const token = () => { try { return localStorage.getItem(TOKEN_KEY) || ""; } catch { return ""; } };
   const authHeaders = () => token() ? { Authorization: "Bearer " + token() } : {};
+  const integerCurrencies = new Set(["RWF", "UGX", "XAF", "XOF", "JPY"]);
   const money = (minor, currency) => {
-    const integerCurrencies = new Set(["RWF", "UGX", "XAF", "XOF", "JPY"]);
     const amount = Number(minor) / (integerCurrencies.has(currency) ? 1 : 100);
     try { return new Intl.NumberFormat(undefined, { style: "currency", currency, maximumFractionDigits: integerCurrencies.has(currency) ? 0 : 2 }).format(amount); }
     catch { return String(currency) + " " + amount; }
@@ -31,149 +31,192 @@
   function showAuthNotice() {
     $("authNotice").replaceChildren();
     if (token()) {
-      $("authNotice").textContent = "You are signed in. Your cart and orders are linked to your account.";
+      $("authNotice").textContent = "You are signed in. Your cart, favourites, orders and payments are separated by your account.";
       return;
     }
-    $("authNotice").append(document.createTextNode("You can browse products without signing in. To save your cart and place an order, "));
+    $("authNotice").append(document.createTextNode("You can browse products without signing in. To save favourites, keep a cart or place an order, "));
     const link = element("a", "", "sign in to Nkwasibwe IRHCF");
     link.href = "index.html";
     $("authNotice").append(link, document.createTextNode("."));
   }
-  async function loadProducts() {
-    const grid = $("productGrid");
-    grid.replaceChildren(element("p", "muted", "Loading products…"));
+  async function addToCart(product) {
+    if (!token()) { $("checkoutMessage").textContent = "Please sign in through Nkwasibwe IRHCF first."; return; }
+    const current = state.cart.find(item => String(item.product_id) === String(product.id));
+    await request("/cart/items/" + encodeURIComponent(product.id), {
+      method: "PUT",
+      body: JSON.stringify({ quantity: Math.min(99, Number(current?.quantity || 0) + 1) })
+    });
+    $("checkoutMessage").textContent = product.name + " added to your cart.";
+    await loadCart();
+  }
+  async function loadReviews(product, target) {
+    target.replaceChildren(element("p", "muted", "Loading reviews…"));
     try {
-      const result = await request("/products");
-      state.products = result.products || [];
-      $("productCount").textContent = state.products.length + (state.products.length === 1 ? " item" : " items");
-      grid.replaceChildren();
-      if (!state.products.length) {
-        grid.append(element("p", "muted", "The catalogue is empty. An authorized shop administrator must add the first products."));
-        return;
+      const result = await request("/products/" + encodeURIComponent(product.id) + "/reviews");
+      target.replaceChildren();
+      if (!result.reviews?.length) target.append(element("p", "muted", "No reviews yet."));
+      for (const review of result.reviews || []) {
+        const row = element("article", "review-row");
+        row.append(element("strong", "", "★".repeat(Number(review.rating)) + "☆".repeat(5 - Number(review.rating))));
+        if (review.review_text) row.append(element("p", "", review.review_text));
+        row.append(element("small", "muted", new Date(review.created_at).toLocaleDateString()));
+        target.append(row);
       }
-      for (const product of state.products) {
-        const card = element("article", "product-card");
-        const imageUrl = String(product.image_url || "");
-        if (imageUrl.startsWith("https://")) {
-          const image = element("img", "product-image");
-          image.src = imageUrl; image.alt = String(product.name || "Product"); image.loading = "lazy"; image.referrerPolicy = "no-referrer";
-          image.addEventListener("error", () => image.replaceWith(element("div", "product-placeholder", "▧")), { once: true });
-          card.append(image);
-        } else card.append(element("div", "product-placeholder", "▧"));
-        const body = element("div", "product-body");
-        body.append(element("h3", "", product.name));
-        if (product.description) body.append(element("p", "", product.description));
-        body.append(element("div", "product-price", money(product.price_minor, product.currency)));
-        body.append(element("span", "stock", Number(product.stock_quantity) > 0 ? Number(product.stock_quantity) + " in stock" : "Out of stock"));
-        const add = element("button", "", token() ? "Add to cart" : "Sign in to add");
-        add.type = "button"; add.disabled = Number(product.stock_quantity) < 1;
-        add.addEventListener("click", async () => {
-          if (!token()) { $("checkoutMessage").textContent = "Please sign in through Nkwasibwe IRHCF first."; return; }
-          add.disabled = true;
+      if (token()) {
+        const form = element("form", "review-form");
+        const heading = element("strong", "", "Review after purchase");
+        const ratingLabel = element("label", "", "Rating");
+        const rating = document.createElement("select"); rating.name = "rating"; rating.required = true;
+        for (let n=5;n>=1;n--) { const option=document.createElement("option"); option.value=String(n); option.textContent=n+" star"+(n===1?"":"s"); rating.append(option); }
+        ratingLabel.append(rating);
+        const textLabel = element("label", "", "Your review (optional)");
+        const text = document.createElement("textarea"); text.name="reviewText"; text.maxLength=2000; text.rows=3; text.placeholder="Share your experience";
+        textLabel.append(text);
+        const submit = element("button", "primary-button", "Submit review"); submit.type="submit";
+        const message = element("p", "muted", "Only accounts with a confirmed paid order can submit a review.");
+        form.append(heading,ratingLabel,textLabel,submit,message);
+        form.addEventListener("submit", async event => {
+          event.preventDefault(); submit.disabled=true;
           try {
-            const current = state.cart.find(item => String(item.product_id) === String(product.id));
-            await request("/cart/items/" + encodeURIComponent(product.id), { method: "PUT", body: JSON.stringify({ quantity: Math.min(99, Number(current?.quantity || 0) + 1) }) });
-            $("checkoutMessage").textContent = product.name + " added to your cart.";
-            await loadCart();
-          } catch (error) { $("checkoutMessage").textContent = error.message; }
-          finally { add.disabled = false; }
+            await request("/products/"+encodeURIComponent(product.id)+"/reviews",{method:"POST",body:JSON.stringify({rating:Number(rating.value),reviewText:text.value.trim()})});
+            message.textContent="Review saved."; await loadReviews(product,target); await loadProducts();
+          } catch(error) { message.textContent=error.message; }
+          finally { submit.disabled=false; }
         });
-        body.append(add); card.append(body); grid.append(card);
+        target.append(form);
       }
-    } catch (error) { grid.replaceChildren(element("p", "muted", "Could not load products: " + error.message)); }
+    } catch(error) { target.replaceChildren(element("p","muted","Could not load reviews: "+error.message)); }
+  }
+  function renderProducts() {
+    const grid=$("productGrid"); grid.replaceChildren();
+    const query=$("productSearch").value.trim().toLowerCase();
+    const category=$("categoryFilter").value;
+    const sort=$("productSort").value;
+    let products=state.products.filter(product => (!category || product.category===category) &&
+      (!query || [product.name,product.description,product.sku,product.category].some(value=>String(value||"").toLowerCase().includes(query))));
+    products=products.slice().sort((a,b)=>{
+      if(sort==="price_asc")return Number(a.price_minor)-Number(b.price_minor);
+      if(sort==="price_desc")return Number(b.price_minor)-Number(a.price_minor);
+      if(sort==="name_asc")return String(a.name).localeCompare(String(b.name));
+      if(sort==="rating")return Number(b.rating_average||0)-Number(a.rating_average||0)||Number(b.review_count||0)-Number(a.review_count||0);
+      return Number(b.id)-Number(a.id);
+    });
+    $("productCount").textContent=products.length+(products.length===1?" item":" items");
+    if(!products.length){grid.append(element("p","muted","No products match these filters."));return;}
+    for(const product of products){
+      const card=element("article","product-card");
+      const imageUrl=String(product.image_url||"");
+      if(imageUrl.startsWith("https://")){
+        const image=element("img","product-image"); image.src=imageUrl; image.alt=String(product.name||"Product"); image.loading="lazy"; image.referrerPolicy="no-referrer";
+        image.addEventListener("error",()=>image.replaceWith(element("div","product-placeholder","▧")),{once:true}); card.append(image);
+      } else card.append(element("div","product-placeholder","▧"));
+      const body=element("div","product-body");
+      body.append(element("span","product-category",product.category||"General"),element("h3","",product.name));
+      if(product.description)body.append(element("p","",product.description));
+      body.append(element("div","product-price",money(product.price_minor,product.currency)));
+      body.append(element("div","product-rating",(Number(product.rating_average)>0?"★ "+Number(product.rating_average).toFixed(1):"No rating")+" · "+Number(product.review_count||0)+" reviews"));
+      body.append(element("span","stock",Number(product.stock_quantity)>0?Number(product.stock_quantity)+" in stock":"Out of stock"));
+      const actions=element("div","product-actions");
+      const add=element("button","primary-button",token()?"Add to cart":"Sign in to add"); add.type="button"; add.disabled=Number(product.stock_quantity)<1;
+      add.addEventListener("click",async()=>{add.disabled=true;try{await addToCart(product);}catch(error){$("checkoutMessage").textContent=error.message;}finally{add.disabled=Number(product.stock_quantity)<1;}});
+      const saved=state.wishlist.some(item=>String(item.id)===String(product.id));
+      const wish=element("button","",saved?"♥ Saved":"♡ Save"); wish.type="button"; wish.disabled=!token();
+      wish.title=token()?"Save or remove this favourite":"Sign in to save favourites";
+      wish.addEventListener("click",async()=>{
+        wish.disabled=true;
+        try{await request("/wishlist/"+encodeURIComponent(product.id),{method:"PUT",body:JSON.stringify({saved:!state.wishlist.some(item=>String(item.id)===String(product.id))})});await loadWishlist();renderProducts();}
+        catch(error){$("checkoutMessage").textContent=error.message;wish.disabled=false;}
+      });
+      actions.append(add,wish);body.append(actions);
+      const details=element("details","product-reviews");
+      const summary=element("summary","","Read reviews / write a review");
+      const reviews=element("div","reviews-content");
+      details.append(summary,reviews);
+      details.addEventListener("toggle",()=>{if(details.open&&!details.dataset.loaded){details.dataset.loaded="1";loadReviews(product,reviews);}});
+      body.append(details);card.append(body);grid.append(card);
+    }
+  }
+  async function loadProducts() {
+    const grid=$("productGrid"); grid.replaceChildren(element("p","muted","Loading products…"));
+    const query=new URLSearchParams();
+    if($("productSearch").value.trim())query.set("q",$("productSearch").value.trim());
+    if($("categoryFilter").value)query.set("category",$("categoryFilter").value);
+    query.set("sort",$("productSort").value);
+    try{
+      const result=await request("/products?"+query.toString());
+      state.products=result.products||[];
+      const select=$("categoryFilter"),selected=select.value;
+      const categories=result.categories||[...new Set(state.products.map(p=>p.category||"General"))];
+      select.replaceChildren(element("option","","All categories"));select.options[0].value="";
+      for(const category of categories){const option=element("option","",category);option.value=category;select.append(option);}
+      if(categories.includes(selected))select.value=selected;
+      renderProducts();
+    }catch(error){grid.replaceChildren(element("p","muted","Could not load products: "+error.message));}
+  }
+  async function loadWishlist(){
+    const box=$("wishlistList");
+    if(!token()){state.wishlist=[];box.replaceChildren(element("p","muted","Sign in to save and view favourites."));return;}
+    try{
+      const result=await request("/wishlist");state.wishlist=result.products||[];box.replaceChildren();
+      if(!state.wishlist.length)box.append(element("p","muted","No saved favourites yet."));
+      for(const product of state.wishlist){
+        const row=element("div","wishlist-row");const info=element("div","cart-info");
+        info.append(element("strong","",product.name),element("small","",money(product.price_minor,product.currency)+" · "+(product.category||"General")));
+        const remove=element("button","","Remove");remove.type="button";remove.addEventListener("click",async()=>{remove.disabled=true;try{await request("/wishlist/"+encodeURIComponent(product.id),{method:"PUT",body:JSON.stringify({saved:false})});await loadWishlist();renderProducts();}catch(error){remove.disabled=false;$("checkoutMessage").textContent=error.message;}});
+        const add=element("button","primary-button","Add to cart");add.type="button";add.disabled=Number(product.stock_quantity)<1;add.addEventListener("click",async()=>{add.disabled=true;try{await addToCart(product);}catch(error){$("checkoutMessage").textContent=error.message;}finally{add.disabled=Number(product.stock_quantity)<1;}});
+        row.append(info,add,remove);box.append(row);
+      }
+    }catch(error){box.replaceChildren(element("p","muted","Could not load favourites: "+error.message));}
   }
   async function loadCart() {
-    const box = $("cartItems");
-    if (!token()) {
-      state.cart = []; box.replaceChildren(element("p", "muted", "Sign in to load and save your cart."));
-      $("cartCount").textContent = "0 items"; $("cartTotal").textContent = "—"; $("checkoutButton").disabled = true; return;
-    }
-    try {
-      const result = await request("/cart");
-      state.cart = result.items || [];
-      box.replaceChildren();
-      let total = 0;
-      if (!state.cart.length) box.append(element("p", "muted", "Your cart is empty. Add something from the catalogue."));
-      for (const item of state.cart) {
-        total += Number(item.line_total_minor || 0);
-        const row = element("div", "cart-row");
-        const info = element("div", "cart-info");
-        info.append(element("strong", "", item.name), element("small", "", money(item.price_minor, item.currency) + " each · " + money(item.line_total_minor, item.currency)));
-        const controls = element("div", "cart-controls");
-        const qty = document.createElement("input"); qty.type = "number"; qty.min = "0"; qty.max = "99"; qty.step = "1"; qty.value = String(item.quantity); qty.setAttribute("aria-label", "Quantity for " + item.name);
-        const update = element("button", "", "Update"); update.type = "button";
-        update.addEventListener("click", async () => {
-          const quantity = Number(qty.value);
-          if (!Number.isInteger(quantity) || quantity < 0 || quantity > 99) { $("checkoutMessage").textContent = "Quantity must be from 0 to 99."; return; }
-          update.disabled = true;
-          try { await request("/cart/items/" + encodeURIComponent(item.product_id), { method: "PUT", body: JSON.stringify({ quantity }) }); await loadCart(); }
-          catch (error) { $("checkoutMessage").textContent = error.message; }
-          finally { update.disabled = false; }
-        });
-        controls.append(qty, update); row.append(info, controls); box.append(row);
+    const box=$("cartItems");
+    if(!token()){state.cart=[];box.replaceChildren(element("p","muted","Sign in to load and save your cart."));$("cartCount").textContent="0 items";$("cartTotal").textContent="—";$("checkoutButton").disabled=true;return;}
+    try{
+      const result=await request("/cart");state.cart=result.items||[];box.replaceChildren();let total=0;
+      if(!state.cart.length)box.append(element("p","muted","Your cart is empty. Add something from the catalogue."));
+      for(const item of state.cart){
+        total+=Number(item.line_total_minor||0);const row=element("div","cart-row");const info=element("div","cart-info");
+        info.append(element("strong","",item.name),element("small","",money(item.price_minor,item.currency)+" each · "+money(item.line_total_minor,item.currency)));
+        const controls=element("div","cart-controls");const qty=document.createElement("input");qty.type="number";qty.min="0";qty.max="99";qty.step="1";qty.value=String(item.quantity);qty.setAttribute("aria-label","Quantity for "+item.name);
+        const update=element("button","","Update");update.type="button";update.addEventListener("click",async()=>{const quantity=Number(qty.value);if(!Number.isInteger(quantity)||quantity<0||quantity>99){$("checkoutMessage").textContent="Quantity must be from 0 to 99.";return;}update.disabled=true;try{await request("/cart/items/"+encodeURIComponent(item.product_id),{method:"PUT",body:JSON.stringify({quantity})});await loadCart();}catch(error){$("checkoutMessage").textContent=error.message;}finally{update.disabled=false;}});
+        controls.append(qty,update);row.append(info,controls);box.append(row);
       }
-      $("cartCount").textContent = state.cart.reduce((sum, item) => sum + Number(item.quantity), 0) + " items";
-      const currency = state.cart[0]?.currency;
-      $("cartTotal").textContent = currency && state.cart.every(item => item.currency === currency) ? money(total, currency) : (state.cart.length ? "Mixed currencies" : "—");
-      $("checkoutButton").disabled = !state.cart.length || !state.cart.every(item => item.currency === currency);
-    } catch (error) {
-      box.replaceChildren(element("p", "muted", "Could not load cart: " + error.message));
-      $("checkoutButton").disabled = true;
-    }
+      $("cartCount").textContent=state.cart.reduce((sum,item)=>sum+Number(item.quantity),0)+" items";
+      const currency=state.cart[0]?.currency;
+      $("cartTotal").textContent=currency&&state.cart.every(item=>item.currency===currency)?money(total,currency):(state.cart.length?"Mixed currencies":"—");
+      $("checkoutButton").disabled=!state.cart.length||!state.cart.every(item=>item.currency===currency);
+    }catch(error){box.replaceChildren(element("p","muted","Could not load cart: "+error.message));$("checkoutButton").disabled=true;}
   }
-  async function loadOrders() {
-    const box = $("ordersList");
-    if (!token()) { box.replaceChildren(element("p", "muted", "Sign in to view orders.")); return; }
-    box.replaceChildren(element("p", "muted", "Loading orders…"));
-    try {
-      const result = await request("/orders");
-      state.orders = result.orders || []; box.replaceChildren();
-      if (!state.orders.length) { box.append(element("p", "muted", "No orders yet.")); return; }
-      for (const order of state.orders) {
-        const row = element("div", "order-row");
-        const info = element("div", "cart-info");
-        info.append(element("strong", "", "Order #" + order.id), element("small", "", new Date(order.created_at).toLocaleString() + " · " + money(order.total_minor, order.currency)));
-        const status = element("span", "status " + String(order.status), order.status);
-        row.append(info, status);
-        if (order.status === "pending" && order.checkout_url && order.checkout_url.startsWith("https://")) {
-          const link = element("a", "", "Resume checkout"); link.href = order.checkout_url; link.rel = "noopener noreferrer"; link.target = "_blank"; row.append(link);
-        }
+  async function loadOrders(){
+    const box=$("ordersList");if(!token()){box.replaceChildren(element("p","muted","Sign in to view orders."));return;}
+    box.replaceChildren(element("p","muted","Loading orders…"));
+    try{const result=await request("/orders");state.orders=result.orders||[];box.replaceChildren();if(!state.orders.length){box.append(element("p","muted","No orders yet."));return;}
+      for(const order of state.orders){const row=element("div","order-row");const info=element("div","cart-info");info.append(element("strong","","Order #"+order.id),element("small","",new Date(order.created_at).toLocaleString()+" · "+money(order.total_minor,order.currency)));
+        row.append(info,element("span","status "+String(order.status),order.status));
+        if(order.status==="pending"&&order.checkout_url&&order.checkout_url.startsWith("https://")){const link=element("a","","Resume checkout");link.href=order.checkout_url;link.rel="noopener noreferrer";link.target="_blank";row.append(link);}
         box.append(row);
       }
-    } catch (error) { box.replaceChildren(element("p", "muted", "Could not load orders: " + error.message)); }
+    }catch(error){box.replaceChildren(element("p","muted","Could not load orders: "+error.message));}
   }
-  $("checkoutButton").addEventListener("click", async () => {
-    if (!token()) { $("checkoutMessage").textContent = "Sign in first to check out."; return; }
-    $("checkoutButton").disabled = true; $("checkoutMessage").textContent = "Creating hosted checkout…";
-    try {
-      const result = await request("/checkout", { method: "POST", body: JSON.stringify({ items: state.cart.map(item => ({ productId: Number(item.product_id), quantity: Number(item.quantity) })) }) });
-      if (!result.checkoutUrl || !result.checkoutUrl.startsWith("https://")) throw new Error("The server did not return a valid hosted checkout URL.");
+  $("checkoutButton").addEventListener("click",async()=>{
+    if(!token()){$("checkoutMessage").textContent="Sign in first to check out.";return;}
+    $("checkoutButton").disabled=true;$("checkoutMessage").textContent="Creating hosted checkout…";
+    try{const result=await request("/checkout",{method:"POST",body:JSON.stringify({items:state.cart.map(item=>({productId:Number(item.product_id),quantity:Number(item.quantity)}))})});
+      if(!result.checkoutUrl||!result.checkoutUrl.startsWith("https://"))throw new Error("The server did not return a valid hosted checkout URL.");
       window.location.assign(result.checkoutUrl);
-    } catch (error) { $("checkoutMessage").textContent = error.message; $("checkoutButton").disabled = false; }
+    }catch(error){$("checkoutMessage").textContent=error.message;$("checkoutButton").disabled=false;}
   });
-  $("productForm").addEventListener("submit", async event => {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const message = $("adminMessage"); message.textContent = "Creating product…";
-    const body = {
-      name: String(form.get("name") || "").trim(),
-      description: String(form.get("description") || "").trim(),
-      priceMinor: Number(form.get("priceMinor")),
-      currency: String(form.get("currency") || "RWF"),
-      stockQuantity: Number(form.get("stockQuantity")),
-      imageUrl: String(form.get("imageUrl") || "").trim() || null,
-      sku: String(form.get("sku") || "").trim() || null
-    };
-    try {
-      const result = await request("/products", { method: "POST", body: JSON.stringify(body) });
-      message.textContent = "Product created: " + result.product.name;
-      event.currentTarget.reset(); await loadProducts();
-    } catch (error) { message.textContent = error.message; }
+  $("productForm").addEventListener("submit",async event=>{
+    event.preventDefault();const form=new FormData(event.currentTarget);const message=$("adminMessage");message.textContent="Creating product…";
+    const body={name:String(form.get("name")||"").trim(),category:String(form.get("category")||"General").trim(),description:String(form.get("description")||"").trim(),priceMinor:Number(form.get("priceMinor")),currency:String(form.get("currency")||"RWF"),stockQuantity:Number(form.get("stockQuantity")),imageUrl:String(form.get("imageUrl")||"").trim()||null,sku:String(form.get("sku")||"").trim()||null};
+    try{const result=await request("/products",{method:"POST",body:JSON.stringify(body)});message.textContent="Product created: "+result.product.name;event.currentTarget.reset();await loadProducts();}
+    catch(error){message.textContent=error.message;}
   });
-  $("reloadButton").addEventListener("click", async () => { showAuthNotice(); await loadProducts(); await loadCart(); if (token()) await loadOrders(); });
-  $("ordersButton").addEventListener("click", loadOrders);
-  showAuthNotice();
-  loadProducts();
-  loadCart();
-  if (token()) loadOrders();
+  $("productSearch").addEventListener("input",()=>{clearTimeout(window.marketSearchTimer);window.marketSearchTimer=setTimeout(loadProducts,180);});
+  $("categoryFilter").addEventListener("change",loadProducts);
+  $("productSort").addEventListener("change",loadProducts);
+  $("reloadButton").addEventListener("click",async()=>{showAuthNotice();await Promise.all([loadProducts(),loadCart(),loadWishlist()]);if(token())await loadOrders();});
+  $("wishlistButton").addEventListener("click",loadWishlist);
+  $("ordersButton").addEventListener("click",loadOrders);
+  showAuthNotice();loadProducts();loadCart();loadWishlist();if(token())loadOrders();
 })();
