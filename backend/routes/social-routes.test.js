@@ -66,3 +66,35 @@ test("feed clamps pagination and only uses parameterized query",async()=>{
 test("schema helper requires a database pool",async()=>{
   await assert.rejects(()=>ensureSocialSchema(),/database pool/);
 });
+
+test("conversation messages are hidden from non-members",async()=>{
+  const pool={query:async(sql,params)=>{
+    if(/FROM social_conversation_members WHERE conversation_id=\$1 AND user_id=\$2/.test(sql)) return {rows:[]};
+    throw new Error("Unexpected query");
+  }};
+  await withServer(appFor(pool),async base=>{
+    const r=await fetch(base+"/api/social/conversations/42/messages");
+    assert.equal(r.status,404);
+    const data=await r.json();
+    assert.equal(data.success,false);
+  });
+});
+test("message creation rejects empty body before database access",async()=>{
+  let called=false;
+  const pool={query:async()=>{called=true;return {rows:[]};}};
+  await withServer(appFor(pool),async base=>{
+    const r=await fetch(base+"/api/social/conversations/42/messages",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({body:"   "})});
+    assert.equal(r.status,400);
+    assert.equal(called,false);
+  });
+});
+test("conversation listing is scoped to the authenticated member",async()=>{
+  let sql,params;
+  const pool={query:async(q,p)=>{sql=q;params=p;return {rows:[]};}};
+  await withServer(appFor(pool),async base=>{
+    const r=await fetch(base+"/api/social/conversations");
+    assert.equal(r.status,200);
+    assert.match(sql,/mine\.user_id=\$1/);
+    assert.deepEqual(params,[7]);
+  });
+});
