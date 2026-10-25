@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Nkwasibwe Market — browse products, manage your cart and securely check out.">
   <title>Nkwasibwe Market</title>
-  <link rel="stylesheet" href="market.css?v=11">
-  <script defer src="market.js?v=13"></script>
+  <link rel="stylesheet" href="market.css?v=12">
+  <script defer src="market.js?v=14"></script>
 </head>
 <body>
   <header class="market-header">
@@ -28,6 +28,7 @@
         <label>Sort by<select id="productSort"><option value="newest">Newest</option><option value="rating">Top rated</option><option value="price_asc">Price: low to high</option><option value="price_desc">Price: high to low</option><option value="name_asc">Name: A–Z</option></select></label>
       </div>
       <div id="productGrid" class="product-grid"><p class="muted">Loading products…</p></div>
+      <section id="storefrontPanel" class="storefront-panel" hidden aria-live="polite"><div class="section-heading"><div><p class="eyebrow">SELLER STOREFRONT</p><h2 id="storefrontName">Shop</h2><p id="storefrontDescription"></p><div id="storefrontStats" class="storefront-stats"></div></div><button id="closeStorefrontButton" type="button">Close shop</button></div><div id="storefrontProducts" class="product-grid"></div></section>
     </section>
     <section class="wishlist-section"><div class="section-heading"><div><h2>Saved favourites</h2><p>Your wishlist is private to your account.</p></div><button id="wishlistButton" type="button">Load favourites</button></div><div id="wishlistList" class="wishlist-list"><p class="muted">Sign in to save and view favourites.</p></div></section>
     <section class="addresses-section"><div class="section-heading"><div><h2>Delivery addresses</h2><p>Addresses are private to your account. Choose one for physical products.</p></div><button id="addressesButton" type="button">Refresh addresses</button></div><div id="addressesList" class="addresses-list"><p class="muted">Sign in to manage delivery addresses.</p></div><details class="address-editor"><summary>Add a delivery address</summary><form id="addressForm"><div class="form-row"><label>Address label<input name="label" maxlength="80" required placeholder="Home, Work"></label><label>Recipient name<input name="recipientName" maxlength="160" required></label></div><div class="form-row"><label>Phone number<input name="phone" maxlength="40" required autocomplete="tel"></label><label>Country<input name="country" maxlength="100" value="Rwanda" required autocomplete="country-name"></label></div><div class="form-row"><label>Province / region<input name="region" maxlength="120" autocomplete="address-level1"></label><label>City / district<input name="city" maxlength="120" required autocomplete="address-level2"></label></div><label>Address line 1<input name="addressLine1" maxlength="240" required placeholder="Sector, cell, village or street"></label><label>Address line 2 (optional)<input name="addressLine2" maxlength="240"></label><label>Postal code (optional)<input name="postalCode" maxlength="40" autocomplete="postal-code"></label><label class="checkbox-label"><input name="isDefault" type="checkbox"> Set as my default address</label><button class="primary-button" type="submit">Save address</button><p id="addressMessage" class="muted" role="status"></p></form></details></section>

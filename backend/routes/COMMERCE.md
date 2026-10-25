@@ -4,7 +4,8 @@ The commerce API is mounted at `/api/commerce`.
 
 ## Catalogue and cart
 
-- `GET /api/commerce/products?q=&category=&sort=&limit=` — list active products with server-side search/category filtering and allowlisted sorting (`newest`, `price_asc`, `price_desc`, `name_asc`, `rating`); returns categories, seller shop names and rating aggregates.
+- `GET /api/commerce/products?q=&category=&sort=&limit=` — list active products with server-side search/category filtering and allowlisted sorting (`newest`, `price_asc`, `price_desc`, `name_asc`, `rating`); returns categories, seller shop names/IDs and rating aggregates.
+- `GET /api/commerce/sellers/:sellerUserId/storefront` — public profile for an approved seller plus their active products and rating aggregates. Private seller contact email/phone are not returned.
 - `POST /api/commerce/seller/apply`, `GET /api/commerce/seller/profile` — submit/read the authenticated account's seller application.
 - `GET /api/commerce/seller/applications`, `PATCH /api/commerce/seller/applications/:userId` — administrator-only seller approval/rejection/suspension.
 - `GET /api/commerce/seller/products` — list products belonging to the signed-in approved seller.

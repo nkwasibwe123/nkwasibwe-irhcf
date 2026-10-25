@@ -727,6 +727,25 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
     }catch(error){return res.status(500).json({success:false,error:"Could not save product image.",code:"PRODUCT_IMAGE_SAVE_FAILED"});}
   });
 
+  router.get("/sellers/:sellerUserId/storefront", async (req, res) => {
+    const sellerUserId = safeInteger(req.params.sellerUserId, 1, Number.MAX_SAFE_INTEGER);
+    if (!sellerUserId) return res.status(400).json({ success: false, error: "Invalid seller ID.", code: "SELLER_ID_INVALID" });
+    try {
+      const sellerResult = await pool.query(
+        "SELECT s.user_id, s.shop_name, s.description, s.created_at, COUNT(DISTINCT p.id)::int AS product_count, COALESCE(ROUND(AVG(rv.rating)::numeric,1),0) AS rating_average, COUNT(DISTINCT rv.id)::int AS review_count FROM commerce_sellers s LEFT JOIN commerce_products p ON p.seller_user_id=s.user_id AND p.active=TRUE LEFT JOIN commerce_product_reviews rv ON rv.product_id=p.id WHERE s.user_id=$1 AND s.status='approved' GROUP BY s.user_id,s.shop_name,s.description,s.created_at LIMIT 1",
+        [sellerUserId]
+      );
+      if (!sellerResult.rows.length) return res.status(404).json({ success: false, error: "Approved storefront not found.", code: "STOREFRONT_NOT_FOUND" });
+      const products = await pool.query(
+        "SELECT p.id,p.name,p.description,p.price_minor,p.currency,p.stock_quantity,p.image_url,(p.image_data IS NOT NULL) AS has_image_upload,p.category,p.requires_shipping,COALESCE(rv.rating_average,0) AS rating_average,COALESCE(rv.review_count,0) AS review_count FROM commerce_products p LEFT JOIN (SELECT product_id,ROUND(AVG(rating)::numeric,1) AS rating_average,COUNT(*)::int AS review_count FROM commerce_product_reviews GROUP BY product_id) rv ON rv.product_id=p.id WHERE p.seller_user_id=$1 AND p.active=TRUE ORDER BY p.id DESC LIMIT 50",
+        [sellerUserId]
+      );
+      return res.json({ success: true, storefront: sellerResult.rows[0], products: products.rows });
+    } catch (error) {
+      return res.status(500).json({ success: false, error: "Could not load storefront.", code: "STOREFRONT_LOAD_FAILED" });
+    }
+  });
+
   router.get("/products", async (req, res) => {
     try {
       await releaseExpiredReservations(pool);
@@ -736,7 +755,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
       const sort = String(req.query.sort || "newest");
       const orderBy = ({ newest: "p.id DESC", price_asc: "p.price_minor ASC, p.id DESC", price_desc: "p.price_minor DESC, p.id DESC", name_asc: "p.name ASC, p.id DESC", rating: "rating_average DESC, p.id DESC" })[sort] || "p.id DESC";
       const result = await pool.query(
-        "SELECT p.id, p.name, p.description, p.sku, p.price_minor, p.currency, p.stock_quantity, p.image_url, (p.image_data IS NOT NULL) AS has_image_upload, p.category, p.requires_shipping, COALESCE(s.shop_name, 'Nkwasibwe Market') AS seller_name, COALESCE(rv.rating_average, 0) AS rating_average, COALESCE(rv.review_count, 0) AS review_count FROM commerce_products p LEFT JOIN commerce_sellers s ON s.user_id=p.seller_user_id AND s.status='approved' LEFT JOIN (SELECT product_id, ROUND(AVG(rating)::numeric, 1) AS rating_average, COUNT(*)::int AS review_count FROM commerce_product_reviews GROUP BY product_id) rv ON rv.product_id=p.id WHERE p.active=TRUE AND (p.seller_user_id IS NULL OR s.user_id IS NOT NULL) AND ($1='' OR p.name ILIKE '%' || $1 || '%' OR p.description ILIKE '%' || $1 || '%' OR p.sku ILIKE '%' || $1 || '%') AND ($2='' OR p.category=$2) ORDER BY " + orderBy + " LIMIT $3",
+        "SELECT p.id, p.seller_user_id, p.name, p.description, p.sku, p.price_minor, p.currency, p.stock_quantity, p.image_url, (p.image_data IS NOT NULL) AS has_image_upload, p.category, p.requires_shipping, COALESCE(s.shop_name, 'Nkwasibwe Market') AS seller_name, COALESCE(rv.rating_average, 0) AS rating_average, COALESCE(rv.review_count, 0) AS review_count FROM commerce_products p LEFT JOIN commerce_sellers s ON s.user_id=p.seller_user_id AND s.status='approved' LEFT JOIN (SELECT product_id, ROUND(AVG(rating)::numeric, 1) AS rating_average, COUNT(*)::int AS review_count FROM commerce_product_reviews GROUP BY product_id) rv ON rv.product_id=p.id WHERE p.active=TRUE AND (p.seller_user_id IS NULL OR s.user_id IS NOT NULL) AND ($1='' OR p.name ILIKE '%' || $1 || '%' OR p.description ILIKE '%' || $1 || '%' OR p.sku ILIKE '%' || $1 || '%') AND ($2='' OR p.category=$2) ORDER BY " + orderBy + " LIMIT $3",
         [search, category, limit]
       );
       const categories = await pool.query("SELECT DISTINCT category FROM commerce_products WHERE active=TRUE ORDER BY category LIMIT 100");
