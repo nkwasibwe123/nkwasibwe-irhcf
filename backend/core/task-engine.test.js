@@ -128,6 +128,19 @@ test("autonomous task verification rejects empty, failed, and quality-invalid ou
   assert.equal(isUsableTaskResult({ success: false, answer: "No provider credits" }), false);
   assert.equal(isUsableTaskResult({
     success: true,
+    result: { success: false, output_text: "Provider failed due to rate limit." }
+  }), false);
+  assert.equal(isUsableTaskResult({
+    success: true,
+    result: { output_text: "Provider failed." },
+    error: { code: "UPSTREAM_FAILURE", message: "Provider unavailable." }
+  }), false);
+  assert.equal(isUsableTaskResult({
+    success: true,
+    result: { success: true, output_text: "A valid nested result." }
+  }), true);
+  assert.equal(isUsableTaskResult({
+    success: true,
     response: { content: "A response exists." },
     agent: { responseQuality: { verified: false } }
   }), false);
