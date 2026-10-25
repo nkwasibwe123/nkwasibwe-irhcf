@@ -676,3 +676,19 @@ test("marketplace stock reservation expiry is connected to hosted checkout and p
   assert.match(routes,/releaseExpiredReservations\(pool\)/);
   assert.match(routes,/reservation_release AS \(DELETE FROM commerce_stock_reservations/);
 });
+
+
+test("marketplace product image upload is available to sellers and rendered from the server", () => {
+  const root=path.join(__dirname,"..","..");
+  const html=fs.readFileSync(path.join(root,"market.html"),"utf8");
+  const js=fs.readFileSync(path.join(root,"market.js"),"utf8");
+  const routes=fs.readFileSync(path.join(root,"backend","routes","commerce-routes.js"),"utf8");
+  assert.match(html,/name="imageFile" type="file"/);
+  assert.match(js,/async function uploadProductImage\(productId, file\)/);
+  assert.match(js,/product\.has_image_upload\?API\+"\/products\/"\+encodeURIComponent\(product\.id\)\+"\/image"/);
+  assert.match(routes,/router\.put\("\/products\/:productId\/image", authenticateToken, requireProductManager/);
+  assert.match(routes,/router\.get\("\/products\/:productId\/image"/);
+  assert.match(routes,/PRODUCT_IMAGE_SIGNATURE_INVALID/);
+  assert.match(routes,/image\.toString\("base64"\)!==encoded/);
+  assert.match(routes,/X-Content-Type-Options/);
+});
