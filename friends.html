@@ -44,8 +44,27 @@
   <textarea id="socialBio" maxlength="500" rows="3" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:9px;font:inherit;margin:6px 0 12px"></textarea>
   <label for="socialProfileVisibility">Profile visibility</label>
   <select id="socialProfileVisibility" style="padding:9px;border:1px solid var(--line);border-radius:9px;font:inherit"><option value="public">Public</option><option value="friends">Friends</option><option value="private">Private</option></select>
+  <label for="socialInterests">What I like (comma-separated)</label><input id="socialInterests" maxlength="1200" placeholder="Reading, research, music…" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:9px;font:inherit">
+  <label for="socialDislikes">What I dislike</label><input id="socialDislikes" maxlength="1200" placeholder="Things you prefer to avoid" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:9px;font:inherit">
+  <label for="socialWishes">My wishes and goals (comma-separated)</label><textarea id="socialWishes" maxlength="1200" rows="2" placeholder="Dreams, goals and plans…" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:9px;font:inherit"></textarea>
+  <label for="socialPersonalStatement">About me / personal statement / essay</label><textarea id="socialPersonalStatement" maxlength="4000" rows="5" placeholder="Your story, strengths, experience, values and aspirations…" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:9px;font:inherit"></textarea>
   <button type="submit" class="feed-action">Save profile</button>
 </form>
+<section class="feed-panel" aria-labelledby="documentVaultTitle">
+  <h2 id="documentVaultTitle">Professional documents & personal vault</h2>
+  <p class="feed-subtitle">Private account storage for diplomas, certificates, CV, essays, insurance, RSSB/social security, Mutuelle, property papers, driving permit, ID, passport, tax and other important documents. Files are not shown on your public profile.</p>
+  <form id="profileDocumentForm" class="composer">
+    <label for="profileDocumentCategory">Document type</label><select id="profileDocumentCategory" required>
+      <option value="diploma">Diploma / degree</option><option value="certificate">Certificate / training</option><option value="cv">CV / résumé</option><option value="essay">Essay / personal statement</option><option value="insurance">Insurance</option><option value="social-security">Social security / RSSB</option><option value="mutuelle">Mutuelle de santé</option><option value="property-title">Property / land title</option><option value="driving-permit">Driving permit</option><option value="national-id">National ID</option><option value="passport">Passport</option><option value="tax">Tax documents</option><option value="bank">Bank documents</option><option value="medical">Medical documents</option><option value="employment">Employment / recommendation</option><option value="education">Other education record</option><option value="other">Other important document</option>
+    </select>
+    <label for="profileDocumentTitle">Document name</label><input id="profileDocumentTitle" maxlength="160" required placeholder="e.g. Bachelor's degree">
+    <label for="profileDocumentIssuer">Issued by (optional)</label><input id="profileDocumentIssuer" maxlength="160" placeholder="Institution / authority">
+    <div class="composer-row"><label>Issue date (optional) <input id="profileDocumentIssued" type="date"></label><label>Expiry date (optional) <input id="profileDocumentExpires" type="date"></label></div>
+    <label for="profileDocumentNotes">Notes (optional)</label><textarea id="profileDocumentNotes" maxlength="1000" rows="2" placeholder="Reminder or note"></textarea>
+    <label for="profileDocumentFile">Choose file (PDF/JPEG/PNG/WebP, max 4 MiB)</label><input id="profileDocumentFile" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" required>
+    <button id="profileDocumentSubmit" type="submit">Save private document</button><div id="profileDocumentStatus" class="feed-status" role="status" aria-live="polite"></div>
+  </form>
+  <h3>My saved documents</h3><div id="profileDocumentList" class="feed-list"><p class="feed-empty">Loading documents…</p></div>
 </section>
 <section class="chat-workspace" aria-labelledby="chatTitle">
 <h2 id="chatTitle">Private messages</h2>
@@ -308,6 +327,10 @@
       const result=await request("/api/social/profile",{method:"PUT",body:JSON.stringify({
         displayName:document.getElementById("socialDisplayName").value.trim(),
         bio:document.getElementById("socialBio").value.trim(),
+        interests:document.getElementById("socialInterests").value.split(",").map(v=>v.trim()).filter(Boolean),
+        dislikes:document.getElementById("socialDislikes").value.split(",").map(v=>v.trim()).filter(Boolean),
+        wishes:document.getElementById("socialWishes").value.split(",").map(v=>v.trim()).filter(Boolean),
+        personalStatement:document.getElementById("socialPersonalStatement").value,
         visibility:document.getElementById("socialProfileVisibility").value
       })});
       document.getElementById("socialDisplayName").value=result.profile.display_name||"";
@@ -319,6 +342,10 @@
       const data=await request("/api/social/profile");
       document.getElementById("socialDisplayName").value=data.profile.display_name||"";
       document.getElementById("socialBio").value=data.profile.bio||"";
+      document.getElementById("socialInterests").value=Array.isArray(data.profile.interests)?data.profile.interests.join(", "):"";
+      document.getElementById("socialDislikes").value=Array.isArray(data.profile.dislikes)?data.profile.dislikes.join(", "):"";
+      document.getElementById("socialWishes").value=Array.isArray(data.profile.wishes)?data.profile.wishes.join(", "):"";
+      document.getElementById("socialPersonalStatement").value=data.profile.personal_statement||"";
       document.getElementById("socialProfileVisibility").value=data.profile.visibility||"public";
     }catch(e){say(e.message);}
   }
@@ -365,6 +392,31 @@
     try{await request("/api/social/conversations/"+encodeURIComponent(activeConversation)+"/messages",{method:"POST",body:JSON.stringify({body:text})});messageBody.value="";await loadMessages();await loadConversations();}
     catch(e){say(e.message);}finally{sendMessage.disabled=false;}
   });
+  const profileDocumentForm=document.getElementById("profileDocumentForm"),profileDocumentList=document.getElementById("profileDocumentList"),profileDocumentStatus=document.getElementById("profileDocumentStatus");
+  async function loadProfileDocuments(){
+    try{
+      const data=await request("/api/social/profile/documents");profileDocumentList.replaceChildren();
+      if(!data.documents?.length){profileDocumentList.append(node("p","feed-empty","No documents saved yet."));return;}
+      data.documents.forEach(doc=>{
+        const card=node("article","post"),head=node("div","post-head");head.append(node("strong","",doc.title),node("span","",String(doc.category||"other").replace(/-/g," ")));card.append(head);
+        card.append(node("p","post-body",[doc.file_name,doc.issuer,doc.issued_on?"Issued: "+doc.issued_on:"",doc.expires_on?"Expires: "+doc.expires_on:"",doc.notes].filter(Boolean).join(" · ")));
+        const actions=node("div","post-actions"),download=node("button","feed-action","Download document");download.type="button";
+        download.addEventListener("click",async()=>{download.disabled=true;try{const response=await fetch("/api/social/profile/documents/"+encodeURIComponent(doc.id)+"/content",{headers:{"Authorization":"Bearer "+token()}});if(!response.ok)throw new Error("Could not download this document.");const blob=await response.blob(),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=doc.file_name||"document";document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch(e){profileDocumentStatus.textContent=e.message;}finally{download.disabled=false;}});
+        const remove=node("button","feed-action","Delete document");remove.type="button";remove.addEventListener("click",async()=>{if(!window.confirm("Permanently delete this saved document?"))return;remove.disabled=true;try{await request("/api/social/profile/documents/"+encodeURIComponent(doc.id),{method:"DELETE"});await loadProfileDocuments();profileDocumentStatus.textContent="Document deleted.";}catch(e){profileDocumentStatus.textContent=e.message;remove.disabled=false;}});
+        actions.append(download,remove);card.append(actions);profileDocumentList.append(card);
+      });
+    }catch(e){profileDocumentList.replaceChildren(node("p","feed-empty",e.message));}
+  }
+  profileDocumentForm.addEventListener("submit",async event=>{
+    event.preventDefault();const file=document.getElementById("profileDocumentFile").files[0];if(!file){profileDocumentStatus.textContent="Choose a file first.";return;}if(file.size>4*1024*1024){profileDocumentStatus.textContent="File exceeds 4 MiB.";return;}
+    const submit=document.getElementById("profileDocumentSubmit");submit.disabled=true;profileDocumentStatus.textContent="Saving private document…";
+    try{
+      const dataBase64=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(",")[1]||"");reader.onerror=()=>reject(new Error("Could not read the selected file."));reader.readAsDataURL(file);});
+      await request("/api/social/profile/documents",{method:"POST",body:JSON.stringify({category:document.getElementById("profileDocumentCategory").value,title:document.getElementById("profileDocumentTitle").value,issuer:document.getElementById("profileDocumentIssuer").value,issuedOn:document.getElementById("profileDocumentIssued").value,expiresOn:document.getElementById("profileDocumentExpires").value,notes:document.getElementById("profileDocumentNotes").value,fileName:file.name,mimeType:file.type,dataBase64})});
+      profileDocumentForm.reset();profileDocumentStatus.textContent="Document saved privately.";await loadProfileDocuments();
+    }catch(e){profileDocumentStatus.textContent=e.message;}finally{submit.disabled=false;}
+  });
+  loadProfileDocuments();
   load();
   loadConversations();
   loadFriendRequests();
