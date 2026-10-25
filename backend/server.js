@@ -24,6 +24,7 @@ const { editVideoFile } = require("./media/video-editor");
 const { editAudioFile } = require("./media/audio-editor");
 const { toFile } = require("openai/uploads");
 const { getLocalTranscriberConfig, getLocalTranscriberStatus, transcribeLocally } = require("./media/local-transcriber");
+const { getVideoProviderStatus } = require("./media/video-provider-status");
 
 // ============================================================
 // INTERNAL MODULES
@@ -4080,6 +4081,17 @@ app.post("/api/media/audio/edit", authenticateToken, async (req, res) => {
 
 app.post("/api/media/video", authenticateToken, async (req, res) => {
   try {
+    const videoProviderStatus = getVideoProviderStatus();
+    if (!videoProviderStatus.available) {
+      return res.status(503).json({
+        success: false,
+        error: videoProviderStatus.message,
+        code: videoProviderStatus.code,
+        provider: videoProviderStatus.provider,
+        retirementDate: videoProviderStatus.retirementDate
+      });
+    }
+
     if (!OPENAI_API_KEY) {
       return res.status(503).json({
         success: false,
@@ -4194,6 +4206,10 @@ app.post("/api/media/video", authenticateToken, async (req, res) => {
       code: error?.code || "VIDEO_GENERATION_FAILED"
     });
   }
+});
+
+app.get("/api/media/video/status", authenticateToken, (_req, res) => {
+  return res.json({ success: true, ...getVideoProviderStatus() });
 });
 
 app.get("/api/media/video/:videoId", authenticateToken, async (req, res) => {
