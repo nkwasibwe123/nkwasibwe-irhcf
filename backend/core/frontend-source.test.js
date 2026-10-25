@@ -717,7 +717,7 @@ test("seller shipment tracking is required at shipment and visible in buyer orde
   const js=fs.readFileSync(path.join(root,"market.js"),"utf8");
   const routes=fs.readFileSync(path.join(root,"backend","routes","commerce-routes.js"),"utf8");
   assert.match(js,/trackingCarrier=carrierInput\?\.value\.trim\(\)/);
-  assert.match(js,/Tracking: \+\(item\.tracking_carrier/);
+  assert.match(js,/Tracking: "\+\(item\.tracking_carrier/);
   assert.match(routes,/TRACKING_DETAILS_REQUIRED/);
   assert.match(routes,/tracking_carrier=CASE WHEN \$2='shipped'/);
   assert.match(routes,/tracking_number,shipped_at,delivered_at/);
