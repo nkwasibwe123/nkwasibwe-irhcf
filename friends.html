@@ -48,6 +48,12 @@
   <label for="socialDislikes">What I dislike</label><input id="socialDislikes" maxlength="1200" placeholder="Things you prefer to avoid" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:9px;font:inherit">
   <label for="socialWishes">My wishes and goals (comma-separated)</label><textarea id="socialWishes" maxlength="1200" rows="2" placeholder="Dreams, goals and plans…" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:9px;font:inherit"></textarea>
   <label for="socialPersonalStatement">About me / personal statement / essay</label><textarea id="socialPersonalStatement" maxlength="4000" rows="5" placeholder="Your story, strengths, experience, values and aspirations…" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:9px;font:inherit"></textarea>
+  <h3>Education, skills & career</h3>
+  <p class="feed-subtitle">Enter one item per line. Keep detailed certificates and evidence in the private document vault below.</p>
+  <label for="socialEducation">Education history</label><textarea id="socialEducation" maxlength="3600" rows="3" placeholder="School / institution — qualification — year" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:9px;font:inherit"></textarea>
+  <label for="socialSkills">Skills and professional abilities</label><textarea id="socialSkills" maxlength="3600" rows="3" placeholder="Teaching, research, computer skills…" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:9px;font:inherit"></textarea>
+  <label for="socialLanguages">Languages and proficiency</label><textarea id="socialLanguages" maxlength="3600" rows="2" placeholder="Kinyarwanda — fluent; English — intermediate…" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:9px;font:inherit"></textarea>
+  <label for="socialEmploymentHistory">Employment and work experience</label><textarea id="socialEmploymentHistory" maxlength="3600" rows="4" placeholder="Employer — role — dates — key responsibilities" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:9px;font:inherit"></textarea>
   <button type="submit" class="feed-action">Save profile</button>
 </form>
 <section class="feed-panel" aria-labelledby="documentVaultTitle">
@@ -331,6 +337,10 @@
         dislikes:document.getElementById("socialDislikes").value.split(",").map(v=>v.trim()).filter(Boolean),
         wishes:document.getElementById("socialWishes").value.split(",").map(v=>v.trim()).filter(Boolean),
         personalStatement:document.getElementById("socialPersonalStatement").value,
+        education:document.getElementById("socialEducation").value.split(/\\r?\\n/).map(v=>v.trim()).filter(Boolean),
+        skills:document.getElementById("socialSkills").value.split(/\\r?\\n/).map(v=>v.trim()).filter(Boolean),
+        languages:document.getElementById("socialLanguages").value.split(/\\r?\\n/).map(v=>v.trim()).filter(Boolean),
+        employmentHistory:document.getElementById("socialEmploymentHistory").value.split(/\\r?\\n/).map(v=>v.trim()).filter(Boolean),
         visibility:document.getElementById("socialProfileVisibility").value
       })});
       document.getElementById("socialDisplayName").value=result.profile.display_name||"";
@@ -346,6 +356,10 @@
       document.getElementById("socialDislikes").value=Array.isArray(data.profile.dislikes)?data.profile.dislikes.join(", "):"";
       document.getElementById("socialWishes").value=Array.isArray(data.profile.wishes)?data.profile.wishes.join(", "):"";
       document.getElementById("socialPersonalStatement").value=data.profile.personal_statement||"";
+      document.getElementById("socialEducation").value=Array.isArray(data.profile.education)?data.profile.education.join("\\n"):"";
+      document.getElementById("socialSkills").value=Array.isArray(data.profile.skills)?data.profile.skills.join("\\n"):"";
+      document.getElementById("socialLanguages").value=Array.isArray(data.profile.languages)?data.profile.languages.join("\\n"):"";
+      document.getElementById("socialEmploymentHistory").value=Array.isArray(data.profile.employment_history)?data.profile.employment_history.join("\\n"):"";
       document.getElementById("socialProfileVisibility").value=data.profile.visibility||"public";
     }catch(e){say(e.message);}
   }
