@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Nkwasibwe Market — browse products, manage your cart and securely check out.">
   <title>Nkwasibwe Market</title>
-  <link rel="stylesheet" href="market.css?v=4">
-  <script defer src="market.js?v=4"></script>
+  <link rel="stylesheet" href="market.css?v=5">
+  <script defer src="market.js?v=5"></script>
 </head>
 <body>
   <header class="market-header">
@@ -34,7 +34,7 @@
     <section class="cart-section">
       <div class="section-heading"><div><h2>Your cart</h2><p>Saved to your account when signed in.</p></div><span id="cartCount" class="count">0 items</span></div>
       <div id="cartItems" class="cart-items"><p class="muted">Sign in to load your saved cart.</p></div>
-      <div class="cart-footer"><div><span>Subtotal</span><strong id="cartTotal">—</strong></div><label id="shippingAddressWrap" class="shipping-address-wrap" hidden>Ship to<select id="shippingAddressSelect"><option value="">Select a saved address</option></select></label><p id="shippingAddressHint" class="muted" role="status"></p><button id="checkoutButton" class="primary-button" type="button" disabled>Continue to secure checkout</button><p id="checkoutMessage" class="muted" role="status"></p></div>
+      <div class="cart-footer"><div><span>Subtotal</span><strong id="cartSubtotal">—</strong></div><div class="discount-row"><span>Coupon discount</span><strong id="cartDiscount">—</strong></div><div><span>Total</span><strong id="cartTotal">—</strong></div><div class="coupon-entry"><label for="couponCodeInput">Coupon code</label><div><input id="couponCodeInput" maxlength="40" placeholder="Enter code"><button id="applyCouponButton" type="button">Apply</button></div><p id="couponMessage" class="muted" role="status"></p></div><label id="shippingAddressWrap" class="shipping-address-wrap" hidden>Ship to<select id="shippingAddressSelect"><option value="">Select a saved address</option></select></label><p id="shippingAddressHint" class="muted" role="status"></p><button id="checkoutButton" class="primary-button" type="button" disabled>Continue to secure checkout</button><p id="checkoutMessage" class="muted" role="status"></p></div>
     </section>
     <section class="orders-section">
       <div class="section-heading"><div><h2>My orders & payments</h2><p>Orders and payment status are visible only to the signed-in account. Nkwasibwe does not store card numbers.</p></div><button id="ordersButton" type="button">Load orders</button></div>
@@ -45,6 +45,8 @@
       <summary>Product & seller administration (authorized administrators / approved sellers)</summary>
       <p class="muted">Approved sellers can manage their own products. Platform administrators are configured in COMMERCE_ADMIN_USER_IDS.</p>
       <div class="admin-applications"><div class="section-heading"><h3>Seller applications</h3><button id="sellerApplicationsButton" type="button">Load applications (admin)</button></div><div id="sellerApplicationsList" class="seller-list"><p class="muted">Only configured administrators can review seller applications.</p></div></div>
+      <div class="admin-applications"><div class="section-heading"><h3>Coupon management</h3><button id="couponsButton" type="button">Load coupons (admin)</button></div><form id="couponForm" class="coupon-admin-form"><label>Coupon code<input name="code" maxlength="40" pattern="[A-Za-z0-9_-]{3,40}" required></label><label>Description<input name="description" maxlength="500"></label><div class="form-row"><label>Discount type<select name="discountType"><option value="percent">Percentage</option><option value="fixed">Fixed amount</option></select></label><label>Discount value<input name="discountValue" type="number" min="1" step="1" required></label></div><div class="form-row"><label>Currency<select name="currency"><option>RWF</option><option>USD</option><option>EUR</option><option>GBP</option><option>KES</option><option>UGX</option><option>TZS</option><option>NGN</option><option>ZAR</option></select></label><label>Minimum subtotal (minor units)<input name="minSubtotalMinor" type="number" min="0" step="1" value="0" required></label></div><div class="form-row"><label>Starts at (optional)<input name="startsAt" type="datetime-local"></label><label>Expires at (optional)<input name="expiresAt" type="datetime-local"></label></div><button class="primary-button" type="submit">Create coupon</button><p id="couponAdminMessage" class="muted" role="status"></p></form><div id="couponsList" class="seller-list"><p class="muted">Only configured administrators can manage coupons.</p></div></div>
+      <div class="admin-applications"><div class="section-heading"><h3>Refund / return requests</h3><button id="refundRequestsButton" type="button">Load requests (admin)</button></div><div id="refundRequestsList" class="seller-list"><p class="muted">Only configured administrators can review refund requests.</p></div></div>
       <form id="productForm">
         <label>Product name<input name="name" maxlength="180" required></label>
         <label>Category<input name="category" maxlength="80" value="General" required placeholder="e.g. Electronics, Clothing, Home"></label><label class="checkbox-label"><input name="requiresShipping" type="checkbox" checked> Physical product (requires delivery address)</label>
