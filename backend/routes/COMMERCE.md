@@ -9,7 +9,7 @@ The commerce API is mounted at `/api/commerce`.
 - `GET /api/commerce/seller/applications`, `PATCH /api/commerce/seller/applications/:userId` — administrator-only seller approval/rejection/suspension.
 - `GET /api/commerce/seller/products` — list products belonging to the signed-in approved seller.
 - `GET /api/commerce/seller/orders` — paid orders containing items owned by the signed-in approved seller.
-- `PATCH /api/commerce/seller/order-items/:itemId/fulfillment` — update fulfillment for a seller-owned paid order item using allowed status transitions.
+- `PATCH /api/commerce/seller/order-items/:itemId/fulfillment` — update fulfillment for a seller-owned paid order item using allowed status transitions; marking an item shipped requires a carrier/delivery method and tracking/reference number, which the buyer can see in order details.
 - `GET /api/commerce/seller/payouts`, `POST /api/commerce/seller/payout-requests` — account-scoped seller earnings, available balance and payout requests.
 - `GET /api/commerce/payout-requests`, `PATCH /api/commerce/payout-requests/:requestId` — administrator payout review.
 - `POST /api/commerce/products` — create a product; requires a configured administrator or an approved seller. Seller-created products are owned by that seller account.
