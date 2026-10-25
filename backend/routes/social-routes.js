@@ -13,6 +13,10 @@ function ensureSocialSchema(pool) {
       dislikes JSONB NOT NULL DEFAULT '[]'::jsonb,
       wishes JSONB NOT NULL DEFAULT '[]'::jsonb,
       personal_statement TEXT NOT NULL DEFAULT '',
+      education JSONB NOT NULL DEFAULT '[]'::jsonb,
+      skills JSONB NOT NULL DEFAULT '[]'::jsonb,
+      languages JSONB NOT NULL DEFAULT '[]'::jsonb,
+      employment_history JSONB NOT NULL DEFAULT '[]'::jsonb,
       avatar_url TEXT,
       visibility TEXT NOT NULL DEFAULT 'public' CHECK (visibility IN ('public','friends','private')),
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -131,6 +135,10 @@ function ensureSocialSchema(pool) {
     ALTER TABLE social_profiles ADD COLUMN IF NOT EXISTS dislikes JSONB NOT NULL DEFAULT '[]'::jsonb;
     ALTER TABLE social_profiles ADD COLUMN IF NOT EXISTS wishes JSONB NOT NULL DEFAULT '[]'::jsonb;
     ALTER TABLE social_profiles ADD COLUMN IF NOT EXISTS personal_statement TEXT NOT NULL DEFAULT '';
+    ALTER TABLE social_profiles ADD COLUMN IF NOT EXISTS education JSONB NOT NULL DEFAULT '[]'::jsonb;
+    ALTER TABLE social_profiles ADD COLUMN IF NOT EXISTS skills JSONB NOT NULL DEFAULT '[]'::jsonb;
+    ALTER TABLE social_profiles ADD COLUMN IF NOT EXISTS languages JSONB NOT NULL DEFAULT '[]'::jsonb;
+    ALTER TABLE social_profiles ADD COLUMN IF NOT EXISTS employment_history JSONB NOT NULL DEFAULT '[]'::jsonb;
   `);
 }
 
@@ -197,6 +205,8 @@ function createSocialRouter({ pool, authenticateToken } = {}) {
         `SELECT u.id, COALESCE(p.display_name,u.name) AS display_name, COALESCE(p.bio,'') AS bio,
                 COALESCE(p.interests,'[]'::jsonb) AS interests, COALESCE(p.dislikes,'[]'::jsonb) AS dislikes,
                 COALESCE(p.wishes,'[]'::jsonb) AS wishes, COALESCE(p.personal_statement,'') AS personal_statement,
+                COALESCE(p.education,'[]'::jsonb) AS education, COALESCE(p.skills,'[]'::jsonb) AS skills,
+                COALESCE(p.languages,'[]'::jsonb) AS languages, COALESCE(p.employment_history,'[]'::jsonb) AS employment_history,
                 p.avatar_url, COALESCE(p.visibility,'public') AS visibility
          FROM users u LEFT JOIN social_profiles p ON p.user_id=u.id WHERE u.id=$1`,
         [userId(req)]
@@ -213,16 +223,17 @@ function createSocialRouter({ pool, authenticateToken } = {}) {
       const cleanList = value => Array.isArray(value) ? value.map(item=>String(item||"").trim().slice(0,120)).filter(Boolean).slice(0,30) : [];
       const interests=cleanList(req.body?.interests), dislikes=cleanList(req.body?.dislikes), wishes=cleanList(req.body?.wishes);
       const personalStatement=String(req.body?.personalStatement||"").trim().slice(0,4000);
+      const education=cleanList(req.body?.education), skills=cleanList(req.body?.skills), languages=cleanList(req.body?.languages), employmentHistory=cleanList(req.body?.employmentHistory);
       const avatarUrl = req.body?.avatarUrl == null ? null : String(req.body.avatarUrl).trim().slice(0,2000);
       const visibility = ["public","friends","private"].includes(req.body?.visibility) ? req.body.visibility : "public";
       if (!displayName) return fail(res,400,"displayName is required.");
       if (avatarUrl && !/^https:\/\//i.test(avatarUrl)) return fail(res,400,"avatarUrl must use HTTPS.");
       const result = await pool.query(
-        `INSERT INTO social_profiles(user_id,display_name,bio,interests,dislikes,wishes,personal_statement,avatar_url,visibility)
-         VALUES($1,$2,$3,$4::jsonb,$5::jsonb,$6::jsonb,$7,$8,$9)
-         ON CONFLICT(user_id) DO UPDATE SET display_name=EXCLUDED.display_name,bio=EXCLUDED.bio,interests=EXCLUDED.interests,dislikes=EXCLUDED.dislikes,wishes=EXCLUDED.wishes,personal_statement=EXCLUDED.personal_statement,avatar_url=EXCLUDED.avatar_url,visibility=EXCLUDED.visibility,updated_at=NOW()
-         RETURNING user_id,display_name,bio,interests,dislikes,wishes,personal_statement,avatar_url,visibility`,
-        [userId(req),displayName,bio,JSON.stringify(interests),JSON.stringify(dislikes),JSON.stringify(wishes),personalStatement,avatarUrl,visibility]
+        `INSERT INTO social_profiles(user_id,display_name,bio,interests,dislikes,wishes,personal_statement,education,skills,languages,employment_history,avatar_url,visibility)
+         VALUES($1,$2,$3,$4::jsonb,$5::jsonb,$6::jsonb,$7,$8::jsonb,$9::jsonb,$10::jsonb,$11::jsonb,$12,$13)
+         ON CONFLICT(user_id) DO UPDATE SET display_name=EXCLUDED.display_name,bio=EXCLUDED.bio,interests=EXCLUDED.interests,dislikes=EXCLUDED.dislikes,wishes=EXCLUDED.wishes,personal_statement=EXCLUDED.personal_statement,education=EXCLUDED.education,skills=EXCLUDED.skills,languages=EXCLUDED.languages,employment_history=EXCLUDED.employment_history,avatar_url=EXCLUDED.avatar_url,visibility=EXCLUDED.visibility,updated_at=NOW()
+         RETURNING user_id,display_name,bio,interests,dislikes,wishes,personal_statement,education,skills,languages,employment_history,avatar_url,visibility`,
+        [userId(req),displayName,bio,JSON.stringify(interests),JSON.stringify(dislikes),JSON.stringify(wishes),personalStatement,JSON.stringify(education),JSON.stringify(skills),JSON.stringify(languages),JSON.stringify(employmentHistory),avatarUrl,visibility]
       );
       return res.json({ success:true, profile:result.rows[0] });
     } catch (error) { return next(error); }
