@@ -63,8 +63,8 @@ test("feed clamps pagination and only uses parameterized query",async()=>{
     assert.match(sql,/NOT EXISTS/);
   });
 });
-test("schema helper requires a database pool",async()=>{
-  await assert.rejects(()=>ensureSocialSchema(),/database pool/);
+test("schema helper requires a database pool",()=>{
+  assert.throws(()=>ensureSocialSchema(),/database pool/);
 });
 
 test("conversation messages are hidden from non-members",async()=>{
