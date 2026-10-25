@@ -327,6 +327,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
       if(quantities.get(id)>MAX_QUANTITY)return res.status(400).json({success:false,error:"A product quantity cannot exceed 99.",code:"CART_QUANTITY_LIMIT"});
     }
     try {
+      await releaseExpiredReservations(pool);
       const products=await pool.query("SELECT p.id,p.price_minor,p.currency,p.stock_quantity,p.requires_shipping FROM commerce_products p WHERE p.active=TRUE AND (p.seller_user_id IS NULL OR EXISTS (SELECT 1 FROM commerce_sellers s WHERE s.user_id=p.seller_user_id AND s.status='approved')) AND p.id=ANY($1::bigint[])",[[...quantities.keys()]]);
       if(products.rows.length!==quantities.size)return res.status(400).json({success:false,error:"One or more products are unavailable.",code:"PRODUCT_UNAVAILABLE"});
       const currencies=new Set(products.rows.map(row=>row.currency));
@@ -551,6 +552,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
 
   router.get("/products", async (req, res) => {
     try {
+      await releaseExpiredReservations(pool);
       const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 50));
       const search = String(req.query.q || "").trim().slice(0, 120);
       const category = String(req.query.category || "").trim().slice(0, 80);
@@ -727,8 +729,9 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
 
   router.get("/orders", authenticateToken, async (req, res) => {
     try {
+      await releaseExpiredReservations(pool);
       const result = await pool.query(
-        "SELECT id, tx_ref, status, currency, total_minor, subtotal_minor, discount_minor, shipping_minor, tax_minor, tax_rate_bps, coupon_code, provider, checkout_url, shipping_address, created_at, updated_at, paid_at FROM commerce_orders WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100",
+        "SELECT id, tx_ref, status, currency, total_minor, subtotal_minor, discount_minor, shipping_minor, tax_minor, tax_rate_bps, coupon_code, provider, checkout_url, shipping_address, expires_at, created_at, updated_at, paid_at FROM commerce_orders WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100",
         [req.user.id]
       );
       return res.json({ success: true, orders: result.rows });
@@ -741,7 +744,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
     const orderId = safeInteger(req.params.orderId, 1, Number.MAX_SAFE_INTEGER);
     if (!orderId) return res.status(400).json({ success: false, error: "Invalid order ID.", code: "ORDER_ID_INVALID" });
     try {
-      const result = await pool.query("SELECT id, tx_ref, status, currency, total_minor, subtotal_minor, discount_minor, shipping_minor, tax_minor, tax_rate_bps, coupon_code, provider, provider_transaction_id, checkout_url, shipping_address, created_at, updated_at, paid_at FROM commerce_orders WHERE id=$1 AND user_id=$2 LIMIT 1", [orderId, req.user.id]);
+      const result = await pool.query("SELECT id, tx_ref, status, currency, total_minor, subtotal_minor, discount_minor, shipping_minor, tax_minor, tax_rate_bps, coupon_code, provider, provider_transaction_id, checkout_url, shipping_address, expires_at, stock_released_at, created_at, updated_at, paid_at FROM commerce_orders WHERE id=$1 AND user_id=$2 LIMIT 1", [orderId, req.user.id]);
       if (!result.rows.length) return res.status(404).json({ success: false, error: "Order not found.", code: "ORDER_NOT_FOUND" });
       const items = await pool.query("SELECT product_id, product_name, quantity, unit_price_minor, line_total_minor, fulfillment_status FROM commerce_order_items WHERE order_id=$1 ORDER BY id", [orderId]);
       return res.json({ success: true, order: result.rows[0], items: items.rows });
@@ -822,9 +825,12 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
       if (quantities.get(id) > MAX_QUANTITY) return res.status(400).json({ success: false, code: "CART_QUANTITY_LIMIT", error: "A product quantity cannot exceed 99." });
     }
 
+    try { await releaseExpiredReservations(pool); }
+    catch (error) { return res.status(503).json({ success: false, code: "STOCK_RESERVATION_CLEANUP_FAILED", error: "Could not safely release expired stock reservations." }); }
     const client = typeof pool.connect === "function" ? await pool.connect() : null;
     if (!client) return res.status(503).json({ success: false, code: "CHECKOUT_TRANSACTION_UNAVAILABLE", error: "Secure checkout requires transactional database support." });
     let orderId;
+    let orderExpiresAt;
     let txRef;
     let totalMinor;
     let subtotalMinor;
@@ -930,15 +936,22 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
       }
       txRef = "irhcf_" + crypto.randomUUID();
       const order = await client.query(
-        "INSERT INTO commerce_orders (user_id, tx_ref, status, currency, total_minor, subtotal_minor, discount_minor, shipping_minor, tax_minor, tax_rate_bps, coupon_code, provider, shipping_address) VALUES ($1,$2,'pending',$3,$4,$5,$6,$7,$8,$9,$10,'flutterwave',$11::jsonb) RETURNING id",
+        "INSERT INTO commerce_orders (user_id, tx_ref, status, currency, total_minor, subtotal_minor, discount_minor, shipping_minor, tax_minor, tax_rate_bps, coupon_code, provider, shipping_address, expires_at) VALUES ($1,$2,'pending',$3,$4,$5,$6,$7,$8,$9,$10,'flutterwave',$11::jsonb,CURRENT_TIMESTAMP + INTERVAL '30 minutes') RETURNING id,expires_at",
         [req.user.id, txRef, currency, totalMinor, subtotalMinor, discountMinor, shippingMinor, taxMinor, taxRateBps, couponCode, shippingAddress ? JSON.stringify(shippingAddress) : null]
       );
       orderId = order.rows[0].id;
+      orderExpiresAt = order.rows[0].expires_at;
       for (const item of items) {
         await client.query(
           "INSERT INTO commerce_order_items (order_id, product_id, product_name, quantity, unit_price_minor, line_total_minor, seller_user_id) VALUES ($1,$2,$3,$4,$5,$6,$7)",
           [orderId, item.product.id, item.product.name, item.quantity, item.unit, item.line, item.product.seller_user_id || null]
         );
+        const stockUpdate = await client.query("UPDATE commerce_products SET stock_quantity=stock_quantity-$2,updated_at=CURRENT_TIMESTAMP WHERE id=$1 AND stock_quantity >= $2 RETURNING id", [item.product.id,item.quantity]);
+        if (!stockUpdate.rows.length) {
+          await client.query("ROLLBACK");
+          return res.status(409).json({ success: false, code: "INSUFFICIENT_STOCK", error: "Stock changed before checkout could reserve it." });
+        }
+        await client.query("INSERT INTO commerce_stock_reservations (order_id,product_id,quantity,expires_at) VALUES ($1,$2,$3,$4)", [orderId,item.product.id,item.quantity,orderExpiresAt]);
       }
       await client.query("COMMIT");
     } catch (error) {
@@ -953,7 +966,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
     const customerEmail = String(req.user.email || "").trim().slice(0, 254);
     const redirectUrl = String(env.FLW_REDIRECT_URL || "").trim();
     if (!customerEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail) || !redirectUrl) {
-      await pool.query("UPDATE commerce_orders SET status='failed', updated_at=CURRENT_TIMESTAMP WHERE id=$1 AND status='pending'", [orderId]);
+      await releaseOrderReservations(pool, orderId, "failed");
       return res.status(503).json({ success: false, code: "CHECKOUT_CONFIGURATION_INCOMPLETE", error: "A verified customer email and FLW_REDIRECT_URL are required for hosted checkout." });
     }
     try {
@@ -967,19 +980,21 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
           redirect_url: redirectUrl,
           customer: { email: customerEmail },
           customizations: { title: "Nkwasibwe Market", description: "Order " + orderId },
+          configuration: { session_duration: 30, max_retry_attempt: 3 },
+          link_expiration: new Date(orderExpiresAt).toISOString(),
           meta: { order_id: String(orderId), user_id: String(req.user.id) }
         })
       });
       const payload = await response.json();
       const checkoutUrl = payload?.data?.link;
       if (!response.ok || payload?.status !== "success" || typeof checkoutUrl !== "string" || !checkoutUrl.startsWith("https://")) {
-        await pool.query("UPDATE commerce_orders SET status='failed', updated_at=CURRENT_TIMESTAMP WHERE id=$1 AND status='pending'", [orderId]);
+        await releaseOrderReservations(pool, orderId, "failed");
         return res.status(502).json({ success: false, code: "CHECKOUT_PROVIDER_FAILED", error: "Payment provider did not create a valid hosted checkout." });
       }
       await pool.query("UPDATE commerce_orders SET checkout_url=$2, updated_at=CURRENT_TIMESTAMP WHERE id=$1 AND status='pending'", [orderId, checkoutUrl]);
       return res.status(201).json({ success: true, orderId, txRef, currency, subtotalMinor, discountMinor, shippingMinor, taxMinor, taxRateBps, totalMinor, couponCode, checkoutUrl, paymentStatus: "pending" });
     } catch (error) {
-      await pool.query("UPDATE commerce_orders SET status='failed', updated_at=CURRENT_TIMESTAMP WHERE id=$1 AND status='pending'", [orderId]);
+      await releaseOrderReservations(pool, orderId, "failed");
       return res.status(502).json({ success: false, code: "CHECKOUT_PROVIDER_UNAVAILABLE", error: "Payment provider could not be reached. No payment has been confirmed." });
     }
   });
