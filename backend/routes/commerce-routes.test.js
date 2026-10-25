@@ -668,3 +668,27 @@ test("seller payout balances subtract reversed earnings after a refund", async (
   }));
   await withServer(app,async base=>{const response=await fetch(base+"/api/commerce/seller/payouts");assert.equal(response.status,200);assert.equal((await response.json()).balances[0].available,"4000");});
 });
+
+
+test("Flutterwave webhook rejects a provider verification response for a different transaction ID", async () => {
+  const app=express();app.use(express.json());let orderLookup=false;
+  app.use("/api/commerce",createCommerceRouter({
+    pool:{async query(sql){if(sql.includes("FROM commerce_orders WHERE tx_ref=$1"))orderLookup=true;return{rows:[]};}},
+    authenticateToken:(req,res,next)=>next(),
+    fetchImpl:async url=>{
+      assert.match(url,/\/transactions\/999\/verify$/);
+      return{ok:true,json:async()=>({status:"success",data:{id:1234,tx_ref:"irhcf_order_1",status:"successful",amount:10,currency:"RWF"}})};
+    },
+    env:{FLW_SECRET_KEY:"test-secret",FLW_SECRET_HASH:"test-hash"}
+  }));
+  await withServer(app,async base=>{
+    const response=await fetch(base+"/api/commerce/webhook/flutterwave",{
+      method:"POST",
+      headers:{"Content-Type":"application/json","verif-hash":"test-hash"},
+      body:JSON.stringify({data:{id:999,tx_ref:"irhcf_order_1"}})
+    });
+    assert.equal(response.status,400);
+    assert.equal((await response.json()).code,"PAYMENT_NOT_VERIFIED");
+    assert.equal(orderLookup,false,"An unbound provider transaction must not reach order lookup or update.");
+  });
+});
