@@ -15,7 +15,7 @@ The commerce API is mounted at `/api/commerce`.
 - `GET /api/commerce/cart` — read the signed-in user's persisted cart.
 - `GET /api/commerce/addresses`, `POST /api/commerce/addresses`, `PUT /api/commerce/addresses/:addressId/default`, `DELETE /api/commerce/addresses/:addressId` — private account-owned delivery address book.
 - `GET /api/commerce/orders/:orderId` — order details and line items; the order must belong to the signed-in account.
-- `POST /api/commerce/quote` — server-calculated cart subtotal, coupon discount and total from current database prices.
+- `POST /api/commerce/quote` — server-calculated cart subtotal, coupon discount, shipping, tax and total from current database prices and server configuration.
 - `POST /api/commerce/orders/:orderId/refund-request`, `GET /api/commerce/orders/:orderId/refund-request` — account-owned refund/return request workflow.
 - `GET /api/commerce/refund-requests`, `PATCH /api/commerce/refund-requests/:requestId` — administrator review; marking a request `refunded` requires the external payment-provider refund reference.
 - `POST /api/commerce/coupons`, `GET /api/commerce/coupons`, `PATCH /api/commerce/coupons/:couponId` — administrator coupon management.
@@ -45,3 +45,11 @@ Set the Flutterwave webhook destination to `https://nkwasibwe-irhcf.onrender.com
 - Do not accept real payments until a Flutterwave sandbox checkout and webhook have been verified end-to-end with test credentials.
 - Shipping carrier/rate integration, tax calculation, automated payment-provider refunds (refund status is not changed to `refunded` until an external refund has been completed and referenced), returns/disputes logistics, seller payouts and settlement reconciliation, product image uploads, order expiry/stock reservation, and production operational monitoring need further work.
 - Add and test any required environment values without committing credentials to Git.
+
+
+## Shipping and tax configuration
+
+- `COMMERCE_SHIPPING_RATES_JSON` is a JSON object keyed by the exact country name saved on the delivery address, then currency, with the shipping price in minor units. Example: `{"Rwanda":{"RWF":1500},"Kenya":{"KES":500}}`.
+- Physical-product quotes and checkout fail closed if no rate exists for the selected country and currency. Digital/non-shipping carts use zero shipping.
+- `COMMERCE_TAX_BPS` is an integer tax rate in basis points (`1000` = 10%). It defaults to zero; the business owner must configure a legally appropriate rate with a qualified tax adviser before real sales. Tax is calculated on subtotal minus coupon discount plus shipping.
+- Order records keep subtotal, discount, shipping, tax, tax rate and charged total separately so the buyer can inspect the breakdown.

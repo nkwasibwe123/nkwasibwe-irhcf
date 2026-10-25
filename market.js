@@ -234,7 +234,8 @@
     const needsShipping=state.cart.some(item=>item.requires_shipping!==false);
     $("shippingAddressWrap").hidden=!needsShipping;
     const addressId=$("shippingAddressSelect").value;
-    $("checkoutButton").disabled=!hasCart||!sameCurrency||(needsShipping&&!addressId);
+    const quoteValid=!!state.quote&&Number.isSafeInteger(Number(state.quote.totalMinor))&&Number(state.quote.totalMinor)>0;
+    $("checkoutButton").disabled=!hasCart||!sameCurrency||!quoteValid||(needsShipping&&!addressId);
     $("shippingAddressHint").textContent=needsShipping
       ? (state.addresses.length ? (addressId ? "Delivery address selected. The order will keep a snapshot for this purchase." : "Select a delivery address before checkout.") : "Add a delivery address above before purchasing physical products.")
       : "This cart contains digital/non-shipping products only.";
@@ -258,28 +259,28 @@
         const remove=element("button","","Delete");remove.type="button";remove.addEventListener("click",async()=>{remove.disabled=true;try{await request("/addresses/"+encodeURIComponent(address.id),{method:"DELETE"});await loadAddresses();}catch(error){$("addressMessage").textContent=error.message;remove.disabled=false;}});actions.append(remove);
         row.append(info,actions);box.append(row);
       }
-      updateCheckoutAvailability();
+      updateCheckoutAvailability();await loadQuote();
     }catch(error){box.replaceChildren(element("p","muted","Could not load addresses: "+error.message));}
   }
   async function loadQuote() {
     const currency=state.cart[0]?.currency;
     const subtotal=state.cart.reduce((sum,item)=>sum+Number(item.line_total_minor||0),0);
     if(!token()||!state.cart.length||!currency||!state.cart.every(item=>item.currency===currency)){
-      state.quote=null;$("cartSubtotal").textContent=state.cart.length?"Mixed currencies": "—";$("cartDiscount").textContent="—";$("cartTotal").textContent=state.cart.length?"Mixed currencies":"—";updateCheckoutAvailability();return;
+      state.quote=null;$("cartSubtotal").textContent=state.cart.length?"Mixed currencies": "—";$("cartDiscount").textContent="—";$("cartShipping").textContent="—";$("cartTax").textContent="—";$("cartTotal").textContent=state.cart.length?"Mixed currencies":"—";updateCheckoutAvailability();return;
     }
     try{
-      const result=await request("/quote",{method:"POST",body:JSON.stringify({items:state.cart.map(item=>({productId:Number(item.product_id),quantity:Number(item.quantity)})),couponCode:state.couponCode||null})});
-      state.quote=result;$("cartSubtotal").textContent=money(result.subtotalMinor,result.currency);$("cartDiscount").textContent=result.discountMinor?("−"+money(result.discountMinor,result.currency)):"—";$("cartTotal").textContent=money(result.totalMinor,result.currency);
-      $("couponMessage").textContent=state.couponCode?(result.discountMinor?"Coupon "+state.couponCode+" applied.":"Coupon is valid, but no discount was applied."):"";
+      const result=await request("/quote",{method:"POST",body:JSON.stringify({items:state.cart.map(item=>({productId:Number(item.product_id),quantity:Number(item.quantity)})),addressId:$("shippingAddressSelect").value?Number($("shippingAddressSelect").value):null,couponCode:state.couponCode||null})});
+      state.quote=result;$("cartSubtotal").textContent=money(result.subtotalMinor,result.currency);$("cartDiscount").textContent=result.discountMinor?("−"+money(result.discountMinor,result.currency)):"—";$("cartShipping").textContent=money(result.shippingMinor,result.currency);$("cartTax").textContent=money(result.taxMinor,result.currency);$("cartTotal").textContent=money(result.totalMinor,result.currency);
+      $("couponMessage").textContent=(state.couponCode?(result.discountMinor?"Coupon "+state.couponCode+" applied.":"Coupon is valid, but no discount was applied. "):"")+(result.shippingCountry?"Shipping to "+result.shippingCountry+".":"");
     }catch(error){
-      state.quote=null;$("cartSubtotal").textContent=money(subtotal,currency);$("cartDiscount").textContent="—";$("cartTotal").textContent=money(subtotal,currency);
-      $("couponMessage").textContent=state.couponCode?error.message:"Could not calculate a server quote: "+error.message;
+      state.quote=null;$("cartSubtotal").textContent=money(subtotal,currency);$("cartDiscount").textContent="—";$("cartShipping").textContent="—";$("cartTax").textContent="—";$("cartTotal").textContent=money(subtotal,currency);
+      $("couponMessage").textContent=error.message;
     }
     updateCheckoutAvailability();
   }
   async function loadCart() {
     const box=$("cartItems");
-    if(!token()){state.cart=[];box.replaceChildren(element("p","muted","Sign in to load and save your cart."));$("cartCount").textContent="0 items";$("cartSubtotal").textContent="—";$("cartDiscount").textContent="—";$("cartTotal").textContent="—";$("checkoutButton").disabled=true;return;}
+    if(!token()){state.cart=[];box.replaceChildren(element("p","muted","Sign in to load and save your cart."));$("cartCount").textContent="0 items";$("cartSubtotal").textContent="—";$("cartDiscount").textContent="—";$("cartShipping").textContent="—";$("cartTax").textContent="—";$("cartTotal").textContent="—";$("checkoutButton").disabled=true;return;}
     try{
       const result=await request("/cart");state.cart=result.items||[];box.replaceChildren();let total=0;
       if(!state.cart.length)box.append(element("p","muted","Your cart is empty. Add something from the catalogue."));
@@ -304,7 +305,7 @@
       for(const order of state.orders){const row=element("div","order-row");const info=element("div","cart-info");info.append(element("strong","","Order #"+order.id),element("small","",new Date(order.created_at).toLocaleString()+" · "+money(order.total_minor,order.currency)));
         row.append(info,element("span","status "+String(order.status),order.status));
         const detailsButton=element("button","","Order details");detailsButton.type="button";
-        detailsButton.addEventListener("click",async()=>{detailsButton.disabled=true;try{const detail=await request("/orders/"+encodeURIComponent(order.id));box.querySelector('[data-order-details="'+order.id+'"]')?.remove();const panel=element("div","order-details-panel");panel.dataset.orderDetails=String(order.id);panel.append(element("strong","","Items"));if(Number(detail.order.discount_minor||0)>0)panel.append(element("p","", "Subtotal: "+money(detail.order.subtotal_minor,order.currency)+" · Coupon "+detail.order.coupon_code+" discount: −"+money(detail.order.discount_minor,order.currency)));for(const item of detail.items||[])panel.append(element("p","",item.product_name+" × "+item.quantity+" — "+money(item.line_total_minor,order.currency)+(item.fulfillment_status?" · "+item.fulfillment_status:"")));const address=detail.order.shipping_address;if(address)panel.append(element("p","", "Ship to: "+[address.recipient_name,address.phone,address.address_line1,address.address_line2,address.city,address.region,address.country].filter(Boolean).join(", ")));if(order.status==="paid"){const refund=await request("/orders/"+encodeURIComponent(order.id)+"/refund-request");if(refund.refundRequest){panel.append(element("p","", "Refund / return request status: "+refund.refundRequest.status));if(refund.refundRequest.admin_note)panel.append(element("p","",refund.refundRequest.admin_note));}else{const form=element("form","refund-request-form");const label=element("label","","Request return / refund");const reason=document.createElement("textarea");reason.name="reason";reason.rows=3;reason.minLength=5;reason.maxLength=2000;reason.required=true;reason.placeholder="Explain the issue and what you are requesting";label.append(reason);const submit=element("button","primary-button","Submit request");submit.type="submit";const message=element("p","muted","A request is reviewed by the platform; it does not automatically refund the payment.");form.append(label,submit,message);form.addEventListener("submit",async event=>{event.preventDefault();submit.disabled=true;try{const saved=await request("/orders/"+encodeURIComponent(order.id)+"/refund-request",{method:"POST",body:JSON.stringify({reason:reason.value.trim()})});message.textContent="Request submitted: "+saved.refundRequest.status+".";submit.disabled=true;}catch(error){message.textContent=error.message;submit.disabled=false;}});panel.append(form);}}row.after(panel);}catch(error){$("checkoutMessage").textContent=error.message;}finally{detailsButton.disabled=false;}});row.append(detailsButton);
+        detailsButton.addEventListener("click",async()=>{detailsButton.disabled=true;try{const detail=await request("/orders/"+encodeURIComponent(order.id));box.querySelector('[data-order-details="'+order.id+'"]')?.remove();const panel=element("div","order-details-panel");panel.dataset.orderDetails=String(order.id);panel.append(element("strong","","Items"));panel.append(element("p","", "Subtotal: "+money(detail.order.subtotal_minor,order.currency)+(Number(detail.order.discount_minor||0)>0?" · Coupon "+detail.order.coupon_code+" discount: −"+money(detail.order.discount_minor,order.currency):"")+" · Shipping: "+money(detail.order.shipping_minor||0,order.currency)+" · Tax: "+money(detail.order.tax_minor||0,order.currency)));for(const item of detail.items||[])panel.append(element("p","",item.product_name+" × "+item.quantity+" — "+money(item.line_total_minor,order.currency)+(item.fulfillment_status?" · "+item.fulfillment_status:"")));const address=detail.order.shipping_address;if(address)panel.append(element("p","", "Ship to: "+[address.recipient_name,address.phone,address.address_line1,address.address_line2,address.city,address.region,address.country].filter(Boolean).join(", ")));if(order.status==="paid"){const refund=await request("/orders/"+encodeURIComponent(order.id)+"/refund-request");if(refund.refundRequest){panel.append(element("p","", "Refund / return request status: "+refund.refundRequest.status));if(refund.refundRequest.admin_note)panel.append(element("p","",refund.refundRequest.admin_note));}else{const form=element("form","refund-request-form");const label=element("label","","Request return / refund");const reason=document.createElement("textarea");reason.name="reason";reason.rows=3;reason.minLength=5;reason.maxLength=2000;reason.required=true;reason.placeholder="Explain the issue and what you are requesting";label.append(reason);const submit=element("button","primary-button","Submit request");submit.type="submit";const message=element("p","muted","A request is reviewed by the platform; it does not automatically refund the payment.");form.append(label,submit,message);form.addEventListener("submit",async event=>{event.preventDefault();submit.disabled=true;try{const saved=await request("/orders/"+encodeURIComponent(order.id)+"/refund-request",{method:"POST",body:JSON.stringify({reason:reason.value.trim()})});message.textContent="Request submitted: "+saved.refundRequest.status+".";submit.disabled=true;}catch(error){message.textContent=error.message;submit.disabled=false;}});panel.append(form);}}row.after(panel);}catch(error){$("checkoutMessage").textContent=error.message;}finally{detailsButton.disabled=false;}});row.append(detailsButton);
         if(order.status==="pending"&&order.checkout_url&&order.checkout_url.startsWith("https://")){const link=element("a","","Resume checkout");link.href=order.checkout_url;link.rel="noopener noreferrer";link.target="_blank";row.append(link);}
         box.append(row);
       }
@@ -332,7 +333,7 @@
   $("sellerProductsButton").addEventListener("click",loadSellerProducts);
   $("sellerOrdersButton").addEventListener("click",loadSellerOrders);
   $("sellerApplicationsButton").addEventListener("click",loadSellerApplications);
-  $("shippingAddressSelect").addEventListener("change",updateCheckoutAvailability);
+  $("shippingAddressSelect").addEventListener("change",async()=>{updateCheckoutAvailability();await loadQuote();});
   $("addressForm").addEventListener("submit",async event=>{
     event.preventDefault();const form=new FormData(event.currentTarget),message=$("addressMessage");message.textContent="Saving address…";
     const body={label:String(form.get("label")||"").trim(),recipientName:String(form.get("recipientName")||"").trim(),phone:String(form.get("phone")||"").trim(),country:String(form.get("country")||"").trim(),region:String(form.get("region")||"").trim(),city:String(form.get("city")||"").trim(),addressLine1:String(form.get("addressLine1")||"").trim(),addressLine2:String(form.get("addressLine2")||"").trim(),postalCode:String(form.get("postalCode")||"").trim(),isDefault:form.get("isDefault")==="on"};

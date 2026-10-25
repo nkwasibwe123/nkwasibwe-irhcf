@@ -2,7 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { CURRENCIES, toProviderAmount, fromProviderAmount, ensureCommerceSchema, calculateCouponDiscount } = require("./commerce-routes");
+const { CURRENCIES, toProviderAmount, fromProviderAmount, ensureCommerceSchema, calculateCouponDiscount, getShippingRateMinor, getTaxRateBps, calculateTaxMinor } = require("./commerce-routes");
 
 test("commerce money conversion preserves integer and minor-unit currencies", () => {
   assert.equal(toProviderAmount(2500, "RWF"), 2500);
@@ -38,6 +38,9 @@ test("commerce schema initializer creates indexed products and user-owned orders
   assert.match(calls[0], /CREATE TABLE IF NOT EXISTS commerce_refund_requests/);
   assert.match(calls[0], /coupon_code TEXT/);
   assert.match(calls[0], /discount_minor BIGINT/);
+  assert.match(calls[0], /shipping_minor BIGINT/);
+  assert.match(calls[0], /tax_minor BIGINT/);
+  assert.match(calls[0], /tax_rate_bps INTEGER/);
   assert.match(calls[0], /CREATE TABLE IF NOT EXISTS commerce_addresses/);
   assert.match(calls[0], /CREATE TABLE IF NOT EXISTS commerce_order_items/);
   assert.match(calls[0], /fulfillment_status TEXT NOT NULL DEFAULT 'pending'/);
@@ -331,7 +334,7 @@ test("coupon discount calculation validates currency, minimum spend and positive
 test("cart quote computes prices and coupon discount from server-owned product rows", async () => {
   const app=express();app.use(express.json());
   app.use("/api/commerce",createCommerceRouter({
-    pool:{async query(sql){if(sql.includes("FROM commerce_products p"))return{rows:[{id:"4",price_minor:"10000",currency:"RWF",stock_quantity:3}]};if(sql.includes("FROM commerce_coupons"))return{rows:[{code:"SAVE20",discount_type:"percent",discount_value:20,currency:"RWF",min_subtotal_minor:"5000"}]};return{rows:[]};}},
+    pool:{async query(sql){if(sql.includes("FROM commerce_products p"))return{rows:[{id:"4",price_minor:"10000",currency:"RWF",stock_quantity:3,requires_shipping:false}]};if(sql.includes("FROM commerce_coupons"))return{rows:[{code:"SAVE20",discount_type:"percent",discount_value:20,currency:"RWF",min_subtotal_minor:"5000"}]};return{rows:[]};}},
     authenticateToken:(req,res,next)=>{req.user={id:14,email:"buyer@example.com"};next();},env:{}
   }));
   await withServer(app,async base=>{
@@ -361,5 +364,50 @@ test("refund requests are bound to the authenticated account's paid order", asyn
   await withServer(app,async base=>{
     const response=await fetch(base+"/api/commerce/orders/10/refund-request",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({reason:"The item arrived damaged."})});
     assert.equal(response.status,201);assert.equal(insertParams[0],10);assert.equal(insertParams[1],44);assert.equal((await response.json()).refundRequest.status,"pending");
+  });
+});
+
+
+test("shipping and tax helpers fail closed for missing rates and use integer arithmetic", () => {
+  assert.equal(getShippingRateMinor("Rwanda","RWF",{COMMERCE_SHIPPING_RATES_JSON:'{"Rwanda":{"RWF":1500}}'}),1500);
+  assert.equal(getShippingRateMinor("Rwanda","USD",{COMMERCE_SHIPPING_RATES_JSON:'{"Rwanda":{"RWF":1500}}'}),null);
+  assert.equal(getShippingRateMinor("Rwanda","RWF",{COMMERCE_SHIPPING_RATES_JSON:"not-json"}),null);
+  assert.equal(getTaxRateBps({COMMERCE_TAX_BPS:"1000"}),1000);
+  assert.equal(getTaxRateBps({COMMERCE_TAX_BPS:"9000"}),null);
+  assert.equal(calculateTaxMinor(10000,2000,1000,1000),900);
+  assert.ok(Number.isSafeInteger(calculateTaxMinor(Number.MAX_SAFE_INTEGER,0,0,3000)));
+});
+
+test("physical-product quote includes account-owned shipping, coupon discount and configured tax", async () => {
+  const app=express();app.use(express.json());
+  app.use("/api/commerce",createCommerceRouter({
+    pool:{async query(sql){if(sql.includes("FROM commerce_products p"))return{rows:[{id:"4",price_minor:"10000",currency:"RWF",stock_quantity:3,requires_shipping:true}]};if(sql.includes("FROM commerce_addresses"))return{rows:[{country:"Rwanda"}]};if(sql.includes("FROM commerce_coupons"))return{rows:[{code:"SAVE20",discount_type:"percent",discount_value:20,currency:"RWF",min_subtotal_minor:"5000"}]};return{rows:[]};}},
+    authenticateToken:(req,res,next)=>{req.user={id:14,email:"buyer@example.com"};next();},env:{COMMERCE_SHIPPING_RATES_JSON:'{"Rwanda":{"RWF":1000}}',COMMERCE_TAX_BPS:"1000"}
+  }));
+  await withServer(app,async base=>{
+    const response=await fetch(base+"/api/commerce/quote",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({items:[{productId:4,quantity:1}],addressId:21,couponCode:"save20"})});
+    assert.equal(response.status,200);const quote=await response.json();assert.equal(quote.subtotalMinor,10000);assert.equal(quote.discountMinor,2000);assert.equal(quote.shippingMinor,1000);assert.equal(quote.taxMinor,900);assert.equal(quote.totalMinor,9900);assert.equal(quote.shippingCountry,"Rwanda");
+  });
+});
+
+test("checkout charges the exact quoted coupon, shipping and tax total", async () => {
+  const app=express();app.use(express.json());let orderParams,providerPayload;
+  const client={async query(sql,params){
+    if(sql==="BEGIN"||sql==="COMMIT"||sql==="ROLLBACK")return{rows:[]};
+    if(sql.includes("FROM commerce_products p"))return{rows:[{id:"4",name:"Physical item",price_minor:"10000",currency:"RWF",stock_quantity:3,requires_shipping:true,seller_user_id:null}]};
+    if(sql.includes("FROM commerce_addresses"))return{rows:[{country:"Rwanda",recipient_name:"Buyer",phone:"+250780000000",address_line1:"Kigali"}]};
+    if(sql.includes("FROM commerce_coupons"))return{rows:[{id:"2",code:"SAVE20",discount_type:"percent",discount_value:20,currency:"RWF",min_subtotal_minor:"5000"}]};
+    if(sql.includes("INSERT INTO commerce_orders")){orderParams=params;return{rows:[{id:"71"}]};}
+    return{rows:[]};
+  },release(){}};
+  app.use("/api/commerce",createCommerceRouter({
+    pool:{async connect(){return client;},async query(){return{rows:[]};}},
+    authenticateToken:(req,res,next)=>{req.user={id:8,email:"account@example.com"};next();},
+    fetchImpl:async(_url,options)=>{providerPayload=JSON.parse(options.body);return{ok:true,json:async()=>({status:"success",data:{link:"https://checkout.example.test/pay"}})};},
+    env:{FLW_SECRET_KEY:"test-secret",FLW_SECRET_HASH:"test-hash",FLW_REDIRECT_URL:"https://market.example.test/return",COMMERCE_SHIPPING_RATES_JSON:'{"Rwanda":{"RWF":1000}}',COMMERCE_TAX_BPS:"1000"}
+  }));
+  await withServer(app,async base=>{
+    const response=await fetch(base+"/api/commerce/checkout",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({addressId:21,couponCode:"SAVE20",items:[{productId:4,quantity:1}]})});
+    assert.equal(response.status,201);const body=await response.json();assert.equal(body.totalMinor,9900);assert.equal(body.shippingMinor,1000);assert.equal(body.taxMinor,900);assert.equal(providerPayload.amount,9900);assert.equal(orderParams[3],9900);assert.equal(orderParams[4],10000);assert.equal(orderParams[5],2000);assert.equal(orderParams[6],1000);assert.equal(orderParams[7],900);assert.equal(orderParams[8],1000);assert.equal(orderParams[9],"SAVE20");
   });
 });

@@ -646,3 +646,18 @@ test("marketplace coupon quotes, admin coupon controls and refund workflows are 
   assert.match(routes,/WHERE id=\$1 AND user_id=\$2/);
   assert.match(routes,/provider_refund_reference/);
 });
+
+
+test("marketplace quote UI displays server-calculated shipping and tax and blocks checkout without a valid quote", () => {
+  const root=path.join(__dirname,"..","..");
+  const html=fs.readFileSync(path.join(root,"market.html"),"utf8");
+  const js=fs.readFileSync(path.join(root,"market.js"),"utf8");
+  const routes=fs.readFileSync(path.join(root,"backend","routes","commerce-routes.js"),"utf8");
+  for(const id of ["cartSubtotal","cartDiscount","cartShipping","cartTax","cartTotal"])assert.ok(html.includes('id="'+id+'"'));
+  assert.match(js,/quoteValid=!!state\.quote/);
+  assert.match(js,/addressId:\$\("shippingAddressSelect"\)\.value/);
+  assert.match(routes,/COMMERCE_SHIPPING_RATES_JSON/);
+  assert.match(routes,/COMMERCE_TAX_BPS/);
+  assert.match(routes,/SHIPPING_RATE_NOT_CONFIGURED/);
+  assert.match(routes,/tax_rate_bps INTEGER/);
+});

@@ -88,6 +88,9 @@ async function ensureCommerceSchema(pool) {
       total_minor BIGINT NOT NULL CHECK (total_minor >= 0),
       subtotal_minor BIGINT NOT NULL DEFAULT 0 CHECK (subtotal_minor >= 0),
       discount_minor BIGINT NOT NULL DEFAULT 0 CHECK (discount_minor >= 0),
+      shipping_minor BIGINT NOT NULL DEFAULT 0 CHECK (shipping_minor >= 0),
+      tax_minor BIGINT NOT NULL DEFAULT 0 CHECK (tax_minor >= 0),
+      tax_rate_bps INTEGER NOT NULL DEFAULT 0 CHECK (tax_rate_bps BETWEEN 0 AND 3000),
       coupon_code TEXT,
       provider TEXT NOT NULL DEFAULT 'flutterwave',
       provider_transaction_id TEXT,
@@ -100,6 +103,9 @@ async function ensureCommerceSchema(pool) {
     ALTER TABLE commerce_orders ADD COLUMN IF NOT EXISTS shipping_address JSONB;
     ALTER TABLE commerce_orders ADD COLUMN IF NOT EXISTS subtotal_minor BIGINT NOT NULL DEFAULT 0;
     ALTER TABLE commerce_orders ADD COLUMN IF NOT EXISTS discount_minor BIGINT NOT NULL DEFAULT 0;
+    ALTER TABLE commerce_orders ADD COLUMN IF NOT EXISTS shipping_minor BIGINT NOT NULL DEFAULT 0;
+    ALTER TABLE commerce_orders ADD COLUMN IF NOT EXISTS tax_minor BIGINT NOT NULL DEFAULT 0;
+    ALTER TABLE commerce_orders ADD COLUMN IF NOT EXISTS tax_rate_bps INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE commerce_orders ADD COLUMN IF NOT EXISTS coupon_code TEXT;
     CREATE INDEX IF NOT EXISTS idx_commerce_orders_user_created ON commerce_orders(user_id, created_at DESC);
     CREATE TABLE IF NOT EXISTS commerce_refund_requests (
@@ -182,6 +188,25 @@ function calculateCouponDiscount(coupon, subtotalMinor, currency) {
   if (!Number.isSafeInteger(discountMinor) || discountMinor < 0 || discountMinor >= subtotalMinor) return { discountMinor: 0, error: "Coupon must leave a positive order total." };
   return { discountMinor, error: null };
 }
+function getShippingRateMinor(country, currency, env = process.env) {
+  let rates;
+  try { rates = JSON.parse(String(env.COMMERCE_SHIPPING_RATES_JSON || "{}")); } catch { return null; }
+  const countryRates = rates && typeof rates === "object" ? rates[String(country || "").trim()] : null;
+  if (!countryRates || typeof countryRates !== "object" || !Object.prototype.hasOwnProperty.call(countryRates, currency)) return null;
+  const value = Number(countryRates[currency]);
+  return Number.isSafeInteger(value) && value >= 0 ? value : null;
+}
+function getTaxRateBps(env = process.env) {
+  const raw = env.COMMERCE_TAX_BPS == null || env.COMMERCE_TAX_BPS === "" ? "0" : String(env.COMMERCE_TAX_BPS);
+  const value = Number(raw);
+  return Number.isSafeInteger(value) && value >= 0 && value <= 3000 ? value : null;
+}
+function calculateTaxMinor(subtotalMinor, discountMinor, shippingMinor, taxRateBps) {
+  const taxableMinor = subtotalMinor - discountMinor + shippingMinor;
+  if (!Number.isSafeInteger(taxableMinor) || taxableMinor < 0 || !Number.isSafeInteger(taxRateBps) || taxRateBps < 0 || taxRateBps > 3000) return null;
+  const taxMinor = Number((BigInt(taxableMinor) * BigInt(taxRateBps)) / 10000n);
+  return Number.isSafeInteger(taxMinor) && taxMinor >= 0 ? taxMinor : null;
+}
 
 function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.fetch, env = process.env } = {}) {
   if (!pool || typeof pool.query !== "function") throw new Error("Commerce router requires a database pool.");
@@ -255,7 +280,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
       if(quantities.get(id)>MAX_QUANTITY)return res.status(400).json({success:false,error:"A product quantity cannot exceed 99.",code:"CART_QUANTITY_LIMIT"});
     }
     try {
-      const products=await pool.query("SELECT p.id,p.price_minor,p.currency,p.stock_quantity FROM commerce_products p WHERE p.active=TRUE AND (p.seller_user_id IS NULL OR EXISTS (SELECT 1 FROM commerce_sellers s WHERE s.user_id=p.seller_user_id AND s.status='approved')) AND p.id=ANY($1::bigint[])",[[...quantities.keys()]]);
+      const products=await pool.query("SELECT p.id,p.price_minor,p.currency,p.stock_quantity,p.requires_shipping FROM commerce_products p WHERE p.active=TRUE AND (p.seller_user_id IS NULL OR EXISTS (SELECT 1 FROM commerce_sellers s WHERE s.user_id=p.seller_user_id AND s.status='approved')) AND p.id=ANY($1::bigint[])",[[...quantities.keys()]]);
       if(products.rows.length!==quantities.size)return res.status(400).json({success:false,error:"One or more products are unavailable.",code:"PRODUCT_UNAVAILABLE"});
       const currencies=new Set(products.rows.map(row=>row.currency));
       if(currencies.size!==1||!CURRENCIES.has(products.rows[0].currency))return res.status(400).json({success:false,error:"Cart items must use the same supported currency.",code:"CURRENCY_MISMATCH"});
@@ -264,7 +289,10 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
       if(subtotalMinor<=0)return res.status(400).json({success:false,error:"Order subtotal must be greater than zero.",code:"TOTAL_INVALID"});
       const currency=products.rows[0].currency;const couponCode=String(req.body?.couponCode||"").trim().toUpperCase().slice(0,40)||null;let discountMinor=0;
       if(couponCode){const couponResult=await pool.query("SELECT code,discount_type,discount_value,currency,min_subtotal_minor FROM commerce_coupons WHERE code=$1 AND active=TRUE AND (starts_at IS NULL OR starts_at<=CURRENT_TIMESTAMP) AND (expires_at IS NULL OR expires_at>CURRENT_TIMESTAMP) LIMIT 1",[couponCode]);if(!couponResult.rows.length)return res.status(400).json({success:false,error:"Coupon is invalid, inactive or expired.",code:"COUPON_INVALID"});const calculation=calculateCouponDiscount(couponResult.rows[0],subtotalMinor,currency);if(calculation.error)return res.status(400).json({success:false,error:calculation.error,code:"COUPON_NOT_APPLICABLE"});discountMinor=calculation.discountMinor;}
-      return res.json({success:true,currency,subtotalMinor,discountMinor,totalMinor:subtotalMinor-discountMinor,couponCode});
+      const requiresShipping=products.rows.some(product=>product.requires_shipping!==false);let shippingMinor=0;let shippingCountry=null;
+      if(requiresShipping){const addressId=safeInteger(req.body?.addressId,1,Number.MAX_SAFE_INTEGER);if(!addressId)return res.status(400).json({success:false,error:"Select a saved delivery address to calculate shipping.",code:"SHIPPING_ADDRESS_REQUIRED"});const address=await pool.query("SELECT country FROM commerce_addresses WHERE id=$1 AND user_id=$2 LIMIT 1",[addressId,req.user.id]);if(!address.rows.length)return res.status(400).json({success:false,error:"The selected address does not belong to this account.",code:"SHIPPING_ADDRESS_NOT_FOUND"});shippingCountry=address.rows[0].country;shippingMinor=getShippingRateMinor(shippingCountry,currency,env);if(shippingMinor===null)return res.status(503).json({success:false,error:"No shipping rate is configured for this country and currency.",code:"SHIPPING_RATE_NOT_CONFIGURED"});}
+      const taxRateBps=getTaxRateBps(env);if(taxRateBps===null)return res.status(503).json({success:false,error:"Tax configuration must be an integer between 0 and 3000 basis points.",code:"TAX_CONFIGURATION_INVALID"});const taxMinor=calculateTaxMinor(subtotalMinor,discountMinor,shippingMinor,taxRateBps);if(taxMinor===null)return res.status(400).json({success:false,error:"Tax calculation overflowed.",code:"TAX_CALCULATION_INVALID"});const totalMinor=subtotalMinor-discountMinor+shippingMinor+taxMinor;if(!Number.isSafeInteger(totalMinor)||totalMinor<=0)return res.status(400).json({success:false,error:"Order total must be greater than zero.",code:"TOTAL_INVALID"});
+      return res.json({success:true,currency,subtotalMinor,discountMinor,shippingMinor,taxMinor,taxRateBps,totalMinor,couponCode,shippingCountry});
     } catch(error){return res.status(500).json({success:false,error:"Could not calculate cart quote.",code:"QUOTE_FAILED"});}
   });
 
@@ -653,7 +681,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
   router.get("/orders", authenticateToken, async (req, res) => {
     try {
       const result = await pool.query(
-        "SELECT id, tx_ref, status, currency, total_minor, subtotal_minor, discount_minor, coupon_code, provider, checkout_url, shipping_address, created_at, updated_at, paid_at FROM commerce_orders WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100",
+        "SELECT id, tx_ref, status, currency, total_minor, subtotal_minor, discount_minor, shipping_minor, tax_minor, tax_rate_bps, coupon_code, provider, checkout_url, shipping_address, created_at, updated_at, paid_at FROM commerce_orders WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100",
         [req.user.id]
       );
       return res.json({ success: true, orders: result.rows });
@@ -666,7 +694,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
     const orderId = safeInteger(req.params.orderId, 1, Number.MAX_SAFE_INTEGER);
     if (!orderId) return res.status(400).json({ success: false, error: "Invalid order ID.", code: "ORDER_ID_INVALID" });
     try {
-      const result = await pool.query("SELECT id, tx_ref, status, currency, total_minor, subtotal_minor, discount_minor, coupon_code, provider, provider_transaction_id, checkout_url, shipping_address, created_at, updated_at, paid_at FROM commerce_orders WHERE id=$1 AND user_id=$2 LIMIT 1", [orderId, req.user.id]);
+      const result = await pool.query("SELECT id, tx_ref, status, currency, total_minor, subtotal_minor, discount_minor, shipping_minor, tax_minor, tax_rate_bps, coupon_code, provider, provider_transaction_id, checkout_url, shipping_address, created_at, updated_at, paid_at FROM commerce_orders WHERE id=$1 AND user_id=$2 LIMIT 1", [orderId, req.user.id]);
       if (!result.rows.length) return res.status(404).json({ success: false, error: "Order not found.", code: "ORDER_NOT_FOUND" });
       const items = await pool.query("SELECT product_id, product_name, quantity, unit_price_minor, line_total_minor, fulfillment_status FROM commerce_order_items WHERE order_id=$1 ORDER BY id", [orderId]);
       return res.json({ success: true, order: result.rows[0], items: items.rows });
@@ -754,6 +782,9 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
     let totalMinor;
     let subtotalMinor;
     let discountMinor = 0;
+    let shippingMinor = 0;
+    let taxMinor = 0;
+    let taxRateBps = 0;
     let couponCode = String(req.body?.couponCode || "").trim().toUpperCase().slice(0, 40) || null;
     let currency;
     try {
@@ -827,15 +858,33 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
         }
         discountMinor = calculation.discountMinor;
       }
-      totalMinor = subtotalMinor - discountMinor;
-      if (totalMinor <= 0) {
+      shippingMinor = 0;
+      if (requiresShipping) {
+        shippingMinor = getShippingRateMinor(shippingAddress?.country, currency, env);
+        if (shippingMinor === null) {
+          await client.query("ROLLBACK");
+          return res.status(503).json({ success: false, code: "SHIPPING_RATE_NOT_CONFIGURED", error: "No shipping rate is configured for this country and currency." });
+        }
+      }
+      taxRateBps = getTaxRateBps(env);
+      if (taxRateBps === null) {
         await client.query("ROLLBACK");
-        return res.status(400).json({ success: false, code: "TOTAL_INVALID", error: "Discounted order total must be greater than zero." });
+        return res.status(503).json({ success: false, code: "TAX_CONFIGURATION_INVALID", error: "Tax configuration must be an integer between 0 and 3000 basis points." });
+      }
+      taxMinor = calculateTaxMinor(subtotalMinor, discountMinor, shippingMinor, taxRateBps);
+      if (taxMinor === null) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ success: false, code: "TAX_CALCULATION_INVALID", error: "Tax calculation overflowed." });
+      }
+      totalMinor = subtotalMinor - discountMinor + shippingMinor + taxMinor;
+      if (!Number.isSafeInteger(totalMinor) || totalMinor <= 0) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ success: false, code: "TOTAL_INVALID", error: "Order total must be greater than zero." });
       }
       txRef = "irhcf_" + crypto.randomUUID();
       const order = await client.query(
-        "INSERT INTO commerce_orders (user_id, tx_ref, status, currency, total_minor, subtotal_minor, discount_minor, coupon_code, provider, shipping_address) VALUES ($1,$2,'pending',$3,$4,$5,$6,$7,'flutterwave',$8::jsonb) RETURNING id",
-        [req.user.id, txRef, currency, totalMinor, subtotalMinor, discountMinor, couponCode, shippingAddress ? JSON.stringify(shippingAddress) : null]
+        "INSERT INTO commerce_orders (user_id, tx_ref, status, currency, total_minor, subtotal_minor, discount_minor, shipping_minor, tax_minor, tax_rate_bps, coupon_code, provider, shipping_address) VALUES ($1,$2,'pending',$3,$4,$5,$6,$7,$8,$9,$10,'flutterwave',$11::jsonb) RETURNING id",
+        [req.user.id, txRef, currency, totalMinor, subtotalMinor, discountMinor, shippingMinor, taxMinor, taxRateBps, couponCode, shippingAddress ? JSON.stringify(shippingAddress) : null]
       );
       orderId = order.rows[0].id;
       for (const item of items) {
@@ -881,7 +930,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
         return res.status(502).json({ success: false, code: "CHECKOUT_PROVIDER_FAILED", error: "Payment provider did not create a valid hosted checkout." });
       }
       await pool.query("UPDATE commerce_orders SET checkout_url=$2, updated_at=CURRENT_TIMESTAMP WHERE id=$1 AND status='pending'", [orderId, checkoutUrl]);
-      return res.status(201).json({ success: true, orderId, txRef, currency, subtotalMinor, discountMinor, totalMinor, couponCode, checkoutUrl, paymentStatus: "pending" });
+      return res.status(201).json({ success: true, orderId, txRef, currency, subtotalMinor, discountMinor, shippingMinor, taxMinor, taxRateBps, totalMinor, couponCode, checkoutUrl, paymentStatus: "pending" });
     } catch (error) {
       await pool.query("UPDATE commerce_orders SET status='failed', updated_at=CURRENT_TIMESTAMP WHERE id=$1 AND status='pending'", [orderId]);
       return res.status(502).json({ success: false, code: "CHECKOUT_PROVIDER_UNAVAILABLE", error: "Payment provider could not be reached. No payment has been confirmed." });
@@ -930,4 +979,4 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
   return router;
 }
 
-module.exports = { MAX_ITEMS, MAX_QUANTITY, CURRENCIES, ensureCommerceSchema, createCommerceRouter, toProviderAmount, fromProviderAmount, calculateCouponDiscount };
+module.exports = { MAX_ITEMS, MAX_QUANTITY, CURRENCIES, ensureCommerceSchema, createCommerceRouter, toProviderAmount, fromProviderAmount, calculateCouponDiscount, getShippingRateMinor, getTaxRateBps, calculateTaxMinor };
