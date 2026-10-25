@@ -161,7 +161,7 @@ body.dashboard-focused .message-list{max-height:none;min-height:250px}
 <article class="card"><div class="icon">🔔</div><h3>Notifications & privacy</h3><p>In-app alerts, session controls, privacy settings, content reports, moderation and account data controls.</p><span class="pill">Safety APIs pending</span></article>
 </section>
 <section class="bottom" data-dashboard="overview"><h2>Build sequence and release gates</h2><p>We will deliver the system in verified layers: authenticated data model → profiles and social graph → posts/feed → persistent messages → realtime → safe media storage → video/creator tools → professional features → security and Android end-to-end tests. External platforms will only be connected through documented APIs and user-authorized account linking. This page is not a claim of full feature parity: calls, realtime delivery, media uploads, video and browser/download modules remain pending.</p><div class="steps"><div class="step"><b>1 · Foundation</b><small>Workspace + contracts</small></div><div class="step"><b>2 · Core social</b><small>Profiles, feed, chat</small></div><div class="step"><b>3 · Media + realtime</b><small>Uploads, calls, video</small></div><div class="step"><b>4 · Release</b><small>Safety, tests, rollout</small></div></div></section>
-<footer>Original Nkwasibwe IRHCF product design. Feature parity depends on staged implementation, provider availability, storage, and testing.</footer>
+<footer data-dashboard="overview">Original Nkwasibwe IRHCF product design. Feature parity depends on staged implementation, provider availability, storage, and testing.</footer>
 </main>
 <script>
 (function(){
@@ -518,7 +518,6 @@ body.dashboard-focused .message-list{max-height:none;min-height:250px}
   window.addEventListener("hashchange", () => activateDashboard(window.location.hash.replace("#dashboard-",""),false));
   const requestedDashboard = window.location.hash.startsWith("#dashboard-") ? window.location.hash.slice("#dashboard-".length) : "overview";
   activateDashboard(requestedDashboard,false);
-  loadProfileDocuments();
   load();
   loadConversations();
   loadFriendRequests();
