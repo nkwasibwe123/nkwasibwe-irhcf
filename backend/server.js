@@ -3847,13 +3847,6 @@ app.post("/api/media/video/edit", authenticateToken, async (req, res) => {
         code: "VIDEO_EDIT_INPUT_TOO_LARGE"
       });
     }
-    if (req.body?.subtitles) {
-      return res.status(501).json({
-        success: false,
-        error: "Subtitle burn-in is not yet implemented. Remove subtitles and retry.",
-        code: "VIDEO_SUBTITLES_NOT_IMPLEMENTED"
-      });
-    }
 
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "irhcf-video-"));
     const inputPath = path.join(tempDir, "input." + acceptedTypes.get(mimeType));
@@ -3875,7 +3868,8 @@ app.post("/api/media/video/edit", authenticateToken, async (req, res) => {
         effect: req.body?.effect,
         startSeconds: req.body?.startSeconds,
         endSeconds: req.body?.endSeconds,
-        outputFormat
+        outputFormat,
+        subtitles: req.body?.subtitles
       },
       timeoutMs: 180000
     });
