@@ -56,3 +56,29 @@ test("server delegates request accounting to the bounded store", () => {
   assert.match(server, /checkRateLimitEntry\(/);
   assert.match(server, /MAX_RATE_LIMIT_ENTRIES:\s*100000/);
 });
+
+
+test("trusted client IP accepts a valid Cloudflare edge header", () => {
+  const { getTrustedClientIP } = require("./client-ip");
+  assert.equal(getTrustedClientIP({
+    headers: { "cf-connecting-ip": "203.0.113.25", "x-forwarded-for": "198.51.100.99, 203.0.113.25" },
+    socket: { remoteAddress: "10.0.0.5" }
+  }), "203.0.113.25");
+  assert.equal(getTrustedClientIP({
+    headers: { "cf-connecting-ip": "2001:db8::1" },
+    socket: { remoteAddress: "10.0.0.5" }
+  }), "2001:db8::1");
+});
+
+test("spoofed X-Forwarded-For is never used as a rate-limit identity", () => {
+  const { getTrustedClientIP } = require("./client-ip");
+  assert.equal(getTrustedClientIP({
+    headers: { "x-forwarded-for": "1.2.3.4" },
+    socket: { remoteAddress: "10.0.0.5" }
+  }), "10.0.0.5");
+  assert.equal(getTrustedClientIP({
+    headers: { "cf-connecting-ip": "not-an-ip", "x-forwarded-for": "1.2.3.4" },
+    socket: { remoteAddress: "10.0.0.5" }
+  }), "10.0.0.5");
+  assert.equal(getTrustedClientIP({ headers: { "x-forwarded-for": "1.2.3.4" }, socket: {} }), "unknown");
+});

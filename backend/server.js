@@ -27,6 +27,7 @@ const { toFile } = require("openai/uploads");
 const { getLocalTranscriberConfig, getLocalTranscriberStatus, transcribeLocally } = require("./media/local-transcriber");
 const { getVideoProviderStatus } = require("./media/video-provider-status");
 const { checkRateLimitEntry } = require("./core/rate-limit-store");
+const { getTrustedClientIP } = require("./core/client-ip");
 
 // ============================================================
 // INTERNAL MODULES
@@ -1304,33 +1305,8 @@ function createRequestId() {
 // CLIENT IP
 // ============================================================
 
-function getClientIP(
-  req
-) {
-
-  const forwarded =
-    req.headers[
-      "x-forwarded-for"
-    ];
-
-  if (
-    typeof forwarded ===
-      "string" &&
-    forwarded.length > 0
-  ) {
-
-    return forwarded
-      .split(",")[0]
-      .trim();
-
-  }
-
-  return (
-    req.ip ||
-    req.socket?.remoteAddress ||
-    "unknown"
-  );
-
+function getClientIP(req) {
+  return getTrustedClientIP(req);
 }
 
 
