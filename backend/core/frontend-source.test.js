@@ -849,3 +849,20 @@ test("confirmed refunds reverse seller ledger earnings and prevent invalid payou
   assert.match(routes,/PAYOUT_BALANCE_NEGATIVE/);
   assert.match(routes,/REFUND_TRANSACTION_UNAVAILABLE/);
 });
+
+
+test("task activity workspace shows server-backed per-agent progress without merging it into chat", () => {
+  const root = path.join(__dirname, "..", "..");
+  const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
+  const engine = fs.readFileSync(path.join(root, "backend", "core", "task-engine.js"), "utf8");
+  const css = fs.readFileSync(path.join(root, "style.css"), "utf8");
+  assert.match(html, /id="taskAgentActivity"/);
+  assert.match(app, /API_ENDPOINTS\.tasks \+ "\/" \+ id \+ "\/activity"/);
+  assert.match(app, /async function refreshTaskAgentActivity\(taskId\)/);
+  assert.match(app, /textContent = String\(step\.description/);
+  assert.match(engine, /router\.get\("\/:id\/activity", authenticateToken/);
+  assert.match(engine, /a\.user_id=\$2/);
+  assert.match(engine, /SELECT id, run_number, status, error, started_at, completed_at/);
+  assert.match(css, /irhcfAgentPulse/);
+});
