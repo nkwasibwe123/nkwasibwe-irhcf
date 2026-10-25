@@ -43,6 +43,9 @@ test("commerce schema initializer creates indexed products and user-owned orders
   assert.match(calls[0], /tax_rate_bps INTEGER/);
   assert.match(calls[0], /CREATE TABLE IF NOT EXISTS commerce_stock_reservations/);
   assert.match(calls[0], /CREATE TABLE IF NOT EXISTS commerce_seller_ledger/);
+  assert.match(calls[0], /reversed_net_minor BIGINT NOT NULL DEFAULT 0/);
+  assert.match(calls[0], /refund_reference TEXT/);
+  assert.match(calls[0], /reversed_at TIMESTAMPTZ/);
   assert.match(calls[0], /tracking_carrier TEXT/);
   assert.match(calls[0], /tracking_number TEXT/);
   assert.match(calls[0], /shipped_at TIMESTAMPTZ/);
@@ -618,4 +621,50 @@ test("public storefront returns not found for unapproved or missing sellers", as
     assert.equal(response.status,404);
     assert.equal((await response.json()).code,"STOREFRONT_NOT_FOUND");
   });
+});
+
+
+test("seller analytics is account-scoped, approval-gated and accepts only supported periods", async () => {
+  const app=express();app.use(express.json());const calls=[];
+  app.use("/api/commerce",createCommerceRouter({
+    pool:{async query(sql,params){calls.push({sql,params});if(sql.includes("SELECT status FROM commerce_sellers"))return{rows:[{status:"approved"}]};if(sql.includes("COUNT(DISTINCT l.order_id)"))return{rows:[{currency:"RWF",paid_orders:3,units_sold:"5",gross_sales_minor:"25000",seller_earnings_minor:"24000"}]};if(sql.includes("DATE_TRUNC"))return{rows:[{day:"2026-10-24",currency:"RWF",gross_sales_minor:"12000",paid_orders:2}]};if(sql.includes("GROUP BY oi.product_id"))return{rows:[{product_id:"8",product_name:"Notebook",currency:"RWF",units_sold:"3",gross_sales_minor:"15000",paid_orders:2}]};if(sql.includes("GROUP BY oi.fulfillment_status"))return{rows:[{fulfillment_status:"processing",item_count:2}]};throw new Error("unexpected query "+sql.slice(0,80));}},
+    authenticateToken:(req,res,next)=>{req.user={id:77,email:"seller@example.com"};next();},env:{}
+  }));
+  await withServer(app,async base=>{
+    const response=await fetch(base+"/api/commerce/seller/analytics?days=7");
+    assert.equal(response.status,200);const payload=await response.json();assert.equal(payload.periodDays,7);assert.equal(payload.summary[0].currency,"RWF");assert.equal(payload.topProducts[0].product_name,"Notebook");assert.equal(payload.fulfillment[0].fulfillment_status,"processing");
+    assert.ok(calls.every(call=>call.params?.[0]===77||call.sql.includes("SELECT status FROM commerce_sellers")));
+    assert.ok(calls.filter(call=>call.params?.length===2).every(call=>call.params[1]===7));
+  });
+});
+
+test("seller analytics denies accounts without approved seller status", async () => {
+  const app=express();app.use("/api/commerce",createCommerceRouter({
+    pool:{async query(sql){assert.match(sql,/SELECT status FROM commerce_sellers/);return{rows:[{status:"pending"}]};}},
+    authenticateToken:(req,res,next)=>{req.user={id:78,email:"pending@example.com"};next();},env:{}
+  }));
+  await withServer(app,async base=>{const response=await fetch(base+"/api/commerce/seller/analytics");assert.equal(response.status,403);assert.equal((await response.json()).code,"APPROVED_SELLER_REQUIRED");});
+});
+
+test("verified refund reverses seller earnings in the same database transaction", async () => {
+  const app=express();app.use(express.json());const calls=[];
+  const client={async query(sql,params){calls.push({sql,params});if(sql==="BEGIN"||sql==="COMMIT"||sql==="ROLLBACK")return{rows:[]};if(sql.includes("FROM commerce_refund_requests WHERE id=$1 FOR UPDATE"))return{rows:[{id:"5",order_id:"90",status:"approved"}]};if(sql.includes("FROM commerce_orders WHERE id=$1 FOR UPDATE"))return{rows:[{id:"90",status:"paid"}]};if(sql.includes("UPDATE commerce_refund_requests"))return{rows:[{id:"5",order_id:"90",status:"refunded",provider_refund_reference:params[3]}]};if(sql.includes("UPDATE commerce_orders SET status='refunded'"))return{rows:[{id:"90"}]};if(sql.includes("UPDATE commerce_seller_ledger SET reversed_net_minor=net_minor"))return{rows:[]};throw new Error("unexpected transaction query "+sql.slice(0,100));},release(){calls.push({sql:"RELEASE"});}};
+  app.use("/api/commerce",createCommerceRouter({
+    pool:{async connect(){return client;}},
+    authenticateToken:(req,res,next)=>{req.user={id:1,email:"admin@example.com"};next();},env:{COMMERCE_ADMIN_USER_IDS:"1"}
+  }));
+  await withServer(app,async base=>{
+    const response=await fetch(base+"/api/commerce/refund-requests/5",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({status:"refunded",providerRefundReference:"FLW-REFUND-123"})});
+    assert.equal(response.status,200);assert.equal((await response.json()).refundRequest.status,"refunded");
+    assert.ok(calls.some(call=>call.sql.includes("UPDATE commerce_seller_ledger SET reversed_net_minor=net_minor")&&call.params[0]==="90"));
+    assert.ok(calls.some(call=>call.sql==="COMMIT"));assert.equal(calls.at(-1).sql,"RELEASE");
+  });
+});
+
+test("seller payout balances subtract reversed earnings after a refund", async () => {
+  const app=express();app.use("/api/commerce",createCommerceRouter({
+    pool:{async query(sql){if(sql.includes("SELECT status FROM commerce_sellers"))return{rows:[{status:"approved"}]};if(sql.includes("SUM(net_minor-reversed_net_minor)"))return{rows:[{currency:"RWF",total_earned:"5000",total_paid:"1000",reserved:"0",available:"4000"}]};if(sql.includes("FROM commerce_payout_requests WHERE seller_user_id=$1 ORDER BY"))return{rows:[]};throw new Error("unexpected query "+sql.slice(0,100));}},
+    authenticateToken:(req,res,next)=>{req.user={id:77,email:"seller@example.com"};next();},env:{}
+  }));
+  await withServer(app,async base=>{const response=await fetch(base+"/api/commerce/seller/payouts");assert.equal(response.status,200);assert.equal((await response.json()).balances[0].available,"4000");});
 });
