@@ -40,8 +40,8 @@ jobs:
             echo "Workflow-only change: validate the currently deployed healthy service without requiring a new runtime deployment."
           fi
           export IRHCF_EXPECTED_DEPLOY_COMMIT="$expected_commit"
-          for attempt in $(seq 1 18); do
-            echo "Render health check attempt ${attempt}/18"
+          for attempt in $(seq 1 36); do
+            echo "Render health check attempt ${attempt}/36"
             if curl --silent --show-error --fail --max-time 15 "$health_url" --output /tmp/irhcf-health.json; then
               cat /tmp/irhcf-health.json
               if node -e 'const h = JSON.parse(require("fs").readFileSync("/tmp/irhcf-health.json", "utf8")); const expected = process.env.IRHCF_EXPECTED_DEPLOY_COMMIT; if (!h.success || !h.mediaProviders || typeof h.mediaProviders.videoGeneration !== "boolean" || !h.researchProviders || typeof h.researchProviders.googleSearchGrounding !== "boolean" || !h.integrationProviders || !h.mediaProviderConfiguration || !h.mediaProviderConfiguration.localImageService || typeof h.mediaProviderConfiguration.localImageService.urlConfigured !== "boolean" || typeof h.mediaProviderConfiguration.localImageService.tokenConfigured !== "boolean" || typeof h.mediaProviderConfiguration.localImageService.enabled !== "boolean" || typeof h.integrationProviders.googleOAuth !== "boolean" || typeof h.integrationProviders.credentialEncryption !== "boolean" || !h.deployment || !h.selfImprovement || h.selfImprovement.enabled !== true || h.selfImprovement.automaticFailureScanning !== true || !h.selfImprovement.worker || h.selfImprovement.worker.running !== true || (expected && h.deployment.commit !== expected)) { console.log("Render has not deployed the expected commit or is unhealthy. Expected " + (expected || "any existing commit for workflow-only change") + "; serving " + (h.deployment && h.deployment.commit || "unknown") + "."); process.exit(1); } for (const [name, ready] of Object.entries(h.mediaProviders)) if (!ready) console.log("::warning::Media provider " + name + " is not configured."); if (h.integrationProviders) for (const [name, ready] of Object.entries(h.integrationProviders)) if (!ready) console.log("::warning::Integration provider " + name + " is not configured.");'; then
@@ -59,7 +59,7 @@ jobs:
             fi
             sleep 10
           done
-          echo "Render backend did not become healthy within the retry window."
+          echo "Render backend did not become healthy within the six-minute retry window."
           exit 1
 
       - name: Smoke-test protected API route registration
