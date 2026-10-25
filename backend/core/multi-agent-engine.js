@@ -19,11 +19,13 @@ function recommendedSpecialistCount(team, options = {}) {
     ? Math.max(1, Math.min(8, Math.trunc(requestedMinimum))) : 5;
   const maximum = Number.isFinite(requestedMaximum)
     ? Math.max(minimum, Math.min(8, Math.trunc(requestedMaximum))) : 8;
-  const declaredCount = Number(team?.count);
-  const availableCount = Array.isArray(team?.specialists) ? team.specialists.length : 0;
-  const teamCount = Number.isFinite(declaredCount) && declaredCount > 0
-    ? Math.trunc(declaredCount) : availableCount;
-  return Math.max(minimum, Math.min(maximum, teamCount || minimum));
+  // The configured count is only a hint; never recommend agents that do not
+  // exist in the actual specialist registry. A missing registry means zero
+  // executable specialists, not an imaginary default team.
+  const availableCount = Array.isArray(team?.specialists)
+    ? team.specialists.filter(item => item && typeof item.id === "string" && item.id.trim()).length
+    : 0;
+  return Math.min(availableCount, maximum);
 }
 
 function selectSpecialists(team, maxSpecialists = 6, task = "") {
