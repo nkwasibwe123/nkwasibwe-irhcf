@@ -250,19 +250,21 @@ app.disable("x-powered-by");
 // ============================================================
 
 if (!DATABASE_URL) {
-
-  console.error(
-    "[CONFIG ERROR] DATABASE_URL is missing."
-  );
-
+  const message = "[CONFIG ERROR] DATABASE_URL is missing.";
+  if (NODE_ENV === "production") {
+    // Fail closed: production must never start without its database.
+    throw new Error(message);
+  }
+  console.error(message);
 }
 
 if (!JWT_SECRET) {
-
-  console.error(
-    "[CONFIG ERROR] JWT_SECRET is missing."
-  );
-
+  const message = "[CONFIG ERROR] JWT_SECRET is missing.";
+  if (NODE_ENV === "production") {
+    // Fail closed: do not serve production traffic with authentication disabled or misconfigured.
+    throw new Error(message);
+  }
+  console.error(message);
 }
 
 if (!OPENAI_API_KEY) {
