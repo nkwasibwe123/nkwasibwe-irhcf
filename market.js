@@ -322,7 +322,7 @@
   $("productForm").addEventListener("submit",async event=>{
     event.preventDefault();const form=new FormData(event.currentTarget);const message=$("adminMessage");message.textContent="Creating product…";
     const body={name:String(form.get("name")||"").trim(),category:String(form.get("category")||"General").trim(),requiresShipping:form.get("requiresShipping")==="on",description:String(form.get("description")||"").trim(),priceMinor:Number(form.get("priceMinor")),currency:String(form.get("currency")||"RWF"),stockQuantity:Number(form.get("stockQuantity")),imageUrl:String(form.get("imageUrl")||"").trim()||null,sku:String(form.get("sku")||"").trim()||null};
-    try{const result=await request("/products",{method:"POST",body:JSON.stringify(body)});message.textContent="Product created: "+result.product.name;event.currentTarget.reset();await loadProducts();}
+    try{const result=await request("/products",{method:"POST",body:JSON.stringify(body)});message.textContent="Product created: "+result.product.name;event.currentTarget.reset();await Promise.all([loadProducts(),loadSellerProducts()]);}
     catch(error){message.textContent=error.message;}
   });
   $("productSearch").addEventListener("input",()=>{clearTimeout(window.marketSearchTimer);window.marketSearchTimer=setTimeout(loadProducts,180);});
