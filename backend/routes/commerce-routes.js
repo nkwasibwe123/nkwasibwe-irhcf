@@ -216,6 +216,17 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
     }
   });
 
+  router.get("/seller/products", authenticateToken, async (req, res) => {
+    try {
+      const seller = await pool.query("SELECT status FROM commerce_sellers WHERE user_id=$1 LIMIT 1", [req.user.id]);
+      if (seller.rows[0]?.status !== "approved" && !isCommerceAdmin(req)) return res.status(403).json({ success: false, error: "Only approved sellers can manage seller products.", code: "APPROVED_SELLER_REQUIRED" });
+      const result = await pool.query("SELECT id,name,description,sku,price_minor,currency,stock_quantity,image_url,category,requires_shipping,active,created_at,updated_at FROM commerce_products WHERE seller_user_id=$1 ORDER BY created_at DESC LIMIT 200", [req.user.id]);
+      return res.json({ success: true, products: result.rows });
+    } catch (error) {
+      return res.status(500).json({ success: false, error: "Could not load seller products.", code: "SELLER_PRODUCTS_LOAD_FAILED" });
+    }
+  });
+
   router.get("/seller/orders", authenticateToken, async (req, res) => {
     try {
       const seller = await pool.query("SELECT status FROM commerce_sellers WHERE user_id=$1 LIMIT 1", [req.user.id]);
@@ -232,6 +243,8 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
     const nextStatus = String(req.body?.status || "");
     if (!itemId || !["processing","shipped","delivered","cancelled"].includes(nextStatus)) return res.status(400).json({ success: false, error: "A valid item ID and fulfillment status are required.", code: "FULFILLMENT_INPUT_INVALID" });
     try {
+      const seller = await pool.query("SELECT status FROM commerce_sellers WHERE user_id=$1 LIMIT 1", [req.user.id]);
+      if (seller.rows[0]?.status !== "approved") return res.status(403).json({ success: false, error: "Only approved sellers can update fulfillment.", code: "APPROVED_SELLER_REQUIRED" });
       const item = await pool.query("SELECT oi.fulfillment_status, o.status AS payment_status FROM commerce_order_items oi JOIN commerce_orders o ON o.id=oi.order_id WHERE oi.id=$1 AND oi.seller_user_id=$2 LIMIT 1", [itemId,req.user.id]);
       if (!item.rows.length) return res.status(404).json({ success: false, error: "Seller order item not found.", code: "SELLER_ORDER_ITEM_NOT_FOUND" });
       if (item.rows[0].payment_status !== "paid") return res.status(409).json({ success: false, error: "Only paid orders can be fulfilled.", code: "ORDER_NOT_PAID" });
