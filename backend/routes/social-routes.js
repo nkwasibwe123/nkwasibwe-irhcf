@@ -9,6 +9,10 @@ function ensureSocialSchema(pool) {
       user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
       display_name TEXT NOT NULL DEFAULT '',
       bio TEXT NOT NULL DEFAULT '',
+      interests JSONB NOT NULL DEFAULT '[]'::jsonb,
+      dislikes JSONB NOT NULL DEFAULT '[]'::jsonb,
+      wishes JSONB NOT NULL DEFAULT '[]'::jsonb,
+      personal_statement TEXT NOT NULL DEFAULT '',
       avatar_url TEXT,
       visibility TEXT NOT NULL DEFAULT 'public' CHECK (visibility IN ('public','friends','private')),
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -114,6 +118,19 @@ function ensureSocialSchema(pool) {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     CREATE INDEX IF NOT EXISTS idx_social_media_owner_created ON social_media_assets(owner_id,created_at DESC);
+    CREATE TABLE IF NOT EXISTS social_profile_documents (
+      id BIGSERIAL PRIMARY KEY, owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      category TEXT NOT NULL CHECK(length(category) BETWEEN 1 AND 80),
+      title TEXT NOT NULL CHECK(length(title) BETWEEN 1 AND 160), file_name TEXT NOT NULL,
+      mime_type TEXT NOT NULL, byte_size INTEGER NOT NULL CHECK(byte_size BETWEEN 1 AND 4194304),
+      content BYTEA NOT NULL, issuer TEXT NOT NULL DEFAULT '', issued_on DATE, expires_on DATE,
+      notes TEXT NOT NULL DEFAULT '', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_social_profile_documents_owner_created ON social_profile_documents(owner_id,created_at DESC);
+    ALTER TABLE social_profiles ADD COLUMN IF NOT EXISTS interests JSONB NOT NULL DEFAULT '[]'::jsonb;
+    ALTER TABLE social_profiles ADD COLUMN IF NOT EXISTS dislikes JSONB NOT NULL DEFAULT '[]'::jsonb;
+    ALTER TABLE social_profiles ADD COLUMN IF NOT EXISTS wishes JSONB NOT NULL DEFAULT '[]'::jsonb;
+    ALTER TABLE social_profiles ADD COLUMN IF NOT EXISTS personal_statement TEXT NOT NULL DEFAULT '';
   `);
 }
 
@@ -178,6 +195,8 @@ function createSocialRouter({ pool, authenticateToken } = {}) {
     try {
       const result = await pool.query(
         `SELECT u.id, COALESCE(p.display_name,u.name) AS display_name, COALESCE(p.bio,'') AS bio,
+                COALESCE(p.interests,'[]'::jsonb) AS interests, COALESCE(p.dislikes,'[]'::jsonb) AS dislikes,
+                COALESCE(p.wishes,'[]'::jsonb) AS wishes, COALESCE(p.personal_statement,'') AS personal_statement,
                 p.avatar_url, COALESCE(p.visibility,'public') AS visibility
          FROM users u LEFT JOIN social_profiles p ON p.user_id=u.id WHERE u.id=$1`,
         [userId(req)]
@@ -191,21 +210,43 @@ function createSocialRouter({ pool, authenticateToken } = {}) {
     try {
       const displayName = String(req.body?.displayName || "").trim().slice(0,80);
       const bio = String(req.body?.bio || "").trim().slice(0,500);
+      const cleanList = value => Array.isArray(value) ? value.map(item=>String(item||"").trim().slice(0,120)).filter(Boolean).slice(0,30) : [];
+      const interests=cleanList(req.body?.interests), dislikes=cleanList(req.body?.dislikes), wishes=cleanList(req.body?.wishes);
+      const personalStatement=String(req.body?.personalStatement||"").trim().slice(0,4000);
       const avatarUrl = req.body?.avatarUrl == null ? null : String(req.body.avatarUrl).trim().slice(0,2000);
       const visibility = ["public","friends","private"].includes(req.body?.visibility) ? req.body.visibility : "public";
       if (!displayName) return fail(res,400,"displayName is required.");
       if (avatarUrl && !/^https:\/\//i.test(avatarUrl)) return fail(res,400,"avatarUrl must use HTTPS.");
       const result = await pool.query(
-        `INSERT INTO social_profiles(user_id,display_name,bio,avatar_url,visibility)
-         VALUES($1,$2,$3,$4,$5)
-         ON CONFLICT(user_id) DO UPDATE SET display_name=EXCLUDED.display_name,bio=EXCLUDED.bio,
-         avatar_url=EXCLUDED.avatar_url,visibility=EXCLUDED.visibility,updated_at=NOW()
-         RETURNING user_id,display_name,bio,avatar_url,visibility`,
-        [userId(req),displayName,bio,avatarUrl,visibility]
+        `INSERT INTO social_profiles(user_id,display_name,bio,interests,dislikes,wishes,personal_statement,avatar_url,visibility)
+         VALUES($1,$2,$3,$4::jsonb,$5::jsonb,$6::jsonb,$7,$8,$9)
+         ON CONFLICT(user_id) DO UPDATE SET display_name=EXCLUDED.display_name,bio=EXCLUDED.bio,interests=EXCLUDED.interests,dislikes=EXCLUDED.dislikes,wishes=EXCLUDED.wishes,personal_statement=EXCLUDED.personal_statement,avatar_url=EXCLUDED.avatar_url,visibility=EXCLUDED.visibility,updated_at=NOW()
+         RETURNING user_id,display_name,bio,interests,dislikes,wishes,personal_statement,avatar_url,visibility`,
+        [userId(req),displayName,bio,JSON.stringify(interests),JSON.stringify(dislikes),JSON.stringify(wishes),personalStatement,avatarUrl,visibility]
       );
       return res.json({ success:true, profile:result.rows[0] });
     } catch (error) { return next(error); }
   });
+
+  const profileDocumentTypes = new Set(["diploma","certificate","insurance","social-security","mutuelle","property-title","driving-permit","cv","essay","national-id","passport","tax","bank","medical","employment","education","other"]);
+  router.get("/profile/documents",async(req,res,next)=>{try{const q=await pool.query("SELECT id,category,title,file_name,mime_type,byte_size,issuer,issued_on,expires_on,notes,created_at FROM social_profile_documents WHERE owner_id=$1 ORDER BY created_at DESC,id DESC",[userId(req)]);return res.json({success:true,documents:q.rows});}catch(e){return next(e);}});
+  router.post("/profile/documents",async(req,res,next)=>{
+    const category=String(req.body?.category||"other").trim().toLowerCase().slice(0,80),title=String(req.body?.title||"").trim().slice(0,160);
+    const fileName=String(req.body?.fileName||"document").replace(/[\\/\r\n\0]/g,"_").replace(/[^a-zA-Z0-9._ -]/g,"_").trim().slice(0,120)||"document";
+    const mimeType=String(req.body?.mimeType||"").toLowerCase().trim(),encoded=String(req.body?.dataBase64||"");
+    const issuer=String(req.body?.issuer||"").trim().slice(0,160),notes=String(req.body?.notes||"").trim().slice(0,1000);
+    const dateValue=v=>/^\d{4}-\d{2}-\d{2}$/.test(String(v||""))?String(v):null;
+    if(!profileDocumentTypes.has(category)||!title)return fail(res,400,"Choose a valid document type and title.");
+    if(!["application/pdf","image/jpeg","image/png","image/webp"].includes(mimeType))return fail(res,415,"Documents must be PDF, JPEG, PNG or WebP.");
+    if(!encoded||encoded.length>Math.ceil(4194304*4/3)+8||!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded))return fail(res,400,"Invalid base64 document data.");
+    const bytes=Buffer.from(encoded,"base64");if(!bytes.length||bytes.length>4194304)return fail(res,413,"Document must be between 1 byte and 4 MiB.");
+    if(bytes.toString("base64")!==encoded)return fail(res,400,"Base64 encoding is not canonical.");
+    const valid=mimeType==="application/pdf"?bytes.subarray(0,5).toString("ascii")==="%PDF-":mimeType==="image/jpeg"?bytes[0]===255&&bytes[1]===216&&bytes[2]===255:mimeType==="image/png"?bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])):bytes.subarray(0,4).toString("ascii")==="RIFF"&&bytes.subarray(8,12).toString("ascii")==="WEBP";
+    if(!valid)return fail(res,415,"File content does not match the declared type.");
+    try{const q=await pool.query("INSERT INTO social_profile_documents(owner_id,category,title,file_name,mime_type,byte_size,content,issuer,issued_on,expires_on,notes) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id,category,title,file_name,mime_type,byte_size,issuer,issued_on,expires_on,notes,created_at",[userId(req),category,title,fileName,mimeType,bytes.length,bytes,issuer,dateValue(req.body?.issuedOn),dateValue(req.body?.expiresOn),notes]);return res.status(201).json({success:true,document:q.rows[0]});}catch(e){return next(e);}
+  });
+  router.get("/profile/documents/:documentId/content",async(req,res,next)=>{if(!validId(req.params.documentId))return fail(res,400,"Invalid document ID.");try{const q=await pool.query("SELECT file_name,mime_type,content FROM social_profile_documents WHERE id=$1 AND owner_id=$2",[req.params.documentId,userId(req)]);if(!q.rows.length)return fail(res,404,"Document not found.");const d=q.rows[0],name=String(d.file_name||"document").replace(/[^a-zA-Z0-9._ -]/g,"_").slice(0,120);return res.status(200).set("Content-Type",d.mime_type).set("Content-Disposition","attachment; filename=\""+name+"\"").set("X-Content-Type-Options","nosniff").set("Cache-Control","private, no-store").send(d.content);}catch(e){return next(e);}});
+  router.delete("/profile/documents/:documentId",async(req,res,next)=>{if(!validId(req.params.documentId))return fail(res,400,"Invalid document ID.");try{const q=await pool.query("DELETE FROM social_profile_documents WHERE id=$1 AND owner_id=$2 RETURNING id",[req.params.documentId,userId(req)]);if(!q.rows.length)return fail(res,404,"Document not found.");return res.json({success:true,deletedDocumentId:Number(q.rows[0].id)});}catch(e){return next(e);}});
 
   router.get("/feed", async (req, res, next) => {
     try {
