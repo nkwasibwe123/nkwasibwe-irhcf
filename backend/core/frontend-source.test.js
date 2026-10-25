@@ -752,3 +752,16 @@ test("marketplace setup panel explains missing payment/shipping configuration wi
   assert.match(routes,/missingWebhookSettings/);
   assert.match(routes,/automatedTransfers:false/);
 });
+
+
+test("seller product management includes inline editing for price, stock and fulfillment settings", () => {
+  const root=path.join(__dirname,"..","..");
+  const html=fs.readFileSync(path.join(root,"market.html"),"utf8");
+  const js=fs.readFileSync(path.join(root,"market.js"),"utf8");
+  assert.match(html,/id="sellerProductsList"/);
+  assert.match(js,/product-edit-form/);
+  assert.match(js,/addField\("Price \(minor units\)","priceMinor"/);
+  assert.match(js,/addField\("Available stock","stockQuantity"/);
+  assert.match(js,/shipping\.name="requiresShipping"/);
+  assert.match(js,/request\("\/products\/"\+encodeURIComponent\(product\.id\),\{method:"PATCH"/);
+});
