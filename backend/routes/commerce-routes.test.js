@@ -650,7 +650,7 @@ test("verified refund reverses seller earnings in the same database transaction"
   const app=express();app.use(express.json());const calls=[];
   const client={async query(sql,params){calls.push({sql,params});if(sql==="BEGIN"||sql==="COMMIT"||sql==="ROLLBACK")return{rows:[]};if(sql.includes("FROM commerce_refund_requests WHERE id=$1 FOR UPDATE"))return{rows:[{id:"5",order_id:"90",status:"approved"}]};if(sql.includes("FROM commerce_orders WHERE id=$1 FOR UPDATE"))return{rows:[{id:"90",status:"paid"}]};if(sql.includes("UPDATE commerce_refund_requests"))return{rows:[{id:"5",order_id:"90",status:"refunded",provider_refund_reference:params[3]}]};if(sql.includes("UPDATE commerce_orders SET status='refunded'"))return{rows:[{id:"90"}]};if(sql.includes("UPDATE commerce_seller_ledger SET reversed_net_minor=net_minor"))return{rows:[]};throw new Error("unexpected transaction query "+sql.slice(0,100));},release(){calls.push({sql:"RELEASE"});}};
   app.use("/api/commerce",createCommerceRouter({
-    pool:{async connect(){return client;}},
+    pool:{async query(){throw new Error("pool.query should not be used by transactional refund review");},async connect(){return client;}},
     authenticateToken:(req,res,next)=>{req.user={id:1,email:"admin@example.com"};next();},env:{COMMERCE_ADMIN_USER_IDS:"1"}
   }));
   await withServer(app,async base=>{
