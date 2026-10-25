@@ -203,8 +203,9 @@ function getTaxRateBps(env = process.env) {
 }
 function calculateTaxMinor(subtotalMinor, discountMinor, shippingMinor, taxRateBps) {
   const taxableMinor = subtotalMinor - discountMinor + shippingMinor;
-  const taxMinor = Math.floor(taxableMinor * taxRateBps / 10000);
-  return Number.isSafeInteger(taxableMinor) && taxableMinor >= 0 && Number.isSafeInteger(taxMinor) ? taxMinor : null;
+  if (!Number.isSafeInteger(taxableMinor) || taxableMinor < 0 || !Number.isSafeInteger(taxRateBps) || taxRateBps < 0 || taxRateBps > 3000) return null;
+  const taxMinor = Number((BigInt(taxableMinor) * BigInt(taxRateBps)) / 10000n);
+  return Number.isSafeInteger(taxMinor) && taxMinor >= 0 ? taxMinor : null;
 }
 
 function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.fetch, env = process.env } = {}) {
