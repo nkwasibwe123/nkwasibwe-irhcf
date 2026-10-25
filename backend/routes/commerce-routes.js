@@ -375,6 +375,17 @@ function sendExistingCheckoutReplay(res, order, requestFingerprint) {
   });
 }
 
+function isHttpsUrl(value) {
+  try { return new URL(String(value || "").trim()).protocol === "https:"; }
+  catch { return false; }
+}
+
+function providerTimeoutSignal(timeoutMs) {
+  return typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function"
+    ? AbortSignal.timeout(timeoutMs)
+    : undefined;
+}
+
 function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.fetch, env = process.env } = {}) {
   if (!pool || typeof pool.query !== "function") throw new Error("Commerce router requires a database pool.");
   if (typeof authenticateToken !== "function") throw new Error("Commerce router requires authentication middleware.");
@@ -777,9 +788,11 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
     const shippingCountries=Object.keys(shippingRates).filter(country=>shippingRates[country]&&typeof shippingRates[country]==="object"&&Object.values(shippingRates[country]).some(value=>Number.isSafeInteger(Number(value))&&Number(value)>=0));
     const taxRateBps=getTaxRateBps(env);
     const platformFeeBps=getPlatformFeeBps(env);
-    const checkoutReady=Boolean(String(env.FLW_SECRET_KEY||"").trim()&&String(env.FLW_REDIRECT_URL||"").trim());
+    const redirectConfigured=isHttpsUrl(env.FLW_REDIRECT_URL);
+    const checkoutMissing=[...(!String(env.FLW_SECRET_KEY||"").trim()?["FLW_SECRET_KEY"]:[]),...(!String(env.FLW_SECRET_HASH||"").trim()?["FLW_SECRET_HASH"]:[]),...(!redirectConfigured?[String(env.FLW_REDIRECT_URL||"").trim()?"FLW_REDIRECT_URL (must use HTTPS)":"FLW_REDIRECT_URL"]:[])];
+    const checkoutReady=checkoutMissing.length===0;
     const webhookReady=Boolean(String(env.FLW_SECRET_HASH||"").trim());
-    return res.json({success:true,payments:{provider:"Flutterwave hosted checkout",checkoutReady,webhookReady,missingCheckoutSettings:[...(!String(env.FLW_SECRET_KEY||"").trim()?["FLW_SECRET_KEY"]:[]),...(!String(env.FLW_REDIRECT_URL||"").trim()?["FLW_REDIRECT_URL"]:[])],missingWebhookSettings:!webhookReady?["FLW_SECRET_HASH"]:[]},shipping:{configuredCountries:shippingCountries,physicalCheckoutRequiresConfiguredRate:true},tax:{rateBps:taxRateBps,explicitlyConfigured:env.COMMERCE_TAX_BPS!=null&&String(env.COMMERCE_TAX_BPS)!=="",valid:taxRateBps!==null},sellerPayouts:{platformFeeBps,automatedTransfers:false,manualProviderReferenceRequired:true},productImages:{maxBytes:2*1024*1024,storedIn:"PostgreSQL"}});
+    return res.json({success:true,payments:{provider:"Flutterwave hosted checkout",checkoutReady,webhookReady,missingCheckoutSettings:checkoutMissing,missingWebhookSettings:!webhookReady?["FLW_SECRET_HASH"]:[]},shipping:{configuredCountries:shippingCountries,physicalCheckoutRequiresConfiguredRate:true},tax:{rateBps:taxRateBps,explicitlyConfigured:env.COMMERCE_TAX_BPS!=null&&String(env.COMMERCE_TAX_BPS)!=="",valid:taxRateBps!==null},sellerPayouts:{platformFeeBps,automatedTransfers:false,manualProviderReferenceRequired:true},productImages:{maxBytes:2*1024*1024,storedIn:"PostgreSQL"}});
   });
 
   router.put("/products/:productId/image", authenticateToken, requireProductManager, async (req, res) => {
@@ -1121,7 +1134,14 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
       return res.status(503).json({
         success: false,
         code: "PAYMENT_PROVIDER_NOT_CONFIGURED",
-        error: "Hosted checkout is disabled until Flutterwave test credentials and webhook secret are configured."
+        error: "Hosted checkout is disabled until Flutterwave credentials and webhook secret are configured."
+      });
+    }
+    if (!isHttpsUrl(env.FLW_REDIRECT_URL)) {
+      return res.status(503).json({
+        success: false,
+        code: "CHECKOUT_CONFIGURATION_INCOMPLETE",
+        error: "FLW_REDIRECT_URL must be a valid HTTPS storefront URL."
       });
     }
     if (typeof fetchImpl !== "function") {
@@ -1325,6 +1345,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
       const response = await fetchImpl("https://api.flutterwave.com/v3/payments", {
         method: "POST",
         headers: { Authorization: "Bearer " + env.FLW_SECRET_KEY, "Content-Type": "application/json" },
+        signal: providerTimeoutSignal(20_000),
         body: JSON.stringify({
           tx_ref: txRef,
           amount: toProviderAmount(totalMinor, currency),
@@ -1365,7 +1386,8 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
     }
     try {
       const verifiedResponse = await fetchImpl("https://api.flutterwave.com/v3/transactions/" + encodeURIComponent(String(transactionId)) + "/verify", {
-        headers: { Authorization: "Bearer " + env.FLW_SECRET_KEY }
+        headers: { Authorization: "Bearer " + env.FLW_SECRET_KEY },
+        signal: providerTimeoutSignal(15_000)
       });
       const verified = await verifiedResponse.json();
       const data = verified?.data;
