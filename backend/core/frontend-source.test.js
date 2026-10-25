@@ -781,3 +781,20 @@ test("public seller storefront is reachable from seller names and only renders a
   assert.match(routes,/p\.seller_user_id=\$1 AND p\.active=TRUE/);
   assert.doesNotMatch(routes.slice(routes.indexOf('router.get("/sellers/:sellerUserId/storefront"'),routes.indexOf('router.get("/products"',routes.indexOf('router.get("/sellers/:sellerUserId/storefront"'))),/contact_email|contact_phone/);
 });
+
+
+test("marketplace product comparison supports three items and compares price, seller, ratings and delivery", () => {
+  const root=path.join(__dirname,"..","..");
+  const html=fs.readFileSync(path.join(root,"market.html"),"utf8");
+  const js=fs.readFileSync(path.join(root,"market.js"),"utf8");
+  for(const id of ["comparisonPanel","comparisonTableWrap","clearComparisonButton"])assert.ok(html.includes('id="'+id+'"'),"missing product comparison UI: "+id);
+  assert.match(js,/compareItems:\s*\[\]/);
+  assert.match(js,/function renderComparison\(\)/);
+  assert.match(js,/function toggleComparison\(product\)/);
+  assert.match(js,/state\.compareItems\.length>=3/);
+  assert.match(js,/\["Price",p=>money\(p\.price_minor,p\.currency\)\]/);
+  assert.match(js,/\["Seller",p=>p\.seller_name/);
+  assert.match(js,/\["Rating",p=>Number\(p\.rating_average\)/);
+  assert.match(js,/\["Delivery",p=>p\.requires_shipping/);
+  assert.match(js,/clearComparisonButton/);
+});
