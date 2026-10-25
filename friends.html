@@ -25,6 +25,24 @@
 </form>
 <div id="socialFeedList" class="feed-list"><p class="feed-empty">Loading posts…</p></div>
 </section>
+<section class="chat-workspace" aria-labelledby="friendsTitle">
+<h2 id="friendsTitle">Friends & requests</h2>
+<p class="feed-subtitle">Manage incoming friend requests, view accepted friends and update your profile.</p>
+<div class="chat-layout">
+  <div><h3>Incoming requests</h3><div id="friendRequestsList" class="conversation-list"><p class="feed-empty">Loading requests…</p></div></div>
+  <div><h3>Your friends</h3><div id="friendsList" class="conversation-list"><p class="feed-empty">Loading friends…</p></div></div>
+</div>
+<form id="socialProfileForm" class="composer" style="margin-top:16px">
+  <h3>My profile</h3>
+  <label for="socialDisplayName">Display name</label>
+  <input id="socialDisplayName" maxlength="80" required style="width:100%;padding:10px;border:1px solid var(--line);border-radius:9px;font:inherit;margin:6px 0 12px">
+  <label for="socialBio">Bio</label>
+  <textarea id="socialBio" maxlength="500" rows="3" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:9px;font:inherit;margin:6px 0 12px"></textarea>
+  <label for="socialProfileVisibility">Profile visibility</label>
+  <select id="socialProfileVisibility" style="padding:9px;border:1px solid var(--line);border-radius:9px;font:inherit"><option value="public">Public</option><option value="friends">Friends</option><option value="private">Private</option></select>
+  <button type="submit" class="feed-action">Save profile</button>
+</form>
+</section>
 <section class="chat-workspace" aria-labelledby="chatTitle">
 <h2 id="chatTitle">Private messages</h2>
 <p class="feed-subtitle">Search for a public profile to start a private or group conversation. Messages are stored by IRHCF and only conversation members can read them.</p>
@@ -175,6 +193,61 @@
       messageList.scrollTop=messageList.scrollHeight;
     }catch(e){messageList.replaceChildren(node("p","feed-empty",e.message));}
   }
+  const friendRequestsList=document.getElementById("friendRequestsList");
+  const friendsList=document.getElementById("friendsList");
+  async function loadFriendRequests(){
+    try{
+      const data=await request("/api/social/friend-requests");
+      friendRequestsList.replaceChildren();
+      if(!data.requests?.length){friendRequestsList.append(node("p","feed-empty","No pending friend requests."));return;}
+      data.requests.forEach(item=>{
+        const row=node("div","conversation-option");
+        row.append(node("strong","",item.sender_name||("Member #"+item.sender_id)));
+        const accept=node("button","feed-action","Accept");accept.type="button";
+        accept.addEventListener("click",async()=>{accept.disabled=true;try{await request("/api/social/friend-requests/"+encodeURIComponent(item.id)+"/accept",{method:"POST"});say("Friend request accepted.");await loadFriendRequests();await loadFriends();}catch(e){say(e.message);}finally{accept.disabled=false;}});
+        const decline=node("button","feed-action","Decline");decline.type="button";
+        decline.addEventListener("click",async()=>{decline.disabled=true;try{await request("/api/social/friend-requests/"+encodeURIComponent(item.id)+"/decline",{method:"POST"});say("Friend request declined.");await loadFriendRequests();}catch(e){say(e.message);}finally{decline.disabled=false;}});
+        row.append(accept,decline);friendRequestsList.append(row);
+      });
+    }catch(e){friendRequestsList.replaceChildren(node("p","feed-empty",e.message));}
+  }
+  async function loadFriends(){
+    try{
+      const data=await request("/api/social/friends");
+      friendsList.replaceChildren();
+      if(!data.friends?.length){friendsList.append(node("p","feed-empty","No friends yet. Search for people to connect."));return;}
+      data.friends.forEach(person=>{
+        const row=node("div","conversation-option");
+        row.append(node("span","",person.display_name||("Member #"+person.id)));
+        const remove=node("button","feed-action","Remove");remove.type="button";
+        remove.addEventListener("click",async()=>{if(!confirm("Remove this friend?"))return;remove.disabled=true;try{await request("/api/social/friends/"+encodeURIComponent(person.id),{method:"DELETE"});await loadFriends();say("Friend removed.");}catch(e){say(e.message);}finally{remove.disabled=false;}});
+        const chat=node("button","feed-action","Message");chat.type="button";
+        chat.addEventListener("click",async()=>{try{const result=await request("/api/social/conversations",{method:"POST",body:JSON.stringify({participantIds:[person.id]})});await openConversation(result.conversation);}catch(e){say(e.message);}});
+        row.append(chat,remove);friendsList.append(row);
+      });
+    }catch(e){friendsList.replaceChildren(node("p","feed-empty",e.message));}
+  }
+  const profileForm=document.getElementById("socialProfileForm");
+  profileForm.addEventListener("submit",async event=>{
+    event.preventDefault();
+    try{
+      const result=await request("/api/social/profile",{method:"PUT",body:JSON.stringify({
+        displayName:document.getElementById("socialDisplayName").value.trim(),
+        bio:document.getElementById("socialBio").value.trim(),
+        visibility:document.getElementById("socialProfileVisibility").value
+      })});
+      document.getElementById("socialDisplayName").value=result.profile.display_name||"";
+      say("Profile saved.");
+    }catch(e){say(e.message);}
+  });
+  async function loadProfile(){
+    try{
+      const data=await request("/api/social/profile");
+      document.getElementById("socialDisplayName").value=data.profile.display_name||"";
+      document.getElementById("socialBio").value=data.profile.bio||"";
+      document.getElementById("socialProfileVisibility").value=data.profile.visibility||"public";
+    }catch(e){say(e.message);}
+  }
   async function searchPeople(){
     const q=peopleSearch.value.trim();peopleResults.replaceChildren();
     if(q.length<2)return;
@@ -182,14 +255,13 @@
       const data=await request("/api/social/people?q="+encodeURIComponent(q));
       if(!data.people.length){peopleResults.append(node("p","feed-empty","No public profiles found."));return;}
       data.people.forEach(person=>{
-        const btn=node("button","person-option",person.display_name+" · Start chat");
-        btn.type="button";btn.addEventListener("click",async()=>{
-          btn.disabled=true;
-          try{
-            const data=await request("/api/social/conversations",{method:"POST",body:JSON.stringify({participantIds:[person.id]})});
-            await openConversation(data.conversation);peopleResults.replaceChildren();say("Conversation ready.");
-          }catch(e){say(e.message);}finally{btn.disabled=false;}
-        });peopleResults.append(btn);
+        const row=node("div","person-option");
+        row.append(node("span","",person.display_name));
+        const add=node("button","feed-action","Add friend");add.type="button";
+        add.addEventListener("click",async()=>{add.disabled=true;try{await request("/api/social/friend-requests",{method:"POST",body:JSON.stringify({recipientId:person.id})});say("Friend request sent.");}catch(e){say(e.message);}finally{add.disabled=false;}});
+        const chat=node("button","feed-action","Message");chat.type="button";
+        chat.addEventListener("click",async()=>{chat.disabled=true;try{const data=await request("/api/social/conversations",{method:"POST",body:JSON.stringify({participantIds:[person.id]})});await openConversation(data.conversation);say("Conversation ready.");}catch(e){say(e.message);}finally{chat.disabled=false;}});
+        row.append(add,chat);peopleResults.append(row);
       });
     }catch(e){say(e.message);}
   }
@@ -202,6 +274,9 @@
   });
   load();
   loadConversations();
+  loadFriendRequests();
+  loadFriends();
+  loadProfile();
 })();
 </script>
 </body>
