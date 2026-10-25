@@ -6,7 +6,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { EventEmitter } = require("node:events");
-const { buildFfmpegArgs, editVideoFile } = require("./video-editor");
+const { buildFfmpegArgs, buildSubtitleContent, escapeSubtitleFilterPath, editVideoFile } = require("./video-editor");
 
 test("FFmpeg arguments include a real color filter and MP4 codec settings", () => {
   const args = buildFfmpegArgs("/tmp/input.mp4", "/tmp/output.mp4", {
@@ -77,14 +77,41 @@ test("renderer invokes FFmpeg and verifies a non-empty output", async () => {
   }
 });
 
-test("renderer explicitly rejects subtitle burn-in until implemented", async () => {
+test("plain caption text is safely converted to a full-duration SRT cue", () => {
+  const result = buildSubtitleContent("Hello\nNkwasibwe");
+  assert.equal(result.extension, "srt");
+  assert.match(result.content, /00:00:00,000 --> 23:59:59,999/);
+  assert.match(result.content, /Hello\nNkwasibwe/);
+});
+
+test("authored SRT and WebVTT timing data is preserved", () => {
+  const srt = "1\n00:00:01,000 --> 00:00:02,000\nHello";
+  assert.deepEqual(buildSubtitleContent(srt), { content: srt, extension: "srt" });
+  const vtt = "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nHello";
+  assert.deepEqual(buildSubtitleContent(vtt), { content: vtt, extension: "vtt" });
+});
+
+test("FFmpeg arguments combine the selected effect with subtitle burn-in", () => {
+  const args = buildFfmpegArgs("/tmp/input.mp4", "/tmp/output.mp4", { effect: "monochrome", subtitles: "Hello" }, "/tmp/captions.srt");
+  const filterIndex = args.indexOf("-vf");
+  assert.ok(filterIndex >= 0);
+  assert.match(args[filterIndex + 1], /hue=s=0/);
+  assert.match(args[filterIndex + 1], /subtitles=filename=/);
+  assert.match(args[filterIndex + 1], /FontSize=24/);
+});
+
+test("subtitle filter paths escape filtergraph punctuation", () => {
+  assert.equal(escapeSubtitleFilterPath("/tmp/a,b:c.srt"), "/tmp/a\\,b\\:c.srt");
+});
+
+test("renderer rejects empty subtitle content safely", async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "irhcf-video-test-"));
   const inputPath = path.join(directory, "input.mp4");
   fs.writeFileSync(inputPath, "fixture");
   try {
     await assert.rejects(
-      editVideoFile({ inputPath, outputPath: path.join(directory, "out.mp4"), request: { subtitles: "hello" } }),
-      { code: "VIDEO_SUBTITLES_NOT_IMPLEMENTED" }
+      editVideoFile({ inputPath, outputPath: path.join(directory, "out.mp4"), request: { subtitles: "   " } }),
+      { code: "VIDEO_SUBTITLES_EMPTY" }
     );
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
