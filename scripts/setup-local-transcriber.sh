@@ -8,11 +8,26 @@ MODEL_NAME="${WHISPER_MODEL_NAME:-ggml-tiny}"
 REPO="https://github.com/ggml-org/whisper.cpp.git"
 MODEL_URL="https://huggingface.co/ggerganov/whisper.cpp/resolve/main/${MODEL_NAME}.bin"
 
+BIN="$ROOT/build/bin/whisper-cli"
+MODEL_PATH="$MODEL_DIR/${MODEL_NAME}.bin"
+
+mkdir -p "$(dirname "$ROOT")" "$MODEL_DIR"
+
+# Render may retain build-cache files between deployments. Reuse a verified
+# binary/model pair instead of re-running CMake and downloading the model on
+# every npm install. If the cached binary fails its health check, rebuild it.
+if [ -x "$BIN" ] && [ -s "$MODEL_PATH" ] && "$BIN" --help >/dev/null 2>&1; then
+  printf '\nUsing cached self-hosted transcription engine.\n'
+  printf 'WHISPER_CPP_PATH=%s\n' "$BIN"
+  printf 'WHISPER_MODEL_PATH=%s\n' "$MODEL_PATH"
+  printf 'WHISPER_THREADS=%s\n' "${WHISPER_THREADS:-2}"
+  exit 0
+fi
+
 for tool in git cmake c++ curl; do
   command -v "$tool" >/dev/null 2>&1 || { echo "ERROR: required build tool '$tool' is unavailable" >&2; exit 1; }
 done
 
-mkdir -p "$(dirname "$ROOT")" "$MODEL_DIR"
 if [ ! -f "$ROOT/CMakeLists.txt" ]; then
   git clone --depth 1 "$REPO" "$ROOT"
 fi
@@ -20,7 +35,6 @@ fi
 cmake -S "$ROOT" -B "$ROOT/build" -DCMAKE_BUILD_TYPE=Release -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_EXAMPLES=ON
 cmake --build "$ROOT/build" --config Release --target whisper-cli -j "${BUILD_JOBS:-2}"
 
-MODEL_PATH="$MODEL_DIR/${MODEL_NAME}.bin"
 if [ ! -s "$MODEL_PATH" ]; then
   curl --fail --location --retry 3 --output "$MODEL_PATH.tmp" "$MODEL_URL"
   mv "$MODEL_PATH.tmp" "$MODEL_PATH"
