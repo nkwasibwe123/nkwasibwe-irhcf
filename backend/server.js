@@ -21,6 +21,7 @@ const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
 const { editVideoFile } = require("./media/video-editor");
+const { animatePhotoFile, detectPhotoImageType, ALLOWED_MOTIONS, ALLOWED_SIZES, ALLOWED_DURATIONS } = require("./media/photo-animation");
 const { editAudioFile } = require("./media/audio-editor");
 const { toFile } = require("openai/uploads");
 const { getLocalTranscriberConfig, getLocalTranscriberStatus, transcribeLocally } = require("./media/local-transcriber");
@@ -4072,6 +4073,60 @@ app.post("/api/media/audio/edit", authenticateToken, async (req, res) => {
     return res.status(status).json({
       success: false,
       error: String(error?.message || "Audio editing failed").slice(0, 300),
+      code
+    });
+  } finally {
+    if (tempDir) await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+  }
+});
+
+app.post("/api/media/video/photo-animation", authenticateToken, async (req, res) => {
+  let tempDir;
+  try {
+    const mimeType = String(req.body?.mimeType || "").toLowerCase();
+    const imageBase64 = String(req.body?.imageBase64 || "");
+    if (!imageBase64 || !/^[A-Za-z0-9+/]+={0,2}$/.test(imageBase64)) {
+      return res.status(400).json({ success: false, error: "Provide a valid base64 JPEG, PNG or WEBP photo.", code: "PHOTO_IMAGE_INVALID" });
+    }
+    if (imageBase64.length > 8_500_000) {
+      return res.status(413).json({ success: false, error: "Photo exceeds the 6 MB limit.", code: "PHOTO_IMAGE_TOO_LARGE" });
+    }
+    const imageBuffer = Buffer.from(imageBase64, "base64");
+    if (!imageBuffer.length || imageBuffer.length > 6 * 1024 * 1024) {
+      return res.status(413).json({ success: false, error: "Photo exceeds the 6 MB limit.", code: "PHOTO_IMAGE_TOO_LARGE" });
+    }
+    const extension = detectPhotoImageType(mimeType, imageBuffer);
+    const motion = String(req.body?.motion || "zoom-in");
+    const durationSeconds = Number(req.body?.durationSeconds ?? 8);
+    const size = String(req.body?.size || "1280x720");
+    if (!ALLOWED_MOTIONS.has(motion) || !ALLOWED_DURATIONS.has(durationSeconds) || !ALLOWED_SIZES.has(size)) {
+      return res.status(400).json({ success: false, error: "Choose a supported motion, 4/8/12 second duration and 720p landscape/portrait size.", code: "PHOTO_ANIMATION_OPTIONS_INVALID" });
+    }
+
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "irhcf-photo-animation-"));
+    const inputPath = path.join(tempDir, "reference." + extension);
+    const outputPath = path.join(tempDir, "animation.mp4");
+    await fs.writeFile(inputPath, imageBuffer);
+    await animatePhotoFile({ inputPath, outputPath, durationSeconds, motion, size });
+    const output = await fs.readFile(outputPath);
+    if (!output.length || output.length < 12 || output.toString("ascii", 4, 8) !== "ftyp") {
+      return res.status(500).json({ success: false, error: "Local renderer did not produce a valid MP4 file.", code: "PHOTO_ANIMATION_OUTPUT_INVALID" });
+    }
+    res.setHeader("Content-Type", "video/mp4");
+    res.setHeader("Content-Disposition", 'attachment; filename="nkwasibwe-photo-animation.mp4"');
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Content-Length", String(output.length));
+    return res.status(200).send(output);
+  } catch (error) {
+    const code = String(error?.code || "PHOTO_ANIMATION_FAILED");
+    const status = code === "FFMPEG_UNAVAILABLE" ? 503 :
+      code === "PHOTO_ANIMATION_TIMEOUT" ? 504 :
+      ["PHOTO_IMAGE_INVALID", "PHOTO_ANIMATION_MOTION_INVALID", "PHOTO_ANIMATION_DURATION_INVALID", "PHOTO_ANIMATION_SIZE_INVALID", "PHOTO_ANIMATION_OUTPUT_FORMAT"].includes(code) ? 400 : 500;
+    console.error("[MEDIA_PHOTO_ANIMATION] Failed:", { code, message: String(error?.message || "Photo animation failed").slice(0, 300) });
+    return res.status(status).json({
+      success: false,
+      error: String(error?.message || "Local photo animation failed.").slice(0, 500),
       code
     });
   } finally {
