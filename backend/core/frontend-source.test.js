@@ -393,6 +393,8 @@ test("chat-first layout exposes one main dashboard entry instead of a crowded to
   assert.match(html, /data-dashboard-category="create"/, "Creation tools must live inside a workspace.");
   assert.match(html, /id="dashboardServices" hidden/, "Individual services must stay hidden until a workspace is opened.");
   assert.match(html, /id="dashboardBackButton"/, "Users must be able to return to the main dashboard.");
+  assert.doesNotMatch(html, /id="dashboardActivityCenter"/, "The main dashboard must not show a wall of global activity cards.");
+  assert.match(html, /id="workspaceActivityCenter"/, "Activity details must remain available inside the relevant workspace.");
 });
 
 test("dashboard workspace navigation filters services and resets to the main dashboard on open", () => {
