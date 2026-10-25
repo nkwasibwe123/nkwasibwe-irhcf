@@ -19,8 +19,8 @@ test("credential encryption round-trips JSON and rejects tampering or missing ke
 
     const parts = encrypted.split(".");
     const ciphertext = parts[2];
-    const replacement = ciphertext.endsWith("A") ? "B" : "A";
-    parts[2] = ciphertext.slice(0, -1) + replacement;
+    const replacement = ciphertext[0] === "A" ? "B" : "A";
+    parts[2] = replacement + ciphertext.slice(1);
     assert.throws(() => decryptJson(parts.join(".")), /Unsupported state|authenticate|unable to/i);
 
     assert.throws(() => decryptJson("not-an-encrypted-payload"), /Invalid encrypted credential payload/);
