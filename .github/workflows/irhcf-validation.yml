@@ -112,23 +112,22 @@ jobs:
         run: |
           base_url="https://nkwasibwe-irhcf.onrender.com"
           storefront_origin="https://nkwasibwe-irhcf-web.onrender.com"
-          status=$(curl --silent --show-error --max-time 15 -D /tmp/irhcf-cors-headers.txt -o /tmp/irhcf-cors-body.txt -w "%{http_code}" -X OPTIONS "$base_url/api/commerce/checkout" -H "Origin: $storefront_origin" -H "Access-Control-Request-Method: POST" -H "Access-Control-Request-Headers: authorization,content-type,idempotency-key")
-          echo "OPTIONS /api/commerce/checkout -> HTTP $status"
-          cat /tmp/irhcf-cors-headers.txt
-          if [[ "$status" != "204" && "$status" != "200" ]]; then
-            cat /tmp/irhcf-cors-body.txt
-            echo "Marketplace checkout CORS preflight failed."
-            exit 1
-          fi
-          if ! grep -Eiq '^access-control-allow-origin: *https://nkwasibwe-irhcf-web\.onrender\.com' /tmp/irhcf-cors-headers.txt; then
-            echo "The production storefront origin is not allowed by backend CORS."
-            exit 1
-          fi
-          if ! grep -Eiq '^access-control-allow-headers:.*idempotency-key' /tmp/irhcf-cors-headers.txt; then
-            echo "The backend does not allow the Idempotency-Key header in CORS."
-            exit 1
-          fi
-          echo "Marketplace storefront origin and Idempotency-Key CORS header are allowed."
+          for attempt in $(seq 1 18); do
+            echo "Marketplace CORS preflight attempt ${attempt}/18"
+            status=$(curl --silent --show-error --max-time 10 -D /tmp/irhcf-cors-headers.txt -o /tmp/irhcf-cors-body.txt -w "%{http_code}" -X OPTIONS "$base_url/api/commerce/checkout" -H "Origin: $storefront_origin" -H "Access-Control-Request-Method: POST" -H "Access-Control-Request-Headers: authorization,content-type,idempotency-key" || true)
+            echo "OPTIONS /api/commerce/checkout -> HTTP ${status:-no-response}"
+            if [[ ( "$status" == "204" || "$status" == "200" ) ]] && grep -Eiq '^access-control-allow-origin: *https://nkwasibwe-irhcf-web\\.onrender\\.com' /tmp/irhcf-cors-headers.txt && grep -Eiq '^access-control-allow-headers:.*idempotency-key' /tmp/irhcf-cors-headers.txt; then
+              cat /tmp/irhcf-cors-headers.txt
+              echo "Marketplace storefront origin and Idempotency-Key CORS header are allowed."
+              exit 0
+            fi
+            echo "CORS headers are not ready yet; waiting for the backend rollout."
+            sleep 10
+          done
+          cat /tmp/irhcf-cors-headers.txt || true
+          echo "Marketplace checkout CORS preflight did not become ready within the retry window."
+          exit 1
+
       - name: Verify self-hosted image service readiness
         shell: bash
         run: |
