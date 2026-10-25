@@ -571,6 +571,12 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
       if(!current.rows.length){await client.query("ROLLBACK");return res.status(404).json({success:false,error:"Payout request not found.",code:"PAYOUT_REQUEST_NOT_FOUND"});}
       const allowed=current.rows[0].status==="pending"?["approved","rejected"]:current.rows[0].status==="approved"?["paid"]:[];
       if(!allowed.includes(status)){await client.query("ROLLBACK");return res.status(409).json({success:false,error:"That payout status transition is not allowed.",code:"PAYOUT_TRANSITION_INVALID"});}
+      if(status==="paid"){
+        await client.query("SELECT user_id FROM commerce_sellers WHERE user_id=$1 FOR UPDATE",[current.rows[0].seller_user_id]);
+        const balances=await client.query(sellerBalanceSql,[current.rows[0].seller_user_id]);
+        const balance=balances.rows.find(row=>row.currency===current.rows[0].currency);
+        if(!balance||Number(balance.available)<0){await client.query("ROLLBACK");return res.status(409).json({success:false,error:"Refund reversals have reduced this seller's available balance. Reconcile the negative balance before paying this request.",code:"PAYOUT_BALANCE_NEGATIVE"});}
+      }
       const updated=await client.query("UPDATE commerce_payout_requests SET status=$2,admin_note=$3,provider_transfer_reference=$4,reviewed_by=$5,reviewed_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=$1 RETURNING id,seller_user_id,amount_minor,currency,status,provider_transfer_reference,reviewed_at",[requestId,status,adminNote,transferReference||null,req.user.id]);
       await client.query("COMMIT");
       return res.json({success:true,payoutRequest:updated.rows[0]});
