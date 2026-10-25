@@ -12,6 +12,7 @@
 
 const express = require("express");
 const cors = require("cors");
+const { createCorsOriginPolicy } = require("./core/cors-policy");
 const OpenAI = require("openai");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
@@ -284,7 +285,7 @@ if (!ELEVENLABS_API_KEY) {
 
 app.use(
   cors({
-    origin: true,
+    origin: createCorsOriginPolicy(),
     credentials: true,
     methods: [
       "GET",
