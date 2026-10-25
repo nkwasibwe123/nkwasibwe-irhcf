@@ -275,6 +275,63 @@
       }
     }catch(error){box.replaceChildren(element("p","muted","Seller orders: "+error.message));}
   }
+  async function loadSellerAnalytics() {
+    const summaryBox=$("sellerAnalyticsSummary"),chartBox=$("sellerSalesChart"),productsBox=$("sellerTopProducts"),fulfillmentBox=$("sellerFulfillmentSummary");
+    if(!token()){summaryBox.replaceChildren(element("p","muted","Sign in as an approved seller to view analytics."));chartBox.replaceChildren();productsBox.replaceChildren();fulfillmentBox.replaceChildren();return;}
+    const days=Number($("sellerAnalyticsDays").value||30);
+    summaryBox.replaceChildren(element("p","muted","Loading confirmed sales…"));
+    try{
+      const result=await request("/seller/analytics?days="+encodeURIComponent([7,30,90].includes(days)?days:30));
+      summaryBox.replaceChildren();
+      if(!(result.summary||[]).length)summaryBox.append(element("p","muted","No confirmed paid sales in the selected period."));
+      for(const metric of result.summary||[]){
+        const card=element("article","analytics-currency-card");
+        card.append(element("strong","",metric.currency+" · "+Number(metric.paid_orders||0)+" paid order(s)"));
+        const row=element("div","analytics-metric-row");
+        row.append(element("span","","Units sold: "+Number(metric.units_sold||0)),element("span","","Gross sales: "+money(metric.gross_sales_minor,metric.currency)));
+        card.append(row);
+        card.append(element("small","muted","Seller earnings after platform fee: "+money(metric.seller_earnings_minor,metric.currency)));
+        summaryBox.append(card);
+      }
+      chartBox.replaceChildren();
+      const daily=result.dailySales||[];
+      if(!daily.length)chartBox.append(element("p","muted","No daily sales recorded for this period."));
+      const currencies=[...new Set(daily.map(row=>row.currency))];
+      for(const currency of currencies){
+        const group=element("div","sales-currency-group");
+        group.append(element("strong","",currency));
+        const rows=daily.filter(row=>row.currency===currency);
+        const max=Math.max(1,...rows.map(row=>Number(row.gross_sales_minor)||0));
+        for(const rowData of rows){
+          const row=element("div","sales-day-row");
+          row.append(element("span","",rowData.day));
+          const track=element("div","sales-day-bar-track");
+          const bar=element("div","sales-day-bar");bar.style.width=Math.max(1,Math.round((Number(rowData.gross_sales_minor)||0)/max*100))+"%";
+          bar.setAttribute("role","img");bar.setAttribute("aria-label",money(rowData.gross_sales_minor,currency)+" sales on "+rowData.day);
+          track.append(bar);
+          row.append(track,element("strong","",money(rowData.gross_sales_minor,currency)));
+          group.append(row);
+        }
+        chartBox.append(group);
+      }
+      productsBox.replaceChildren();
+      if(!(result.topProducts||[]).length)productsBox.append(element("p","muted","No top products to show yet."));
+      for(const product of result.topProducts||[]){
+        const row=element("div","analytics-product-row"),info=element("div","");
+        info.append(element("strong","",product.product_name),element("small","",Number(product.units_sold||0)+" unit(s) · "+Number(product.paid_orders||0)+" paid order(s)"));
+        row.append(info,element("strong","",money(product.gross_sales_minor,product.currency)));productsBox.append(row);
+      }
+      fulfillmentBox.replaceChildren();
+      if(!(result.fulfillment||[]).length)fulfillmentBox.append(element("p","muted","No paid orders in this period."));
+      for(const item of result.fulfillment||[]){
+        const row=element("div","analytics-product-row");row.append(element("strong","",String(item.fulfillment_status||"pending").replace(/-/g," ")),element("span","",Number(item.item_count||0)+" item(s)"));fulfillmentBox.append(row);
+      }
+    }catch(error){
+      const message=error.message.includes("approved seller")?"Your seller application must be approved before analytics are available.":"Analytics unavailable: "+error.message;
+      summaryBox.replaceChildren(element("p","muted",message));chartBox.replaceChildren();productsBox.replaceChildren();fulfillmentBox.replaceChildren();
+    }
+  }
+
   async function loadSellerPayouts() {
     const balancesBox=$("sellerBalancesList"),requestsBox=$("sellerPayoutRequestsList");
     if(!token()){balancesBox.replaceChildren(element("p","muted","Sign in to view earnings."));requestsBox.replaceChildren();return;}
@@ -451,6 +508,8 @@
     catch(error){message.textContent=error.message;}
   });
   $("sellerPayoutsButton").addEventListener("click",loadSellerPayouts);
+  $("sellerAnalyticsRefresh").addEventListener("click",loadSellerAnalytics);
+  $("sellerAnalyticsDays").addEventListener("change",loadSellerAnalytics);
   $("payoutRequestsButton").addEventListener("click",loadAdminPayoutRequests);
   $("sellerApplicationForm").addEventListener("submit",async event=>{
     event.preventDefault();const form=new FormData(event.currentTarget),message=$("sellerMessage");message.textContent="Submitting seller application…";
@@ -492,5 +551,5 @@
   $("reloadButton").addEventListener("click",async()=>{showAuthNotice();await Promise.all([loadProducts(),loadCart(),loadWishlist(),loadAddresses()]);if(token())await loadOrders();});
   $("wishlistButton").addEventListener("click",loadWishlist);
   $("ordersButton").addEventListener("click",loadOrders);
-  showAuthNotice();loadMarketplaceStatus();loadProducts();loadCart();loadWishlist();loadAddresses();loadSellerProfile();loadSellerProducts();loadSellerOrders();loadSellerPayouts();if(token())loadOrders();
+  showAuthNotice();loadMarketplaceStatus();loadProducts();loadCart();loadWishlist();loadAddresses();loadSellerProfile();loadSellerProducts();loadSellerOrders();loadSellerPayouts();loadSellerAnalytics();if(token())loadOrders();
 })();
