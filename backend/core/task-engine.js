@@ -1426,8 +1426,8 @@ function createTaskRouter({
       ]);
 
       const redact = value => String(value || "")
-        .replace(/Bearer\\s+[^\\s]+/gi, "Bearer [redacted]")
-        .replace(/(?:sk-[A-Za-z0-9_-]{12,}|(?:api[_-]?key|token|secret)\\s*[:=]\\s*[^\\s,;]+)/gi, "[redacted]")
+        .replace(/Bearer\s+[^\s]+/gi, "Bearer [redacted]")
+        .replace(/(?:sk-[A-Za-z0-9_-]{12,}|(?:api[_-]?key|token|secret)\s*[:=]\s*[^\s,;]+)/gi, "[redacted]")
         .slice(0, 1000);
       const agents = (agentsResult.rows || []).map(agent => ({
         id: agent.id,
