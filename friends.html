@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Chat with Friends — Nkwasibwe IRHCF social and communication workspace">
+<title>Chat with Friends · Nkwasibwe IRHCF</title>
+<style>
+:root{color-scheme:light;--ink:#172033;--muted:#64748b;--line:#e5eaf1;--surface:#fff;--wash:#f5f7fb;--accent:#2457d6;--soft:#eaf0ff;--green:#16794b}
+*{box-sizing:border-box}body{margin:0;background:var(--wash);color:var(--ink);font:15px/1.5 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}a{color:inherit}.top{height:68px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 clamp(16px,4vw,52px);gap:18px}.brand{display:flex;align-items:center;gap:11px;font-weight:750}.mark{width:38px;height:38px;border-radius:12px;background:var(--accent);color:white;display:grid;place-items:center;font-weight:800}.top a{text-decoration:none;color:var(--accent);font-weight:650}.wrap{max-width:1200px;margin:auto;padding:32px clamp(16px,4vw,40px) 60px}.eyebrow{color:var(--accent);font-size:12px;letter-spacing:.13em;font-weight:800;text-transform:uppercase}.hero{display:flex;justify-content:space-between;align-items:flex-end;gap:24px;margin-bottom:26px}.hero h1{font-size:clamp(30px,4vw,44px);letter-spacing:-.04em;line-height:1.1;margin:8px 0 10px}.hero p{color:var(--muted);max-width:680px;margin:0}.status{white-space:nowrap;background:#fff5df;border:1px solid #f0d9a1;color:#79520a;border-radius:999px;padding:7px 12px;font-size:12px;font-weight:750}.notice{background:#fff;border:1px solid var(--line);border-left:4px solid var(--accent);padding:16px 18px;border-radius:12px;margin-bottom:25px;color:#39465b}.notice strong{color:var(--ink)}.section-title{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:26px 0 14px}.section-title h2{margin:0;font-size:20px}.section-title span{font-size:12px;color:var(--muted)}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:19px;min-height:190px;display:flex;flex-direction:column;box-shadow:0 3px 12px #1c2b4506}.icon{width:42px;height:42px;display:grid;place-items:center;border-radius:12px;background:var(--soft);font-size:21px}.card h3{font-size:16px;margin:13px 0 5px}.card p{margin:0;color:var(--muted);font-size:13px}.pill{margin-top:auto;align-self:flex-start;padding:5px 9px;border-radius:999px;background:#f1f5f9;color:#526176;font-size:11px;font-weight:750}.pill.ready{background:#e6f6ed;color:var(--green)}.pill.build{background:#fff4df;color:#8a5a08}.bottom{margin-top:26px;background:#fff;border:1px solid var(--line);border-radius:16px;padding:20px}.bottom h2{margin:0 0 8px;font-size:18px}.bottom p{margin:0;color:var(--muted);font-size:13px}.steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:16px}.step{padding:13px;border-radius:12px;background:var(--wash);border:1px solid var(--line);font-size:12px}.step b{display:block;margin-bottom:4px;font-size:13px}.step small{color:var(--muted)}footer{color:var(--muted);font-size:12px;margin-top:24px}@media(max-width:850px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.steps{grid-template-columns:repeat(2,minmax(0,1fr))}.hero{align-items:flex-start;flex-direction:column}}@media(max-width:520px){.grid{grid-template-columns:1fr}.card{min-height:155px}.top{height:60px}.wrap{padding-top:24px}}
+</style>
+</head>
+<body>
+<header class="top"><div class="brand"><div class="mark">N</div><span>Nkwasibwe IRHCF</span></div><a href="index.html">← Back to IRHCF</a></header>
+<main class="wrap">
+<div class="hero"><div><div class="eyebrow">Social · Communication · Creators</div><h1>Chat with Friends</h1><p>A dedicated home for conversations, communities, sharing, creators and professional connections—built into Nkwasibwe IRHCF.</p></div><div class="status">Foundation phase · In progress</div></div>
+<div class="notice"><strong>Honest progress status.</strong> This workspace entry and feature map are now defined. The cards below describe the target modules; they are not claims that messaging, uploads, calls or feeds are already connected. Those require authenticated backend APIs, durable storage, safety controls and end-to-end tests before being marked live.</div>
+<div class="section-title"><h2>Communication</h2><span>Private by default</span></div>
+<section class="grid">
+<article class="card"><div class="icon">💬</div><h3>Private & group chats</h3><p>One-to-one and group messages, replies, reactions, unread counts, voice notes and attachment sharing.</p><span class="pill build">Backend + realtime pending</span></article>
+<article class="card"><div class="icon">📞</div><h3>Audio & video calls</h3><p>Permission-based calls, call controls, reconnection and privacy-preserving call history.</p><span class="pill">WebRTC / signaling pending</span></article>
+<article class="card"><div class="icon">👥</div><h3>Friends & communities</h3><p>Friend requests, follows, groups, community roles, events, blocking and reporting.</p><span class="pill build">Social graph pending</span></article>
+</section>
+<div class="section-title"><h2>Share & discover</h2><span>Feed and creator tools</span></div>
+<section class="grid">
+<article class="card"><div class="icon">📰</div><h3>Social feed</h3><p>Text, image and video posts, comments, reactions, reposts, threaded replies, mentions, hashtags and saved posts.</p><span class="pill">Feed API pending</span></article>
+<article class="card"><div class="icon">▶️</div><h3>Video & channels</h3><p>Creator channels, video processing, captions, playlists, subscriptions, watch history and search.</p><span class="pill">Media pipeline pending</span></article>
+<article class="card"><div class="icon">🎬</div><h3>Short videos</h3><p>Vertical playback, creator profiles, captions, likes, comments and user-controlled recommendations.</p><span class="pill">Upload + feed pending</span></article>
+</section>
+<div class="section-title"><h2>Work & identity</h2><span>Professional connections</span></div>
+<section class="grid">
+<article class="card"><div class="icon">🧑‍💼</div><h3>Professional profile</h3><p>Skills, experience, education, connections, company pages and professional posts.</p><span class="pill">Profile schema pending</span></article>
+<article class="card"><div class="icon">💼</div><h3>Jobs & applications</h3><p>Job listings, search, application tracking, employer profiles and status notifications.</p><span class="pill">Jobs module pending</span></article>
+<article class="card"><div class="icon">🔔</div><h3>Notifications & privacy</h3><p>In-app alerts, session controls, privacy settings, content reports, moderation and account data controls.</p><span class="pill">Safety APIs pending</span></article>
+</section>
+<section class="bottom"><h2>Build sequence and release gates</h2><p>We will deliver the system in verified layers: authenticated data model → profiles and social graph → posts/feed → persistent messages → realtime → safe media storage → video/creator tools → professional features → security and Android end-to-end tests. External platforms will only be connected through documented APIs and user-authorized account linking. “Phoenix” still needs identification (product name or URL) so its features can be mapped accurately.</p><div class="steps"><div class="step"><b>1 · Foundation</b><small>Workspace + contracts</small></div><div class="step"><b>2 · Core social</b><small>Profiles, feed, chat</small></div><div class="step"><b>3 · Media + realtime</b><small>Uploads, calls, video</small></div><div class="step"><b>4 · Release</b><small>Safety, tests, rollout</small></div></div></section>
+<footer>Original Nkwasibwe IRHCF product design. Feature parity depends on staged implementation, provider availability, storage, and testing.</footer>
+</main>
+</body>
+</html>
