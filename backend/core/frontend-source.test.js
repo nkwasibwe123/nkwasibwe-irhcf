@@ -600,7 +600,7 @@ test("marketplace delivery addresses, shipping requirements and account-scoped o
   for (const id of ["addressForm","addressesList","shippingAddressSelect","shippingAddressWrap","addressMessage"]) assert.ok(html.includes('id="'+id+'"'), "missing marketplace address UI: "+id);
   assert.match(js, /async function loadAddresses\(\)/);
   assert.match(js, /\/addresses/);
-  assert.match(js, /\/orders\/\+encodeURIComponent\(order\.id\)/);
+  assert.ok(js.includes('"/orders/"+encodeURIComponent(order.id)'));
   assert.match(js, /addressId:\$\("shippingAddressSelect"\)\.value/);
   assert.match(routes, /WHERE user_id=\$1 ORDER BY is_default DESC/);
   assert.match(routes, /WHERE id=\$1 AND user_id=\$2/);
