@@ -52,6 +52,8 @@ Set the Flutterwave webhook destination to `https://nkwasibwe-irhcf.onrender.com
 - Add and test any required environment values without committing credentials to Git.
 
 
+- `GET /api/commerce/status` — public, non-secret readiness diagnostics for hosted checkout, webhook verification, shipping, tax and payout automation.
+
 ## Shipping and tax configuration
 
 - `COMMERCE_SHIPPING_RATES_JSON` is a JSON object keyed by the exact country name saved on the delivery address, then currency, with the shipping price in minor units. Example: `{"Rwanda":{"RWF":1500},"Kenya":{"KES":500}}`.

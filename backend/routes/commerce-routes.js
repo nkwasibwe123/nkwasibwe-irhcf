@@ -694,6 +694,17 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
     }
   });
 
+  router.get("/status", async (req, res) => {
+    let shippingRates={};
+    try{shippingRates=JSON.parse(String(env.COMMERCE_SHIPPING_RATES_JSON||"{}"));if(!shippingRates||typeof shippingRates!=="object"||Array.isArray(shippingRates))shippingRates={};}catch{shippingRates={};}
+    const shippingCountries=Object.keys(shippingRates).filter(country=>shippingRates[country]&&typeof shippingRates[country]==="object"&&Object.values(shippingRates[country]).some(value=>Number.isSafeInteger(Number(value))&&Number(value)>=0));
+    const taxRateBps=getTaxRateBps(env);
+    const platformFeeBps=getPlatformFeeBps(env);
+    const checkoutReady=Boolean(String(env.FLW_SECRET_KEY||"").trim()&&String(env.FLW_REDIRECT_URL||"").trim());
+    const webhookReady=Boolean(String(env.FLW_SECRET_HASH||"").trim());
+    return res.json({success:true,payments:{provider:"Flutterwave hosted checkout",checkoutReady,webhookReady,missingCheckoutSettings:[...(!String(env.FLW_SECRET_KEY||"").trim()?["FLW_SECRET_KEY"]:[]),...(!String(env.FLW_REDIRECT_URL||"").trim()?["FLW_REDIRECT_URL"]:[])],missingWebhookSettings:!webhookReady?["FLW_SECRET_HASH"]:[]},shipping:{configuredCountries:shippingCountries,physicalCheckoutRequiresConfiguredRate:true},tax:{rateBps:taxRateBps,explicitlyConfigured:env.COMMERCE_TAX_BPS!=null&&String(env.COMMERCE_TAX_BPS)!=="",valid:taxRateBps!==null},sellerPayouts:{platformFeeBps,automatedTransfers:false,manualProviderReferenceRequired:true},productImages:{maxBytes:2*1024*1024,storedIn:"PostgreSQL"}});
+  });
+
   router.put("/products/:productId/image", authenticateToken, requireProductManager, async (req, res) => {
     const productId=safeInteger(req.params.productId,1,Number.MAX_SAFE_INTEGER);
     const mimeType=String(req.body?.mimeType||"").toLowerCase();
