@@ -507,7 +507,7 @@ test("seller payout requests are scoped to the approved seller and limited to av
 test("seller payout request rejects amounts above account-specific available balance", async () => {
   const app=express();app.use(express.json());let inserted=false;
   const client={async query(sql){if(sql==="BEGIN"||sql==="ROLLBACK")return{rows:[]};if(sql.includes("SELECT user_id FROM commerce_sellers"))return{rows:[{user_id:33}]};if(sql.includes("WITH currencies AS"))return{rows:[{currency:"RWF",available:"1000"}]};if(sql.includes("INSERT INTO commerce_payout_requests"))inserted=true;return{rows:[]};},release(){}};
-  app.use("/api/commerce",createCommerceRouter({pool:{async connect(){return client;}},authenticateToken:(req,res,next)=>{req.user={id:33,email:"seller@example.com"};next();},env:{}}));
+  app.use("/api/commerce",createCommerceRouter({pool:{async connect(){return client;},async query(){return{rows:[]};}},authenticateToken:(req,res,next)=>{req.user={id:33,email:"seller@example.com"};next();},env:{}}));
   await withServer(app,async base=>{
     const response=await fetch(base+"/api/commerce/seller/payout-requests",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({amountMinor:2000,currency:"RWF",destinationReference:"subacct_123"})});
     assert.equal(response.status,409);assert.equal((await response.json()).code,"PAYOUT_BALANCE_INSUFFICIENT");assert.equal(inserted,false);
