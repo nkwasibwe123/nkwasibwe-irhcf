@@ -270,6 +270,15 @@ function calculateSellerNetMinor(grossMinor, platformFeeBps) {
   const netMinor=grossMinor-feeMinor;
   return Number.isSafeInteger(feeMinor)&&Number.isSafeInteger(netMinor)&&netMinor>=0?{feeMinor,netMinor}:null;
 }
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, character => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" })[character]);
+}
+function formatMinorAmount(amountMinor, currency) {
+  const amount=Number(amountMinor);
+  if(!Number.isSafeInteger(amount)||amount<0||!CURRENCIES.has(currency))return "—";
+  const major=amount/(["RWF","UGX","XAF","XOF","JPY"].includes(currency)?1:100);
+  try{return new Intl.NumberFormat("en-US",{style:"currency",currency}).format(major);}catch{return currency+" "+String(major);}
+}
 function calculateTaxMinor(subtotalMinor, discountMinor, shippingMinor, taxRateBps) {
   const taxableMinor = subtotalMinor - discountMinor + shippingMinor;
   if (!Number.isSafeInteger(taxableMinor) || taxableMinor < 0 || !Number.isSafeInteger(taxRateBps) || taxRateBps < 0 || taxRateBps > 3000) return null;
@@ -920,6 +929,23 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
     } catch (error) {
       return res.status(500).json({ success: false, error: "Could not load order details.", code: "ORDER_DETAILS_FAILED" });
     }
+  });
+
+  router.get("/orders/:orderId/receipt", authenticateToken, async (req, res) => {
+    const orderId=safeInteger(req.params.orderId,1,Number.MAX_SAFE_INTEGER);
+    if(!orderId)return res.status(400).json({success:false,error:"Invalid order ID.",code:"ORDER_ID_INVALID"});
+    try{
+      const result=await pool.query("SELECT id,tx_ref,status,currency,total_minor,subtotal_minor,discount_minor,shipping_minor,tax_minor,coupon_code,shipping_address,created_at,paid_at FROM commerce_orders WHERE id=$1 AND user_id=$2 LIMIT 1",[orderId,req.user.id]);
+      if(!result.rows.length)return res.status(404).json({success:false,error:"Order not found.",code:"ORDER_NOT_FOUND"});
+      const order=result.rows[0];
+      if(order.status!=="paid"&&order.status!=="refunded")return res.status(409).json({success:false,error:"A receipt is available only after payment is confirmed.",code:"ORDER_NOT_PAID"});
+      const items=await pool.query("SELECT oi.product_name,oi.quantity,oi.unit_price_minor,oi.line_total_minor,oi.fulfillment_status,oi.tracking_carrier,oi.tracking_number,COALESCE(s.shop_name,'Nkwasibwe Market') AS seller_name FROM commerce_order_items oi LEFT JOIN commerce_sellers s ON s.user_id=oi.seller_user_id WHERE oi.order_id=$1 ORDER BY oi.id",[orderId]);
+      const address=order.shipping_address||{};
+      const rows=items.rows.map(item=>"<tr><td>"+escapeHtml(item.product_name)+"<br><small>"+escapeHtml(item.seller_name)+"</small></td><td>"+escapeHtml(item.quantity)+"</td><td>"+escapeHtml(formatMinorAmount(item.unit_price_minor,order.currency))+"</td><td>"+escapeHtml(formatMinorAmount(item.line_total_minor,order.currency))+"</td><td>"+escapeHtml(item.fulfillment_status||"pending")+(item.tracking_number?"<br><small>"+escapeHtml(item.tracking_carrier||"Carrier")+": "+escapeHtml(item.tracking_number)+"</small>":"")+"</td></tr>").join("");
+      const shipping=[address.recipient_name,address.phone,address.address_line1,address.address_line2,address.city,address.region,address.country].filter(Boolean).map(escapeHtml).join(", ");
+      const html="<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Receipt #"+escapeHtml(order.id)+"</title><style>body{font-family:Arial,sans-serif;color:#172033;max-width:900px;margin:32px auto;padding:0 20px}header{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;border-bottom:2px solid #172033;padding-bottom:16px}h1{margin:0}small{color:#5b6474}table{width:100%;border-collapse:collapse;margin:24px 0}th,td{text-align:left;padding:10px;border-bottom:1px solid #d8dde5;vertical-align:top}th{background:#f3f5f8}.totals{margin-left:auto;width:min(100%,360px)}.totals div{display:flex;justify-content:space-between;gap:16px;padding:7px 0}.total{font-size:20px;font-weight:bold;border-top:2px solid #172033;margin-top:8px;padding-top:12px!important}.meta{line-height:1.8}.print{margin:12px 0 20px;padding:10px 16px;background:#172033;color:#fff;border:0;border-radius:8px;cursor:pointer}@media print{body{margin:0;max-width:none}.print{display:none}}</style></head><body><header><div><h1>Nkwasibwe Market</h1><p>Payment receipt / order invoice</p></div><div class=\"meta\"><strong>Receipt #"+escapeHtml(order.id)+"</strong><br>Order reference: "+escapeHtml(order.tx_ref)+"<br>Payment status: "+escapeHtml(order.status)+"<br>Created: "+escapeHtml(order.created_at?new Date(order.created_at).toLocaleString():"—")+"<br>Paid: "+escapeHtml(order.paid_at?new Date(order.paid_at).toLocaleString():"—")+"</div></header><button class=\"print\" type=\"button\" onclick=\"window.print()\">Print / Save as PDF</button>"+(shipping?"<h2>Delivery address</h2><p>"+shipping+"</p>":"")+"<h2>Items</h2><table><thead><tr><th>Product / seller</th><th>Qty</th><th>Unit price</th><th>Line total</th><th>Fulfillment</th></tr></thead><tbody>"+rows+"</tbody></table><section class=\"totals\"><div><span>Subtotal</span><strong>"+escapeHtml(formatMinorAmount(order.subtotal_minor,order.currency))+"</strong></div>"+(Number(order.discount_minor)>0?"<div><span>Coupon "+escapeHtml(order.coupon_code)+"</span><strong>−"+escapeHtml(formatMinorAmount(order.discount_minor,order.currency))+"</strong></div>":"")+"<div><span>Shipping</span><strong>"+escapeHtml(formatMinorAmount(order.shipping_minor,order.currency))+"</strong></div><div><span>Tax</span><strong>"+escapeHtml(formatMinorAmount(order.tax_minor,order.currency))+"</strong></div><div class=\"total\"><span>"+(order.status==="refunded"?"Order total":"Total paid")+"</span><strong>"+escapeHtml(formatMinorAmount(order.total_minor,order.currency))+"</strong></div></section><p><small>This receipt reflects the order and payment status recorded by Nkwasibwe Market.</small></p></body></html>";
+      return res.status(200).set("Content-Type","text/html; charset=utf-8").set("Content-Disposition",'inline; filename="receipt-order-'+orderId+'.html"').set("X-Content-Type-Options","nosniff").set("Cache-Control","no-store").send(html);
+    }catch(error){return res.status(500).json({success:false,error:"Could not generate order receipt.",code:"ORDER_RECEIPT_FAILED"});}
   });
 
   router.post("/orders/:orderId/refund-request", authenticateToken, async (req, res) => {

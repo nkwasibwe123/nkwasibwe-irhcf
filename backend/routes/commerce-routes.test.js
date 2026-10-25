@@ -539,3 +539,30 @@ test("approved seller can ship only an owned paid order item with tracking detai
     assert.equal(response.status,200);assert.match(updateSql,/seller_user_id=\$5/);assert.equal(updateParams[2],"DHL");assert.equal(updateParams[3],"DHL123");assert.equal((await response.json()).item.tracking_number,"DHL123");
   });
 });
+
+
+test("paid order receipt is account-scoped, printable and HTML-escaped", async () => {
+  const app=express();let firstParams;
+  app.use("/api/commerce",createCommerceRouter({
+    pool:{async query(sql,params){if(sql.includes("FROM commerce_orders WHERE id=$1 AND user_id=$2")){firstParams=params;return{rows:[{id:"42",tx_ref:"irhcf_receipt_42",status:"paid",currency:"RWF",total_minor:"1000",subtotal_minor:"1000",discount_minor:"0",shipping_minor:"0",tax_minor:"0",coupon_code:null,shipping_address:null,created_at:new Date("2026-01-01T00:00:00Z"),paid_at:new Date("2026-01-01T00:05:00Z")}]};}if(sql.includes("FROM commerce_order_items oi LEFT JOIN commerce_sellers"))return{rows:[{product_name:"<script>alert(1)</script>",quantity:1,unit_price_minor:"1000",line_total_minor:"1000",fulfillment_status:"delivered",tracking_carrier:"Local delivery",tracking_number:"REF-123",seller_name:"Safe Shop"}]};return{rows:[]};}},
+    authenticateToken:(req,res,next)=>{req.user={id:77,email:"buyer@example.com"};next();},env:{}
+  }));
+  await withServer(app,async base=>{
+    const response=await fetch(base+"/api/commerce/orders/42/receipt");
+    assert.equal(response.status,200);assert.match(response.headers.get("content-type"),/text\/html/);assert.equal(response.headers.get("x-content-type-options"),"nosniff");
+    const html=await response.text();assert.match(html,/&lt;script&gt;alert\(1\)&lt;\/script&gt;/);assert.doesNotMatch(html,/<script>alert\(1\)<\/script>/);assert.match(html,/REF-123/);assert.match(html,/Print \/ Save as PDF/);assert.deepEqual(firstParams,[42,77]);
+  });
+});
+
+test("receipt is not available to another account or for unpaid orders", async () => {
+  const app=express();let orderRows=[];
+  app.use("/api/commerce",createCommerceRouter({
+    pool:{async query(){return{rows:orderRows};}},
+    authenticateToken:(req,res,next)=>{req.user={id:77,email:"buyer@example.com"};next();},env:{}
+  }));
+  await withServer(app,async base=>{
+    let response=await fetch(base+"/api/commerce/orders/42/receipt");assert.equal(response.status,404);
+    orderRows=[{id:"42",status:"pending"}];
+    response=await fetch(base+"/api/commerce/orders/42/receipt");assert.equal(response.status,409);assert.equal((await response.json()).code,"ORDER_NOT_PAID");
+  });
+});
