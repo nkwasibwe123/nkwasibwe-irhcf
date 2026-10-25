@@ -3887,7 +3887,8 @@ app.post("/api/media/video/edit", authenticateToken, async (req, res) => {
     const code = String(error?.code || "VIDEO_EDIT_FAILED");
     const status = code === "VIDEO_INPUT_NOT_FOUND" ? 400
       : code === "VIDEO_EFFECT_UNSUPPORTED" || code === "VIDEO_TRIM_INVALID" ||
-        code === "VIDEO_FORMAT_UNSUPPORTED" || code === "VIDEO_OUTPUT_EXTENSION_MISMATCH" ||\n        code === "VIDEO_SUBTITLES_TOO_LONG" || code === "VIDEO_SUBTITLES_EMPTY" ? 400
+        code === "VIDEO_FORMAT_UNSUPPORTED" || code === "VIDEO_OUTPUT_EXTENSION_MISMATCH" ||
+        code === "VIDEO_SUBTITLES_TOO_LONG" || code === "VIDEO_SUBTITLES_EMPTY" ? 400
       : code === "FFMPEG_UNAVAILABLE" ? 503
       : code === "VIDEO_RENDER_TIMEOUT" ? 504 : 422;
     console.error("[MEDIA_VIDEO_EDIT] Render failed:", {
