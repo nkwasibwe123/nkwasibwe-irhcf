@@ -563,4 +563,6 @@ test("profile supports personal interests and a private professional-document va
   assert.match(html,/Delete document/);
   assert.match(html,/profileDocumentExpiryReminders/);
   assert.match(html,/No documents expiring in the next 30 days/);
+  for(const field of ["education","skills","languages","employment_history"])assert.ok(route.includes(field),"missing career profile field: "+field);
+  for(const id of ["socialEducation","socialSkills","socialLanguages","socialEmploymentHistory"])assert.ok(html.includes('id="'+id+'"'),"missing career profile UI: "+id);
 });
