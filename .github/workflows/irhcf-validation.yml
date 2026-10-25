@@ -70,7 +70,9 @@ jobs:
             "/api/media/image" \
             "/api/media/image/edit" \
             "/api/media/video" \
+            "/api/media/video/status" \
             "/api/media/video/edit" \
+            "/api/media/video/photo-animation" \
             "/api/chat" \
             "/api/media/music" \
             "/api/media/speech" \
@@ -78,11 +80,12 @@ jobs:
             "/api/capabilities/expansion-plan" \
             "/api/agent/task" \
             "/api/tasks" \
+            "/api/tasks/1/activity" \
             "/api/self-improvement/status" \
             "/api/conversations/test-session/messages/1/prepare-edit" \
             "/api/media/video/video_test" \
             "/api/media/video/video_test/content"; do
-            if [[ "$route" == "/api/media/video/video_test"* || "$route" == "/api/conversations/"* || "$route" == "/api/self-improvement/status" ]]; then
+            if [[ "$route" == "/api/media/video/video_test"* || "$route" == "/api/conversations/"* || "$route" == "/api/self-improvement/status" || "$route" == "/api/media/video/status" || "$route" == "/api/tasks/1/activity" ]]; then
               method="GET"
               [[ "$route" == *"/prepare-edit" ]] && method="POST"
               code=$(curl --silent --show-error --max-time 15 -o /tmp/irhcf-smoke.json -w "%{http_code}" -X "$method" -H "Content-Type: application/json" -d '{}' "$base_url$route")
