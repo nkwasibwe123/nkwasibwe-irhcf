@@ -66,6 +66,30 @@ function ensureSocialSchema(pool) {
       PRIMARY KEY(blocker_id,blocked_id),
       CHECK (blocker_id <> blocked_id)
     );
+    CREATE TABLE IF NOT EXISTS social_conversations (
+      id BIGSERIAL PRIMARY KEY,
+      title TEXT NOT NULL DEFAULT '',
+      is_group BOOLEAN NOT NULL DEFAULT FALSE,
+      created_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS social_conversation_members (
+      conversation_id BIGINT NOT NULL REFERENCES social_conversations(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_read_at TIMESTAMPTZ,
+      PRIMARY KEY(conversation_id,user_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_social_members_user ON social_conversation_members(user_id,conversation_id);
+    CREATE TABLE IF NOT EXISTS social_messages (
+      id BIGSERIAL PRIMARY KEY,
+      conversation_id BIGINT NOT NULL REFERENCES social_conversations(id) ON DELETE CASCADE,
+      sender_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      body TEXT NOT NULL CHECK(length(body) BETWEEN 1 AND 5000),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_social_messages_conversation ON social_messages(conversation_id,id DESC);
   `);
 }
 
@@ -249,6 +273,95 @@ function createSocialRouter({ pool, authenticateToken } = {}) {
       await pool.query("UPDATE social_friend_requests SET status='cancelled',updated_at=NOW() WHERE status='pending' AND ((sender_id=$1 AND recipient_id=$2) OR (sender_id=$2 AND recipient_id=$1))",[userId(req),req.params.targetId]);
       return res.json({success:true,blockedId:Number(req.params.targetId)});
     } catch (error) { return next(error); }
+  });
+
+  router.get("/conversations", async (req,res,next) => {
+    try {
+      const result=await pool.query(
+        `SELECT c.id,c.title,c.is_group,c.created_by,c.created_at,c.updated_at,
+          (SELECT COUNT(*)::int FROM social_conversation_members m WHERE m.conversation_id=c.id) AS member_count,
+          (SELECT json_build_object('id',msg.id,'body',msg.body,'sender_id',msg.sender_id,'created_at',msg.created_at)
+           FROM social_messages msg WHERE msg.conversation_id=c.id ORDER BY msg.id DESC LIMIT 1) AS last_message
+         FROM social_conversations c JOIN social_conversation_members mine ON mine.conversation_id=c.id AND mine.user_id=$1
+         ORDER BY c.updated_at DESC,c.id DESC LIMIT 100`,
+        [userId(req)]
+      );
+      return res.json({success:true,conversations:result.rows});
+    } catch(error){return next(error);}
+  });
+
+  router.post("/conversations", async (req,res,next) => {
+    const ids=Array.isArray(req.body?.participantIds)?[...new Set(req.body.participantIds.map(Number))]:[];
+    const title=String(req.body?.title||"").trim().slice(0,100);
+    const me=userId(req);
+    if(ids.some(id=>!Number.isSafeInteger(id)||id<=0)||ids.includes(me)) return fail(res,400,"participantIds must contain other valid user IDs only.");
+    if(ids.length<1||ids.length>49) return fail(res,400,"Choose between 1 and 49 other participants.");
+    try {
+      const people=await pool.query("SELECT id FROM users WHERE id=ANY($1::int[])",[ids]);
+      if(people.rows.length!==ids.length) return fail(res,404,"One or more participants were not found.");
+      const blocked=await pool.query("SELECT 1 FROM social_blocks WHERE (blocker_id=$1 AND blocked_id=ANY($2::int[])) OR (blocked_id=$1 AND blocker_id=ANY($2::int[])) LIMIT 1",[me,ids]);
+      if(blocked.rows.length) return fail(res,403,"A conversation cannot be created with a blocked user.");
+      const client=typeof pool.connect==="function"?await pool.connect():null;
+      const db=client||pool;
+      try {
+        if(client) await db.query("BEGIN");
+        const created=await db.query("INSERT INTO social_conversations(title,is_group,created_by) VALUES($1,$2,$3) RETURNING id,title,is_group,created_by,created_at,updated_at",[title,ids.length>1,me]);
+        const conversation=created.rows[0];
+        const members=[me,...ids];
+        await db.query("INSERT INTO social_conversation_members(conversation_id,user_id) SELECT $1,unnest($2::int[]) ON CONFLICT DO NOTHING",[conversation.id,members]);
+        if(client) await db.query("COMMIT");
+        return res.status(201).json({success:true,conversation:{...conversation,member_count:members.length}});
+      } catch(error){if(client) await db.query("ROLLBACK");throw error;}
+      finally {if(client) client.release();}
+    } catch(error){return next(error);}
+  });
+
+  router.get("/conversations/:conversationId/messages", async (req,res,next) => {
+    if(!validId(req.params.conversationId)) return fail(res,400,"Invalid conversation ID.");
+    const limit=Math.min(100,Math.max(1,Number.parseInt(req.query.limit,10)||50));
+    try {
+      const member=await pool.query("SELECT 1 FROM social_conversation_members WHERE conversation_id=$1 AND user_id=$2",[req.params.conversationId,userId(req)]);
+      if(!member.rows.length) return fail(res,404,"Conversation not found.");
+      const beforeId=validId(req.query.beforeId)?Number(req.query.beforeId):null;
+      const result=await pool.query(
+        `SELECT id,conversation_id,sender_id,body,created_at FROM (
+           SELECT id,conversation_id,sender_id,body,created_at FROM social_messages
+           WHERE conversation_id=$1 AND ($2::bigint IS NULL OR id<$2)
+           ORDER BY id DESC LIMIT $3
+         ) recent ORDER BY id ASC`,
+        [req.params.conversationId,beforeId,limit]
+      );
+      await pool.query("UPDATE social_conversation_members SET last_read_at=NOW() WHERE conversation_id=$1 AND user_id=$2",[req.params.conversationId,userId(req)]);
+      return res.json({success:true,messages:result.rows});
+    } catch(error){return next(error);}
+  });
+
+  router.post("/conversations/:conversationId/messages", async (req,res,next) => {
+    if(!validId(req.params.conversationId)) return fail(res,400,"Invalid conversation ID.");
+    const body=String(req.body?.body||"").trim();
+    if(!body||body.length>5000) return fail(res,400,"Message must contain 1–5000 characters.");
+    try {
+      const member=await pool.query("SELECT 1 FROM social_conversation_members WHERE conversation_id=$1 AND user_id=$2",[req.params.conversationId,userId(req)]);
+      if(!member.rows.length) return fail(res,404,"Conversation not found.");
+      const blocked=await pool.query(
+        `SELECT 1 FROM social_blocks b JOIN social_conversation_members other
+         ON ((b.blocker_id=$2 AND b.blocked_id=other.user_id) OR (b.blocked_id=$2 AND b.blocker_id=other.user_id))
+         WHERE other.conversation_id=$1 AND other.user_id<>$2 LIMIT 1`,
+        [req.params.conversationId,userId(req)]
+      );
+      if(blocked.rows.length) return fail(res,403,"Messaging is unavailable because a participant is blocked.");
+      const client=typeof pool.connect==="function"?await pool.connect():null;
+      const db=client||pool;
+      try {
+        if(client) await db.query("BEGIN");
+        const inserted=await db.query("INSERT INTO social_messages(conversation_id,sender_id,body) VALUES($1,$2,$3) RETURNING id,conversation_id,sender_id,body,created_at",[req.params.conversationId,userId(req),body]);
+        await db.query("UPDATE social_conversations SET updated_at=NOW() WHERE id=$1",[req.params.conversationId]);
+        await db.query("UPDATE social_conversation_members SET last_read_at=NOW() WHERE conversation_id=$1 AND user_id=$2",[req.params.conversationId,userId(req)]);
+        if(client) await db.query("COMMIT");
+        return res.status(201).json({success:true,message:inserted.rows[0]});
+      } catch(error){if(client) await db.query("ROLLBACK");throw error;}
+      finally {if(client) client.release();}
+    } catch(error){return next(error);}
   });
 
   return router;
