@@ -3,7 +3,7 @@
   const API = "https://nkwasibwe-irhcf.onrender.com/api/commerce";
   const TOKEN_KEY = "nkwasibwe_auth_token";
   const $ = id => document.getElementById(id);
-  const state = { products: [], cart: [], orders: [], wishlist: [], addresses: [] };
+  const state = { products: [], cart: [], orders: [], wishlist: [], addresses: [], seller: null };
   const token = () => { try { return localStorage.getItem(TOKEN_KEY) || ""; } catch { return ""; } };
   const authHeaders = () => token() ? { Authorization: "Bearer " + token() } : {};
   const integerCurrencies = new Set(["RWF", "UGX", "XAF", "XOF", "JPY"]);
@@ -111,7 +111,7 @@
         image.addEventListener("error",()=>image.replaceWith(element("div","product-placeholder","▧")),{once:true}); card.append(image);
       } else card.append(element("div","product-placeholder","▧"));
       const body=element("div","product-body");
-      body.append(element("span","product-category",product.category||"General"),element("h3","",product.name));
+      body.append(element("span","product-category",product.category||"General"),element("h3","",product.name),element("small","seller-name","Sold by "+(product.seller_name||"Nkwasibwe Market")));
       if(product.description)body.append(element("p","",product.description));
       body.append(element("div","product-price",money(product.price_minor,product.currency)));
       body.append(element("div","product-rating",(Number(product.rating_average)>0?"★ "+Number(product.rating_average).toFixed(1):"No rating")+" · "+Number(product.review_count||0)+" reviews"));
@@ -135,6 +135,65 @@
       details.addEventListener("toggle",()=>{if(details.open&&!details.dataset.loaded){details.dataset.loaded="1";loadReviews(product,reviews);}});
       body.append(details);card.append(body);grid.append(card);
     }
+  }
+  async function loadSellerProfile() {
+    const status=$("sellerStatus");
+    if(!token()){state.seller=null;status.textContent="Sign in to apply to sell and manage a seller workspace.";return;}
+    try{
+      const result=await request("/seller/profile");state.seller=result.seller||null;
+      if(!state.seller){status.textContent="You have not applied to sell yet. Submit your shop details below.";return;}
+      status.textContent="Shop: "+state.seller.shop_name+" · Application status: "+state.seller.status+". "+(state.seller.status==="approved"?"You can create products and manage paid orders.":state.seller.status==="pending"?"Your application is awaiting administrator review.":"Contact the platform administrator if you need to reapply.");
+      const form=$("sellerApplicationForm");
+      for(const key of ["shopName","description","contactEmail","contactPhone"]){if(form.elements[key]&&state.seller[key==="shopName"?"shop_name":key==="contactEmail"?"contact_email":key==="contactPhone"?"contact_phone":key]!==undefined)form.elements[key].value=state.seller[key==="shopName"?"shop_name":key==="contactEmail"?"contact_email":key==="contactPhone"?"contact_phone":key]||"";}
+    }catch(error){status.textContent="Could not load seller status: "+error.message;}
+  }
+  async function loadSellerProducts() {
+    const box=$("sellerProductsList");
+    if(!token()){box.replaceChildren(element("p","muted","Sign in to view seller products."));return;}
+    try{
+      const result=await request("/seller/products");box.replaceChildren();
+      if(!(result.products||[]).length)box.append(element("p","muted","No products in this seller shop yet."));
+      for(const product of result.products||[]){
+        const row=element("article","seller-row"),info=element("div","cart-info");
+        info.append(element("strong","",product.name),element("small","",money(product.price_minor,product.currency)+" · stock "+product.stock_quantity+" · "+(product.active?"Active":"Hidden")));
+        const toggle=element("button","",product.active?"Hide product":"Publish product");toggle.type="button";
+        toggle.addEventListener("click",async()=>{toggle.disabled=true;try{await request("/products/"+encodeURIComponent(product.id),{method:"PATCH",body:JSON.stringify({active:!product.active})});await Promise.all([loadSellerProducts(),loadProducts()]);}catch(error){$("sellerMessage").textContent=error.message;toggle.disabled=false;}});
+        row.append(info,toggle);box.append(row);
+      }
+    }catch(error){box.replaceChildren(element("p","muted","Seller product workspace: "+error.message));}
+  }
+  async function loadSellerOrders() {
+    const box=$("sellerOrdersList");
+    if(!token()){box.replaceChildren(element("p","muted","Sign in to view seller orders."));return;}
+    try{
+      const result=await request("/seller/orders");box.replaceChildren();
+      if(!(result.orders||[]).length)box.append(element("p","muted","No paid seller orders yet."));
+      for(const order of result.orders||[]){
+        const row=element("article","seller-row"),info=element("div","cart-info");
+        info.append(element("strong","","Order #"+order.order_id+" · "+order.product_name+" × "+order.quantity),element("small","",money(order.line_total_minor,order.currency)+" · payment "+order.payment_status+" · fulfillment "+order.fulfillment_status));
+        if(order.shipping_address){const a=order.shipping_address;info.append(element("small","",[a.recipient_name,a.phone,a.address_line1,a.address_line2,a.city,a.region,a.country].filter(Boolean).join(", ")));}
+        const transitions=({pending:["processing","cancelled"],processing:["shipped","cancelled"],shipped:["delivered"],delivered:[],cancelled:[]})[order.fulfillment_status]||[];
+        row.append(info);
+        if(transitions.length){const controls=element("div","seller-order-actions"),select=document.createElement("select");for(const status of transitions){const option=element("option","",status);option.value=status;select.append(option);}const update=element("button","primary-button","Update");update.type="button";update.addEventListener("click",async()=>{update.disabled=true;try{await request("/seller/order-items/"+encodeURIComponent(order.item_id)+"/fulfillment",{method:"PATCH",body:JSON.stringify({status:select.value})});await loadSellerOrders();}catch(error){$("sellerMessage").textContent=error.message;update.disabled=false;}});controls.append(select,update);row.append(controls);}
+        box.append(row);
+      }
+    }catch(error){box.replaceChildren(element("p","muted","Seller orders: "+error.message));}
+  }
+  async function loadSellerApplications() {
+    const box=$("sellerApplicationsList");box.replaceChildren(element("p","muted","Loading applications…"));
+    try{
+      const result=await request("/seller/applications");box.replaceChildren();
+      if(!(result.applications||[]).length)box.append(element("p","muted","No seller applications."));
+      for(const seller of result.applications||[]){
+        const row=element("article","seller-row"),info=element("div","cart-info");
+        info.append(element("strong","",seller.shop_name+" · "+seller.status),element("small","", "User ID "+seller.user_id+" · "+seller.contact_email+" · "+seller.contact_phone),element("small","",seller.description||"No shop description"));
+        row.append(info);
+        if(["pending","rejected","suspended"].includes(seller.status)){
+          for(const status of ["approved","rejected"]){const button=element("button",status==="approved"?"primary-button":"",status==="approved"?"Approve":"Reject");button.type="button";button.addEventListener("click",async()=>{button.disabled=true;try{await request("/seller/applications/"+encodeURIComponent(seller.user_id),{method:"PATCH",body:JSON.stringify({status})});await loadSellerApplications();}catch(error){$("sellerMessage").textContent=error.message;button.disabled=false;}});row.append(button);}
+        }
+        box.append(row);
+      }
+    }catch(error){box.replaceChildren(element("p","muted","Cannot load seller applications: "+error.message));}
   }
   async function loadProducts() {
     const grid=$("productGrid"); grid.replaceChildren(element("p","muted","Loading products…"));
@@ -234,6 +293,16 @@
       }
     }catch(error){box.replaceChildren(element("p","muted","Could not load orders: "+error.message));}
   }
+  $("sellerApplicationForm").addEventListener("submit",async event=>{
+    event.preventDefault();const form=new FormData(event.currentTarget),message=$("sellerMessage");message.textContent="Submitting seller application…";
+    const body={shopName:String(form.get("shopName")||"").trim(),description:String(form.get("description")||"").trim(),contactEmail:String(form.get("contactEmail")||"").trim(),contactPhone:String(form.get("contactPhone")||"").trim()};
+    try{const result=await request("/seller/apply",{method:"POST",body:JSON.stringify(body)});message.textContent="Application saved. Status: "+result.seller.status+".";await loadSellerProfile();await Promise.all([loadSellerProducts(),loadSellerOrders()]);}
+    catch(error){message.textContent=error.message;}
+  });
+  $("sellerRefreshButton").addEventListener("click",async()=>{await loadSellerProfile();await Promise.all([loadSellerProducts(),loadSellerOrders()]);});
+  $("sellerProductsButton").addEventListener("click",loadSellerProducts);
+  $("sellerOrdersButton").addEventListener("click",loadSellerOrders);
+  $("sellerApplicationsButton").addEventListener("click",loadSellerApplications);
   $("shippingAddressSelect").addEventListener("change",updateCheckoutAvailability);
   $("addressForm").addEventListener("submit",async event=>{
     event.preventDefault();const form=new FormData(event.currentTarget),message=$("addressMessage");message.textContent="Saving address…";
@@ -262,5 +331,5 @@
   $("reloadButton").addEventListener("click",async()=>{showAuthNotice();await Promise.all([loadProducts(),loadCart(),loadWishlist(),loadAddresses()]);if(token())await loadOrders();});
   $("wishlistButton").addEventListener("click",loadWishlist);
   $("ordersButton").addEventListener("click",loadOrders);
-  showAuthNotice();loadProducts();loadCart();loadWishlist();loadAddresses();if(token())loadOrders();
+  showAuthNotice();loadProducts();loadCart();loadWishlist();loadAddresses();loadSellerProfile();loadSellerProducts();loadSellerOrders();if(token())loadOrders();
 })();
