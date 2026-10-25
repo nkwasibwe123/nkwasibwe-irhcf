@@ -45,6 +45,8 @@ const {
 const { ensureCommerceSchema, createCommerceRouter } = require("./routes/commerce-routes");
 const { createSelfImprovementRouter } = require("./routes/self-improvement-routes");
 const { SelfImprovementWorker } = require("./core/self-improvement-worker");
+const { CapabilityDiscoveryWorker } = require("./core/capability-discovery-worker");
+const { createCapabilityDiscoveryRepository } = require("./core/capability-discovery-repository");
 
 const { AdapterRegistry } = require("./core/adapter-registry");
 const { ExecutionEngine } = require("./core/execution-engine");
@@ -32539,6 +32541,49 @@ const persistentTaskEngine =
   });
 
 const selfImprovementWorker = new SelfImprovementWorker({ pool });
+const capabilityDiscoveryEnabled =
+  String(process.env.IRHCF_CAPABILITY_DISCOVERY_ENABLED || "").toLowerCase() === "true" &&
+  Boolean(String(process.env.SEARXNG_BASE_URL || "").trim());
+const capabilityDiscoveryWorker = capabilityDiscoveryEnabled
+  ? new CapabilityDiscoveryWorker({
+      repository: createCapabilityDiscoveryRepository({ pool }),
+      pollIntervalMs: Number(process.env.IRHCF_CAPABILITY_DISCOVERY_INTERVAL_MS) || 6 * 60 * 60 * 1000,
+      batchSize: Number(process.env.IRHCF_CAPABILITY_DISCOVERY_BATCH_SIZE) || 12,
+      discover: async ({ maxItems }) => {
+        // Only use self-hosted SearXNG here: no paid provider calls or model tokens.
+        const topics = [
+          "open source local first AI software agent testing tools",
+          "open source local image audio video processing libraries",
+          "secure sandbox code execution testing repair open source",
+          "open source multilingual speech transcription Kinyarwanda"
+        ];
+        const discoveries = [];
+        for (const query of topics) {
+          if (discoveries.length >= maxItems) break;
+          const result = await searchIRHCF(query, { limit: Math.min(5, maxItems), web: true });
+          if (!result?.webSearchPerformed || !Array.isArray(result.results)) continue;
+          for (const item of result.results) {
+            if (!item?.url || !/^https?:\/\//i.test(item.url)) continue;
+            const title = String(item.title || "").trim().slice(0, 180);
+            const description = String(item.snippet || "").trim().slice(0, 1600);
+            if (!title || !description) continue;
+            const slug = title.toLowerCase().normalize("NFKD")
+              .replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-")
+              .replace(/^-|-$/g, "").slice(0, 100);
+            if (!slug) continue;
+            discoveries.push({
+              title, description, source: item.url,
+              capability: slug,
+              risks: ["External research content is untrusted; validate licenses, security, maintenance, and resource costs before adoption."]
+            });
+            if (discoveries.length >= maxItems) break;
+          }
+        }
+        return discoveries;
+      },
+      logger: console
+    })
+  : null;
 
 const scheduleWorker =
   new ScheduleWorker({
@@ -32832,6 +32877,11 @@ async function startServer() {
       persistentTaskEngine.start();
       scheduleWorker.start();
       selfImprovementWorker.start();
+      if (capabilityDiscoveryWorker) {
+        capabilityDiscoveryWorker.start();
+      } else {
+        console.log("[CAPABILITY_DISCOVERY] Disabled: set IRHCF_CAPABILITY_DISCOVERY_ENABLED=true and configure self-hosted SEARXNG_BASE_URL to enable free, evidence-backed scans.");
+      }
 
       console.log(
         "[TASK ENGINE] Persistent long-running worker is online."
