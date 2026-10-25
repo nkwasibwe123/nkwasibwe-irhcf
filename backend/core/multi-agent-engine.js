@@ -130,6 +130,26 @@ async function runSpecialistTeam({
         metadata: { source: "multi-agent-team", specialist: specialist.id }
       });
 
+      // A provider can return diagnostic text alongside a failure envelope.
+      // Never convert that error payload into a successful specialist brief.
+      const failure = execution?.success === false
+        ? (execution.error || execution.message || "Execution engine reported failure.")
+        : execution?.result?.success === false
+          ? (execution.result.error || execution.result.message || "Provider reported failure.")
+          : execution?.error
+            ? execution.error
+            : null;
+      if (failure) {
+        const failureMessage = typeof failure === "string"
+          ? failure
+          : failure.message || failure.code || JSON.stringify(failure);
+        return {
+          specialist: specialist.id, description: specialist.description,
+          provider: execution?.provider || null, model: execution?.model || null,
+          status: "failed", error: clean(failureMessage, 1000)
+        };
+      }
+
       const rawBrief = execution?.result?.choices?.[0]?.message?.content ??
         execution?.result?.output_text ?? execution?.result?.content ?? execution?.result;
       const brief = typeof rawBrief === "string" ? clean(rawBrief, 2500) :
