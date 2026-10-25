@@ -2,8 +2,9 @@
 set -euo pipefail
 
 # Runs from the backend service root during Render's npm install.
-ROOT="${WHISPER_CPP_DIR:-$PWD/.local/whisper.cpp}"
-MODEL_DIR="${WHISPER_MODEL_DIR:-$PWD/.local/models}"
+CACHE_ROOT="${WHISPER_CACHE_DIR:-$PWD/node_modules/.cache/irhcf-whisper}"
+ROOT="${WHISPER_CPP_DIR:-$CACHE_ROOT/whisper.cpp}"
+MODEL_DIR="${WHISPER_MODEL_DIR:-$CACHE_ROOT/models}"
 MODEL_NAME="${WHISPER_MODEL_NAME:-ggml-tiny}"
 MODEL_URL="https://huggingface.co/ggerganov/whisper.cpp/resolve/main/${MODEL_NAME}.bin"
 
