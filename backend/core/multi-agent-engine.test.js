@@ -37,6 +37,19 @@ test("specialist selection is bounded and prioritizes requirements, security and
     ["requirements", "security", "testing", "media", "research"]);
 });
 
+test("recommended specialist count never exceeds registered usable specialists", () => {
+  assert.equal(recommendedSpecialistCount({ specialists: [] }), 0);
+  assert.equal(recommendedSpecialistCount({ count: 8, specialists: [
+    { id: "requirements" }, { id: "testing" }
+  ] }), 2);
+  assert.equal(recommendedSpecialistCount({ count: 1, specialists: [
+    { id: "requirements" }, { id: "testing" }, { id: "security" }
+  ] }, { minimum: 1, maximum: 2 }), 2);
+  assert.equal(recommendedSpecialistCount({ specialists: [
+    { id: "" }, null, { id: "testing" }
+  ] }), 1);
+});
+
 test("specialist prompt safely bounds task and context", () => {
   const messages = buildSpecialistMessages("x".repeat(20000),
     { id: "security", description: "y".repeat(2000) }, "z".repeat(5000));
@@ -231,10 +244,10 @@ test("specialist selection supports up to eight bounded agents for complex tasks
   assert.equal(selectSpecialists(team, 3, "Build a website").length, 3);
 });
 
-test("recommended specialist budget scales with team size but never exceeds eight", () => {
-  assert.equal(recommendedSpecialistCount({ count: 3 }), 5);
-  assert.equal(recommendedSpecialistCount({ count: 6 }), 6);
-  assert.equal(recommendedSpecialistCount({ count: 14 }), 8);
-  assert.equal(recommendedSpecialistCount({ specialists: [{ id: "a" }, { id: "b" }] }), 5);
-  assert.equal(recommendedSpecialistCount({ count: 14 }, { minimum: 2, maximum: 4 }), 4);
+test("recommended specialist budget reflects available agents and never exceeds eight", () => {
+  assert.equal(recommendedSpecialistCount({ count: 3 }), 0);
+  assert.equal(recommendedSpecialistCount({ count: 6, specialists: Array.from({ length: 6 }, (_, i) => ({ id: "a" + i })) }), 6);
+  assert.equal(recommendedSpecialistCount({ count: 14, specialists: Array.from({ length: 14 }, (_, i) => ({ id: "a" + i })) }), 8);
+  assert.equal(recommendedSpecialistCount({ specialists: [{ id: "a" }, { id: "b" }] }), 2);
+  assert.equal(recommendedSpecialistCount({ count: 14, specialists: Array.from({ length: 14 }, (_, i) => ({ id: "a" + i })) }, { minimum: 2, maximum: 4 }), 4);
 });
