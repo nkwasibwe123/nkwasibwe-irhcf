@@ -2,6 +2,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const os = require("node:os");
 const { spawn: defaultSpawn } = require("node:child_process");
 const bundledFfmpegPath = require("ffmpeg-static");
 const { normalizeVideoEditRequest } = require("./provider-contract");
@@ -32,7 +33,31 @@ function mediaError(message, code) {
   return error;
 }
 
-function buildFfmpegArgs(inputPath, outputPath, request) {
+
+function buildSubtitleContent(value) {
+  const content = String(value == null ? "" : value).replace(/\r\n/g, "\n").trim();
+  if (!content) throw mediaError("Subtitle content must not be empty.", "VIDEO_SUBTITLES_EMPTY");
+  if (/^WEBVTT(?:\s|$)/i.test(content)) return { content, extension: "vtt" };
+  if (/^\s*\d+\s*\n\d{2}:\d{2}:\d{2}[,.]\d{3}\s+-->/.test(content)) {
+    return { content, extension: "srt" };
+  }
+  return {
+    content: "1\n00:00:00,000 --> 23:59:59,999\n" + content + "\n",
+    extension: "srt"
+  };
+}
+
+function escapeSubtitleFilterPath(value) {
+  return String(value)
+    .replace(/\\/g, "\\\\")
+    .replace(/:/g, "\\:")
+    .replace(/,/g, "\\,")
+    .replace(/'/g, "\\'")
+    .replace(/\[/g, "\\[")
+    .replace(/\]/g, "\\]");
+}
+
+function buildFfmpegArgs(inputPath, outputPath, request, subtitleFilePath = null) {
   const normalized = normalizeVideoEditRequest(request);
   const ext = path.extname(outputPath).slice(1).toLowerCase();
   if (ext !== normalized.outputFormat) {
@@ -56,6 +81,11 @@ function buildFfmpegArgs(inputPath, outputPath, request) {
     const fadeDuration = Math.min(1, duration);
     filters.push("fade=t=out:st=" + Math.max(0, duration - fadeDuration) + ":d=" + fadeDuration);
   }
+  if (normalized.subtitles) {
+    if (!String(normalized.subtitles).trim()) throw mediaError("Subtitle content must not be empty.", "VIDEO_SUBTITLES_EMPTY");
+    if (!subtitleFilePath) throw mediaError("A temporary subtitle file is required for subtitle burn-in.", "VIDEO_SUBTITLE_FILE_REQUIRED");
+    filters.push("subtitles=filename=" + escapeSubtitleFilterPath(subtitleFilePath) + ":force_style='FontSize=24'");
+  }
   if (filters.length) args.push("-vf", filters.join(","));
   args.push(...OUTPUT_OPTIONS[normalized.outputFormat], "-shortest", outputPath);
   return args;
@@ -69,14 +99,25 @@ function editVideoFile({ inputPath, outputPath, request, spawn = defaultSpawn, t
     return Promise.reject(mediaError("Input video file does not exist.", "VIDEO_INPUT_NOT_FOUND"));
   }
   const normalized = normalizeVideoEditRequest(request);
-  if (normalized.subtitles) {
-    return Promise.reject(mediaError("Subtitle burn-in is not enabled in this renderer yet.", "VIDEO_SUBTITLES_NOT_IMPLEMENTED"));
+  let subtitleDir = null;
+  let subtitleFilePath = null;
+  try {
+    if (normalized.subtitles !== null) {
+      const subtitle = buildSubtitleContent(normalized.subtitles);
+      subtitleDir = fs.mkdtempSync(path.join(os.tmpdir(), "irhcf-subtitles-"));
+      subtitleFilePath = path.join(subtitleDir, "captions." + subtitle.extension);
+      fs.writeFileSync(subtitleFilePath, subtitle.content, { encoding: "utf8", mode: 0o600, flag: "wx" });
+    }
+  } catch (error) {
+    if (subtitleDir) fs.rmSync(subtitleDir, { recursive: true, force: true });
+    return Promise.reject(error);
   }
 
   let args;
   try {
-    args = buildFfmpegArgs(inputPath, outputPath, normalized);
+    args = buildFfmpegArgs(inputPath, outputPath, normalized, subtitleFilePath);
   } catch (error) {
+    if (subtitleDir) fs.rmSync(subtitleDir, { recursive: true, force: true });
     return Promise.reject(error);
   }
 
@@ -87,6 +128,7 @@ function editVideoFile({ inputPath, outputPath, request, spawn = defaultSpawn, t
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      if (subtitleDir) fs.rmSync(subtitleDir, { recursive: true, force: true });
       if (error) reject(error);
       else if (!fs.existsSync(outputPath) || !fs.statSync(outputPath).size) {
         reject(mediaError("FFmpeg completed without producing an output file.", "VIDEO_OUTPUT_EMPTY"));
@@ -123,4 +165,4 @@ function editVideoFile({ inputPath, outputPath, request, spawn = defaultSpawn, t
   });
 }
 
-module.exports = { VIDEO_FILTERS, OUTPUT_OPTIONS, buildFfmpegArgs, editVideoFile };
+module.exports = { VIDEO_FILTERS, OUTPUT_OPTIONS, buildSubtitleContent, escapeSubtitleFilterPath, buildFfmpegArgs, editVideoFile };
