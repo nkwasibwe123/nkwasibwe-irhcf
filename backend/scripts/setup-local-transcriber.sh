@@ -9,7 +9,7 @@ MODEL_URL="https://huggingface.co/ggerganov/whisper.cpp/resolve/main/${MODEL_NAM
 
 BIN="$ROOT/build/bin/whisper-cli"
 MODEL_PATH="$MODEL_DIR/${MODEL_NAME}.bin"
-VERIFIED_MARKER="$MODEL_DIR/.verified-${MODEL_NAME}.sha256"
+VERIFIED_MARKER="$ROOT/build/.verified-${MODEL_NAME}.sha256"
 
 mkdir -p "$(dirname "$ROOT")" "$MODEL_DIR"
 
