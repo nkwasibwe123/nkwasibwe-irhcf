@@ -22,6 +22,37 @@
     if (!response.ok) throw new Error(data.error || ("Request failed (" + response.status + ")"));
     return data;
   }
+  function getCheckoutIdempotencyKey(payload) {
+    const fingerprint = JSON.stringify({
+      items: (payload.items || []).map(item => ({
+        productId: Number(item.productId),
+        quantity: Number(item.quantity)
+      })).sort((a, b) => a.productId - b.productId),
+      addressId: payload.addressId || null,
+      couponCode: payload.couponCode || null
+    });
+    const storageKey = "nkwasibwe.checkout.idempotency.v1";
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(storageKey) || "null");
+      if (saved && saved.fingerprint === fingerprint &&
+          /^[A-Za-z0-9._:-]{16,128}$/.test(String(saved.key || ""))) return saved.key;
+    } catch {}
+    if (!window.crypto || typeof window.crypto.getRandomValues !== "function") {
+      throw new Error("Secure checkout key generation is unavailable. Please use the HTTPS storefront in a modern browser.");
+    }
+    const bytes = new Uint8Array(16);
+    window.crypto.getRandomValues(bytes);
+    const key = Array.from(bytes, byte => byte.toString(16).padStart(2, "0")).join("");
+    try { sessionStorage.setItem(storageKey, JSON.stringify({ fingerprint, key })); } catch {}
+    return key;
+  }
+  function clearCheckoutIdempotencyKey(key) {
+    try {
+      const storageKey = "nkwasibwe.checkout.idempotency.v1";
+      const saved = JSON.parse(sessionStorage.getItem(storageKey) || "null");
+      if (saved && saved.key === key) sessionStorage.removeItem(storageKey);
+    } catch {}
+  }
   function element(tag, className, text) {
     const node = document.createElement(tag);
     if (className) node.className = className;
@@ -532,10 +563,21 @@
   $("checkoutButton").addEventListener("click",async()=>{
     if(!token()){$("checkoutMessage").textContent="Sign in first to check out.";return;}
     $("checkoutButton").disabled=true;$("checkoutMessage").textContent="Creating hosted checkout…";
-    try{const result=await request("/checkout",{method:"POST",body:JSON.stringify({items:state.cart.map(item=>({productId:Number(item.product_id),quantity:Number(item.quantity)})),addressId:$("shippingAddressSelect").value?Number($("shippingAddressSelect").value):null,couponCode:state.couponCode||null})});
+    let idempotencyKey = "";
+    try{
+      const payload={items:state.cart.map(item=>({productId:Number(item.product_id),quantity:Number(item.quantity)})),addressId:$("shippingAddressSelect").value?Number($("shippingAddressSelect").value):null,couponCode:state.couponCode||null};
+      idempotencyKey=getCheckoutIdempotencyKey(payload);
+      const result=await request("/checkout",{method:"POST",headers:{"Idempotency-Key":idempotencyKey},body:JSON.stringify(payload)});
+      if(result.paymentStatus==="paid"){
+        $("checkoutMessage").textContent="This checkout has already been paid. Open Orders to review it before starting a new purchase.";
+        return;
+      }
       if(!result.checkoutUrl||!result.checkoutUrl.startsWith("https://"))throw new Error("The server did not return a valid hosted checkout URL.");
       window.location.assign(result.checkoutUrl);
-    }catch(error){$("checkoutMessage").textContent=error.message;$("checkoutButton").disabled=false;}
+    }catch(error){
+      if(error.code==="IDEMPOTENCY_KEY_ALREADY_USED"||error.code==="CHECKOUT_PROVIDER_UNAVAILABLE")clearCheckoutIdempotencyKey(idempotencyKey);
+      $("checkoutMessage").textContent=error.message;$("checkoutButton").disabled=false;
+    }
   });
   $("productForm").addEventListener("submit",async event=>{
     event.preventDefault();const form=new FormData(event.currentTarget);const message=$("adminMessage");message.textContent="Creating product…";
