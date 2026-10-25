@@ -109,6 +109,37 @@
       }
     } catch(error) { target.replaceChildren(element("p","muted","Could not load reviews: "+error.message)); }
   }
+  async function loadStorefront(sellerUserId) {
+    const panel=$("storefrontPanel"), grid=$("storefrontProducts");
+    panel.hidden=false;grid.replaceChildren(element("p","muted","Loading seller shop…"));
+    panel.scrollIntoView({behavior:"smooth",block:"start"});
+    try{
+      const result=await request("/sellers/"+encodeURIComponent(sellerUserId)+"/storefront");
+      const shop=result.storefront||{};
+      $("storefrontName").textContent=shop.shop_name||"Seller shop";
+      $("storefrontDescription").textContent=shop.description||"Welcome to this seller's shop.";
+      $("storefrontStats").replaceChildren(
+        element("span","storefront-stat",Number(shop.product_count||0)+" products"),
+        element("span","storefront-stat",(Number(shop.rating_average)>0?"★ "+Number(shop.rating_average).toFixed(1):"No ratings")+" · "+Number(shop.review_count||0)+" reviews"),
+        element("span","storefront-stat","Member since "+(shop.created_at?new Date(shop.created_at).toLocaleDateString():"—"))
+      );
+      grid.replaceChildren();
+      if(!(result.products||[]).length){grid.append(element("p","muted","This shop has no active products yet."));return;}
+      for(const product of result.products){
+        const card=element("article","product-card"),imageUrl=product.has_image_upload?API+"/products/"+encodeURIComponent(product.id)+"/image":String(product.image_url||"");
+        if(imageUrl.startsWith("https://")){const img=element("img","product-image");img.src=imageUrl;img.alt=String(product.name||"Product");img.loading="lazy";img.referrerPolicy="no-referrer";img.addEventListener("error",()=>img.replaceWith(element("div","product-placeholder","▧")),{once:true});card.append(img);}
+        else card.append(element("div","product-placeholder","▧"));
+        const body=element("div","product-body");
+        body.append(element("span","product-category",product.category||"General"),element("h3","",product.name));
+        if(product.description)body.append(element("p","",product.description));
+        body.append(element("div","product-price",money(product.price_minor,product.currency)),element("div","product-rating",(Number(product.rating_average)>0?"★ "+Number(product.rating_average).toFixed(1):"No rating")+" · "+Number(product.review_count||0)+" reviews"),element("span","stock",Number(product.stock_quantity)>0?Number(product.stock_quantity)+" in stock":"Out of stock"));
+        const add=element("button","primary-button",token()?"Add to cart":"Sign in to add");add.type="button";add.disabled=Number(product.stock_quantity)<1;
+        add.addEventListener("click",async()=>{add.disabled=true;try{await addToCart(product);}catch(error){$("checkoutMessage").textContent=error.message;}finally{add.disabled=Number(product.stock_quantity)<1;}});
+        body.append(add);card.append(body);grid.append(card);
+      }
+    }catch(error){grid.replaceChildren(element("p","muted",error.message));}
+  }
+
   function renderProducts() {
     const grid=$("productGrid"); grid.replaceChildren();
     const query=$("productSearch").value.trim().toLowerCase();
@@ -133,7 +164,8 @@
         image.addEventListener("error",()=>image.replaceWith(element("div","product-placeholder","▧")),{once:true}); card.append(image);
       } else card.append(element("div","product-placeholder","▧"));
       const body=element("div","product-body");
-      body.append(element("span","product-category",product.category||"General"),element("h3","",product.name),element("small","seller-name","Sold by "+(product.seller_name||"Nkwasibwe Market")));
+      body.append(element("span","product-category",product.category||"General"),element("h3","",product.name));
+      if(product.seller_user_id){const shopLink=element("button","seller-name seller-storefront-link","Sold by "+(product.seller_name||"Seller")+" · View shop");shopLink.type="button";shopLink.addEventListener("click",()=>loadStorefront(product.seller_user_id));body.append(shopLink);}else body.append(element("small","seller-name","Sold by Nkwasibwe Market"));
       if(product.description)body.append(element("p","",product.description));
       body.append(element("div","product-price",money(product.price_minor,product.currency)));
       body.append(element("div","product-rating",(Number(product.rating_average)>0?"★ "+Number(product.rating_average).toFixed(1):"No rating")+" · "+Number(product.review_count||0)+" reviews"));
@@ -414,6 +446,7 @@
     try{const result=await request("/products",{method:"POST",body:JSON.stringify(body)});const imageFile=form.get("imageFile");let imageWarning="";if(imageFile&&imageFile.size){try{await uploadProductImage(result.product.id,imageFile);}catch(error){imageWarning=" Product was created, but image upload failed: "+error.message;}}message.textContent="Product created: "+result.product.name+imageWarning;event.currentTarget.reset();await Promise.all([loadProducts(),loadSellerProducts()]);}
     catch(error){message.textContent=error.message;}
   });
+  $("closeStorefrontButton").addEventListener("click",()=>{$("storefrontPanel").hidden=true;$("productGrid").scrollIntoView({behavior:"smooth",block:"start"});});
   $("productSearch").addEventListener("input",()=>{clearTimeout(window.marketSearchTimer);window.marketSearchTimer=setTimeout(loadProducts,180);});
   $("categoryFilter").addEventListener("change",loadProducts);
   $("productSort").addEventListener("change",loadProducts);
