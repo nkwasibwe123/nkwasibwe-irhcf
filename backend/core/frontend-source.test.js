@@ -828,6 +828,8 @@ test("marketplace seller analytics dashboard is connected to approved-account an
   const js=fs.readFileSync(path.join(root,"market.js"),"utf8");
   const routes=fs.readFileSync(path.join(root,"backend","routes","commerce-routes.js"),"utf8");
   for(const id of ["sellerAnalyticsDays","sellerAnalyticsRefresh","sellerAnalyticsSummary","sellerSalesChart","sellerTopProducts","sellerFulfillmentSummary"]) assert.ok(html.includes('id="'+id+'"'),"missing analytics UI: "+id);
+  assert.match(html,/market\.css\?v=14/);
+  assert.match(html,/market\.js\?v=16/);
   assert.match(js,/async function loadSellerAnalytics\(\)/);
   assert.match(js,/\/seller\/analytics\?days=/);
   assert.match(js,/sellerAnalyticsDays.*addEventListener\("change",loadSellerAnalytics\)/);
