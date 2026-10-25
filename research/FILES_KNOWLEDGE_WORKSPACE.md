@@ -38,3 +38,7 @@ Status: researched baseline. Search/indexing, extraction and storage must be eva
 7. Tests cover cross-account access, MIME spoofing, oversized files, corrupt PDFs, archive bombs, parser timeout, duplicate uploads, indexing failure, stale cache and deletion propagation.
 8. Connected cloud files honor provider permissions and token revocation.
 9. Retention/quota limits and any hosted indexing costs are visible to the user.
+
+## Additional official source reviewed — 2026-10-25
+
+- **Google Drive API overview** — https://developers.google.com/workspace/drive/api/guides/about-sdk — covers file upload/download/search, sharing, OAuth 2.0, shared drives and user-owned files. IRHCF should use least-privilege per-account authorization, preserve provider ownership/sharing semantics, and never treat a stored file ID as authorization by itself.
