@@ -608,3 +608,22 @@ test("marketplace delivery addresses, shipping requirements and account-scoped o
   assert.match(routes, /shipping_address JSONB/);
   assert.match(routes, /requires_shipping BOOLEAN NOT NULL DEFAULT TRUE/);
 });
+
+
+test("marketplace seller onboarding, seller-owned inventory, paid-order fulfillment and admin moderation are wired", () => {
+  const root = path.join(__dirname, "..", "..");
+  const html = fs.readFileSync(path.join(root, "market.html"), "utf8");
+  const js = fs.readFileSync(path.join(root, "market.js"), "utf8");
+  const routes = fs.readFileSync(path.join(root, "backend", "routes", "commerce-routes.js"), "utf8");
+  for (const id of ["sellerApplicationForm","sellerStatus","sellerProductsList","sellerOrdersList","sellerApplicationsButton","sellerApplicationsList"]) assert.ok(html.includes('id="'+id+'"'), "missing seller UI: "+id);
+  assert.match(js, /async function loadSellerProfile\(\)/);
+  assert.match(js, /async function loadSellerProducts\(\)/);
+  assert.match(js, /async function loadSellerOrders\(\)/);
+  assert.match(js, /async function loadSellerApplications\(\)/);
+  assert.match(routes, /CREATE TABLE IF NOT EXISTS commerce_sellers/);
+  assert.match(routes, /status !== "approved"/);
+  assert.match(routes, /seller_user_id=\$\d+/);
+  assert.match(routes, /WHERE oi\.seller_user_id=\$1 AND o\.status='paid'/);
+  assert.match(routes, /FULFILLMENT_TRANSITION_INVALID/);
+  assert.match(routes, /reviewed_by/);
+});
