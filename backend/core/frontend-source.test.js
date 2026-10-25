@@ -548,3 +548,17 @@ test("Chat with Friends includes poll creation and authenticated poll voting UI"
   assert.match(html,/\/vote/);
   assert.match(html,/poll\.options/);
 });
+
+
+test("profile supports personal interests and a private professional-document vault",()=>{
+  const route=fs.readFileSync(path.join(__dirname,"..","routes","social-routes.js"),"utf8");
+  const html=fs.readFileSync(path.join(__dirname,"..","..","friends.html"),"utf8");
+  for(const field of ["interests","dislikes","wishes","personal_statement"])assert.ok(route.includes(field),"missing profile field: "+field);
+  assert.match(route,/CREATE TABLE IF NOT EXISTS social_profile_documents/);
+  assert.match(route,/router\.post\("\/profile\/documents"/);
+  assert.match(route,/router\.get\("\/profile\/documents\/:documentId\/content"/);
+  assert.match(route,/router\.delete\("\/profile\/documents\/:documentId"/);
+  for(const id of ["profileDocumentForm","profileDocumentCategory","profileDocumentFile","profileDocumentList","socialInterests","socialDislikes","socialWishes","socialPersonalStatement"])assert.ok(html.includes('id="'+id+'"'),"missing profile UI: "+id);
+  assert.match(html,/Download document/);
+  assert.match(html,/Delete document/);
+});
