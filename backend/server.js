@@ -241,6 +241,8 @@ const {
   buildCorrectionInstruction
 } = require("./core/claim-verification-engine");
 
+const { validateCriticalConfig } = require("./core/production-config");
+
 const app = express();
 
 app.disable("x-powered-by");
@@ -249,22 +251,14 @@ app.disable("x-powered-by");
 // BASIC CONFIGURATION VALIDATION
 // ============================================================
 
-if (!DATABASE_URL) {
-  const message = "[CONFIG ERROR] DATABASE_URL is missing.";
-  if (NODE_ENV === "production") {
-    // Fail closed: production must never start without its database.
-    throw new Error(message);
-  }
-  console.error(message);
-}
+const criticalConfig = validateCriticalConfig({
+  environment: NODE_ENV,
+  databaseUrl: DATABASE_URL,
+  jwtSecret: JWT_SECRET
+});
 
-if (!JWT_SECRET) {
-  const message = "[CONFIG ERROR] JWT_SECRET is missing.";
-  if (NODE_ENV === "production") {
-    // Fail closed: do not serve production traffic with authentication disabled or misconfigured.
-    throw new Error(message);
-  }
-  console.error(message);
+for (const missing of criticalConfig.missing) {
+  console.error(`[CONFIG ERROR] ${missing} is missing.`);
 }
 
 if (!OPENAI_API_KEY) {
