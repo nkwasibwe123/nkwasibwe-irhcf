@@ -111,6 +111,7 @@ async function ensureCommerceSchema(pool) {
     ALTER TABLE commerce_orders ADD COLUMN IF NOT EXISTS coupon_code TEXT;
     ALTER TABLE commerce_orders ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
     ALTER TABLE commerce_orders ADD COLUMN IF NOT EXISTS stock_released_at TIMESTAMPTZ;
+    UPDATE commerce_orders SET expires_at=created_at + INTERVAL '30 minutes' WHERE expires_at IS NULL AND status='pending';
     CREATE INDEX IF NOT EXISTS idx_commerce_orders_user_created ON commerce_orders(user_id, created_at DESC);
     CREATE TABLE IF NOT EXISTS commerce_refund_requests (
       id BIGSERIAL PRIMARY KEY,
