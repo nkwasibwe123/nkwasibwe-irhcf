@@ -39,3 +39,7 @@ Status: researched baseline. Some local editing capabilities can work without pa
 8. Provider-backed generation reports unsupported/deprecated providers before submission, checks quotas, requires confirmation for potentially paid work and does not retry exhausted credits.
 9. Photo animation via FFmpeg is clearly labelled as deterministic motion effects; AI video is labelled as generative only when a supported model actually generated it.
 10. End-to-end tests cover provider unavailable, timeout, quota exhausted, invalid media, cancellation, cross-account access and downloadable output.
+
+## Additional official source reviewed — 2026-10-25
+
+- **Shotcut feature list** — https://www.shotcut.org/features/ — documents SRT/VTT/ASS/SSA subtitle import, subtitle burn-in, multitrack timelines, filters, frame-accurate seeking and proxy editing. IRHCF should treat subtitles as a first-class timeline asset, preserve authored timing, validate output container/codec compatibility and verify that the produced video is playable rather than checking only that a file exists.
