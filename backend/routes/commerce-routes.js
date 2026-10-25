@@ -1175,6 +1175,8 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
     let currency;
     try {
       await client.query("BEGIN");
+      // Serialize duplicate requests for this account/key before reading stock or creating an order.
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [String(req.user.id) + ":" + idempotencyKey]);
       const existingResult = await client.query(
         "SELECT id,tx_ref,status,currency,total_minor,subtotal_minor,discount_minor,shipping_minor,tax_minor,tax_rate_bps,platform_fee_bps,coupon_code,checkout_url,request_fingerprint FROM commerce_orders WHERE user_id=$1 AND idempotency_key=$2 FOR UPDATE",
         [req.user.id, idempotencyKey]
