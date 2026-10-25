@@ -595,3 +595,30 @@ test("artifact download rejects malformed task identifiers before querying stora
   assert.equal(response.body.code, "TASK_ID_INVALID");
   assert.equal(lookups, 0);
 });
+
+test("artifact download converts task-storage failures into a safe 500 response", async () => {
+  const engine = {
+    getTask: async () => { throw new Error("database connection string must not leak"); }
+  };
+  const router = createTaskRouter({ engine, authenticateToken: (_req, _res, next) => next() });
+  const layer = router.stack.find(item => item.route?.path === "/:id/artifacts/:filename");
+  const handler = layer.route.stack[1].handle;
+  const response = {
+    statusCode: 200, headers: {},
+    setHeader(name, value) { this.headers[name] = value; },
+    status(code) { this.statusCode = code; return this; },
+    json(body) { this.body = body; return this; },
+    send(body) { this.body = body; return this; }
+  };
+  const originalError = console.error;
+  console.error = () => {};
+  try {
+    await handler({ params: { id: "45", filename: "index.html" }, user: { id: "owner-1" } }, response);
+  } finally {
+    console.error = originalError;
+  }
+  assert.equal(response.statusCode, 500);
+  assert.equal(response.body.code, "TASK_ARTIFACT_LOOKUP_FAILED");
+  assert.equal(response.body.success, false);
+  assert.doesNotMatch(response.body.error, /connection string/i);
+});

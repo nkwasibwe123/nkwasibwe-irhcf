@@ -1481,7 +1481,19 @@ function createTaskRouter({
     if (!Number.isInteger(taskId) || taskId <= 0) {
       return res.status(400).json({ success: false, code: "TASK_ID_INVALID", error: "Invalid task id." });
     }
-    const task = await engine.getTask(taskId, req.user.id);
+    let task;
+    try {
+      task = await engine.getTask(taskId, req.user.id);
+    } catch (error) {
+      // Keep transient database failures from escaping an async Express 4
+      // handler as unhandled rejections; do not leak storage details to clients.
+      console.error("[TASK ARTIFACT] Could not load task for download:", error?.message || error);
+      return res.status(500).json({
+        success: false,
+        code: "TASK_ARTIFACT_LOOKUP_FAILED",
+        error: "Could not load this task's verified artifacts."
+      });
+    }
     if (!task) {
       return res.status(404).json({ success: false, code: "TASK_NOT_FOUND", error: "Task not found." });
     }
