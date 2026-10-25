@@ -7,6 +7,51 @@ const os = require("node:os");
 const path = require("node:path");
 const { EventEmitter } = require("node:events");
 const { detectPhotoImageType, buildPhotoAnimationArgs, animatePhotoFile } = require("./photo-animation");
+const zlib = require("node:zlib");
+
+function crc32(buffer) {
+  let crc = 0xffffffff;
+  for (const byte of buffer) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function pngChunk(type, data) {
+  const name = Buffer.from(type, "ascii");
+  const length = Buffer.alloc(4);
+  length.writeUInt32BE(data.length);
+  const body = Buffer.concat([name, data]);
+  const checksum = Buffer.alloc(4);
+  checksum.writeUInt32BE(crc32(body));
+  return Buffer.concat([length, body, checksum]);
+}
+
+function solidPng(width = 32, height = 32) {
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 2;
+  const scanlines = Buffer.alloc(height * (1 + width * 3));
+  for (let y = 0; y < height; y++) {
+    const row = y * (1 + width * 3);
+    scanlines[row] = 0;
+    for (let x = 0; x < width; x++) {
+      scanlines[row + 1 + x * 3] = 35;
+      scanlines[row + 2 + x * 3] = 120;
+      scanlines[row + 3 + x * 3] = 210;
+    }
+  }
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    pngChunk("IHDR", ihdr),
+    pngChunk("IDAT", zlib.deflateSync(scanlines)),
+    pngChunk("IEND", Buffer.alloc(0))
+  ]);
+}
+
 
 function pngHeader(width = 10, height = 10) {
   const buffer = Buffer.alloc(24);
@@ -104,10 +149,40 @@ test("photo animation API is authenticated, bounded and returns an MP4 download"
   const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
   assert.match(server, /app\.post\("\/api\/media\/video\/photo-animation",\s*authenticateToken/);
   assert.match(server, /detectPhotoImageType\(mimeType, imageBuffer\)/);
+  assert.match(server, /timeoutMs: 90_000/);
   assert.match(server, /Content-Disposition.*nkwasibwe-photo-animation\.mp4/);
   assert.match(server, /if \(tempDir\) await fs\.rm\(tempDir, \{ recursive: true, force: true \}\)/);
   assert.match(app, /photoAnimation:\s*"\/api\/media\/video\/photo-animation"/);
   assert.match(app, /async function animatePhotoLocally\(/);
   assert.match(html, /Animate a Photo \(Local\)/);
   assert.match(html, /FFmpeg/);
+});
+
+
+const ffmpegPath = require("ffmpeg-static");
+
+test("photo animation creates a real playable MP4 with the installed FFmpeg binary", {
+  skip: !ffmpegPath || !fs.existsSync(ffmpegPath)
+}, async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "irhcf-photo-animation-real-"));
+  const inputPath = path.join(directory, "input.png");
+  const outputPath = path.join(directory, "real-output.mp4");
+  fs.writeFileSync(inputPath, solidPng(32, 32));
+  try {
+    const result = await animatePhotoFile({
+      inputPath,
+      outputPath,
+      durationSeconds: 4,
+      motion: "zoom-in",
+      size: "1280x720",
+      timeoutMs: 90_000
+    });
+    assert.equal(result.durationSeconds, 4);
+    assert.equal(result.size, "1280x720");
+    assert.ok(fs.statSync(outputPath).size > 1000);
+    const header = fs.readFileSync(outputPath).subarray(0, 12);
+    assert.equal(header.toString("ascii", 4, 8), "ftyp");
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
 });

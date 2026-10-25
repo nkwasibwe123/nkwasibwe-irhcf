@@ -133,7 +133,7 @@ function animatePhotoFile({
   motion = "zoom-in",
   size = "1280x720",
   spawn = defaultSpawn,
-  timeoutMs = 180000
+  timeoutMs = 90000
 } = {}) {
   if (!inputPath || !outputPath) return Promise.reject(photoError("Input and output paths are required.", "PHOTO_ANIMATION_PATH_REQUIRED"));
   if (!fs.existsSync(inputPath) || !fs.statSync(inputPath).isFile()) {
