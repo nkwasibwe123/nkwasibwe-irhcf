@@ -324,7 +324,7 @@
                 <label for="videoEditorFormat">Output format
                   <select id="videoEditorFormat"><option value="mp4">MP4</option><option value="webm">WebM</option><option value="mov">MOV</option></select>
                 </label>
-                <label for="videoEditorSubtitles">Subtitles (not available yet)<textarea id="videoEditorSubtitles" rows="2" maxlength="20000" disabled placeholder="Subtitle burn-in will be added in a follow-up."></textarea></label>
+                <label for="videoEditorSubtitles">Subtitles / captions (optional)<textarea id="videoEditorSubtitles" rows="3" maxlength="20000" placeholder="Type a caption or paste timed SRT/WebVTT subtitles (max 20,000 characters)."></textarea></label>
               </div>
               <button id="videoEditorSubmit" class="task-primary-button" type="submit">Render video</button>
               <p id="videoEditorStatus" role="status" aria-live="polite"></p>
@@ -901,7 +901,7 @@ STATUS BAR
        ================================================ -->
 
   <script
-    src="app.js?v=2.0.44"
+    src="app.js?v=2.0.45"
   ></script>
   <script
     src="voice-client.js?v=2.0.28"
