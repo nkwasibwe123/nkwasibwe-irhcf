@@ -40,3 +40,7 @@ Status: researched baseline. Runtime and production scale are not verified by th
 7. Sensitive actions pause for approval; retried external actions are idempotent where applicable.
 8. Tests cover concurrency, cancellation, stale recovery, duplicate delivery, failed repair, tool timeout, account isolation and truthful activity rendering.
 9. Completion requires the configured verifier and expected artifacts; agent self-report alone is insufficient.
+
+## Additional official source reviewed — 2026-10-25
+
+- **LangGraph reference** — https://langchain-ai.github.io/langgraph/reference/ — documents long-running, stateful agent orchestration, durable execution, streaming, persistence and human-in-the-loop controls. IRHCF should use explicit checkpoints, resumable state and approval gates for long-running multi-agent tasks rather than launching unbounded parallel agents.

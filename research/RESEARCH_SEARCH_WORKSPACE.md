@@ -44,3 +44,7 @@ Status: researched baseline. Provider availability, quotas and cost must be chec
 9. SSRF tests cover localhost, private IP ranges, IPv6 loopback, cloud metadata hosts, DNS rebinding and redirects to blocked addresses.
 10. Tests cover duplicate/canonical URLs, stale pages, conflicting claims, invalid dates, empty extraction, citation integrity, timeouts and resumed research jobs.
 11. The user can export a report with source links, methodology, evidence, limitations and retrieval dates.
+
+## Additional official source reviewed — 2026-10-25
+
+- **Exa Search API reference** — https://docs.exa.ai/reference/search — provides an additional search-provider pattern for semantic retrieval. IRHCF should keep provider adapters interchangeable, store query and retrieval timestamps, deduplicate by canonical URL, and distinguish retrieved evidence from verified facts. Provider-specific ranking or excerpts must not silently replace source-level provenance.

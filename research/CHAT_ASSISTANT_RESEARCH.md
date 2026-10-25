@@ -43,3 +43,7 @@ Status: researched baseline. Provider documentation describes capabilities, but 
 8. Attachments show actual previews when supported, validate size/type, and are retrievable only by their owner.
 9. External content cannot override application instructions or grant itself access to tools or private data.
 10. Tests cover stream disconnects, partial responses, duplicate tool events, invalid tool arguments, unauthorized conversations, prompt injection, output sanitization, language switching and provider failure.
+
+## Additional official source reviewed — 2026-10-25
+
+- **Cohere Chat API** — https://docs.cohere.com/docs/chat-api — documents role-based multi-turn conversations and a conversational generation API. Related tool-use guidance covers function calls, multi-step tool execution and citation-bearing results. IRHCF should preserve structured user/assistant/tool roles, stream partial output safely, validate tool arguments, and keep provider/model differences behind a common adapter.
