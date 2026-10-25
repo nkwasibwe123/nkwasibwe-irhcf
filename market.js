@@ -3,7 +3,7 @@
   const API = "https://nkwasibwe-irhcf.onrender.com/api/commerce";
   const TOKEN_KEY = "nkwasibwe_auth_token";
   const $ = id => document.getElementById(id);
-  const state = { products: [], cart: [], orders: [], wishlist: [] };
+  const state = { products: [], cart: [], orders: [], wishlist: [], addresses: [] };
   const token = () => { try { return localStorage.getItem(TOKEN_KEY) || ""; } catch { return ""; } };
   const authHeaders = () => token() ? { Authorization: "Bearer " + token() } : {};
   const integerCurrencies = new Set(["RWF", "UGX", "XAF", "XOF", "JPY"]);
@@ -168,6 +168,40 @@
       }
     }catch(error){box.replaceChildren(element("p","muted","Could not load favourites: "+error.message));}
   }
+  function updateCheckoutAvailability() {
+    const hasCart=state.cart.length>0;
+    const currency=state.cart[0]?.currency;
+    const sameCurrency=hasCart&&state.cart.every(item=>item.currency===currency);
+    const needsShipping=state.cart.some(item=>item.requires_shipping!==false);
+    $("shippingAddressWrap").hidden=!needsShipping;
+    const addressId=$("shippingAddressSelect").value;
+    $("checkoutButton").disabled=!hasCart||!sameCurrency||(needsShipping&&!addressId);
+    $("shippingAddressHint").textContent=needsShipping
+      ? (state.addresses.length ? (addressId ? "Delivery address selected. The order will keep a snapshot for this purchase." : "Select a delivery address before checkout.") : "Add a delivery address above before purchasing physical products.")
+      : "This cart contains digital/non-shipping products only.";
+  }
+  async function loadAddresses() {
+    const box=$("addressesList"), select=$("shippingAddressSelect");
+    if(!token()){state.addresses=[];box.replaceChildren(element("p","muted","Sign in to manage delivery addresses."));select.replaceChildren(element("option","","Sign in to select an address"));select.options[0].value="";updateCheckoutAvailability();return;}
+    try{
+      const result=await request("/addresses");state.addresses=result.addresses||[];
+      const previous=select.value;select.replaceChildren(element("option","","Select a saved address"));select.options[0].value="";
+      for(const address of state.addresses){const option=element("option","",address.label+" — "+address.city+", "+address.country+(address.is_default?" (default)":""));option.value=String(address.id);select.append(option);}
+      if(state.addresses.some(address=>String(address.id)===previous))select.value=previous;
+      else {const preferred=state.addresses.find(address=>address.is_default)||state.addresses[0];if(preferred)select.value=String(preferred.id);}
+      box.replaceChildren();
+      if(!state.addresses.length)box.append(element("p","muted","No saved delivery addresses yet."));
+      for(const address of state.addresses){
+        const row=element("article","address-card"),info=element("div","cart-info");
+        info.append(element("strong","",address.label+(address.is_default?" · Default":"")),element("small","",address.recipient_name+" · "+address.phone),element("small","",[address.address_line1,address.address_line2,address.city,address.region,address.country,address.postal_code].filter(Boolean).join(", ")));
+        const actions=element("div","address-actions");
+        if(!address.is_default){const makeDefault=element("button","","Make default");makeDefault.type="button";makeDefault.addEventListener("click",async()=>{makeDefault.disabled=true;try{await request("/addresses/"+encodeURIComponent(address.id)+"/default",{method:"PUT"});await loadAddresses();}catch(error){$("addressMessage").textContent=error.message;makeDefault.disabled=false;}});actions.append(makeDefault);}
+        const remove=element("button","","Delete");remove.type="button";remove.addEventListener("click",async()=>{remove.disabled=true;try{await request("/addresses/"+encodeURIComponent(address.id),{method:"DELETE"});await loadAddresses();}catch(error){$("addressMessage").textContent=error.message;remove.disabled=false;}});actions.append(remove);
+        row.append(info,actions);box.append(row);
+      }
+      updateCheckoutAvailability();
+    }catch(error){box.replaceChildren(element("p","muted","Could not load addresses: "+error.message));}
+  }
   async function loadCart() {
     const box=$("cartItems");
     if(!token()){state.cart=[];box.replaceChildren(element("p","muted","Sign in to load and save your cart."));$("cartCount").textContent="0 items";$("cartTotal").textContent="—";$("checkoutButton").disabled=true;return;}
@@ -184,7 +218,7 @@
       $("cartCount").textContent=state.cart.reduce((sum,item)=>sum+Number(item.quantity),0)+" items";
       const currency=state.cart[0]?.currency;
       $("cartTotal").textContent=currency&&state.cart.every(item=>item.currency===currency)?money(total,currency):(state.cart.length?"Mixed currencies":"—");
-      $("checkoutButton").disabled=!state.cart.length||!state.cart.every(item=>item.currency===currency);
+      updateCheckoutAvailability();
     }catch(error){box.replaceChildren(element("p","muted","Could not load cart: "+error.message));$("checkoutButton").disabled=true;}
   }
   async function loadOrders(){
@@ -193,30 +227,40 @@
     try{const result=await request("/orders");state.orders=result.orders||[];box.replaceChildren();if(!state.orders.length){box.append(element("p","muted","No orders yet."));return;}
       for(const order of state.orders){const row=element("div","order-row");const info=element("div","cart-info");info.append(element("strong","","Order #"+order.id),element("small","",new Date(order.created_at).toLocaleString()+" · "+money(order.total_minor,order.currency)));
         row.append(info,element("span","status "+String(order.status),order.status));
+        const detailsButton=element("button","","Order details");detailsButton.type="button";
+        detailsButton.addEventListener("click",async()=>{detailsButton.disabled=true;try{const detail=await request("/orders/"+encodeURIComponent(order.id));const panel=element("div","order-details-panel");panel.append(element("strong","","Items"));for(const item of detail.items||[])panel.append(element("p","",item.product_name+" × "+item.quantity+" — "+money(item.line_total_minor,order.currency)));const address=detail.order.shipping_address;if(address)panel.append(element("p","", "Ship to: "+[address.recipient_name,address.phone,address.address_line1,address.address_line2,address.city,address.region,address.country].filter(Boolean).join(", ")));row.after(panel);}catch(error){$("checkoutMessage").textContent=error.message;}finally{detailsButton.disabled=false;}});row.append(detailsButton);
         if(order.status==="pending"&&order.checkout_url&&order.checkout_url.startsWith("https://")){const link=element("a","","Resume checkout");link.href=order.checkout_url;link.rel="noopener noreferrer";link.target="_blank";row.append(link);}
         box.append(row);
       }
     }catch(error){box.replaceChildren(element("p","muted","Could not load orders: "+error.message));}
   }
+  $("shippingAddressSelect").addEventListener("change",updateCheckoutAvailability);
+  $("addressForm").addEventListener("submit",async event=>{
+    event.preventDefault();const form=new FormData(event.currentTarget),message=$("addressMessage");message.textContent="Saving address…";
+    const body={label:String(form.get("label")||"").trim(),recipientName:String(form.get("recipientName")||"").trim(),phone:String(form.get("phone")||"").trim(),country:String(form.get("country")||"").trim(),region:String(form.get("region")||"").trim(),city:String(form.get("city")||"").trim(),addressLine1:String(form.get("addressLine1")||"").trim(),addressLine2:String(form.get("addressLine2")||"").trim(),postalCode:String(form.get("postalCode")||"").trim(),isDefault:form.get("isDefault")==="on"};
+    try{await request("/addresses",{method:"POST",body:JSON.stringify(body)});message.textContent="Address saved to your account.";event.currentTarget.reset();await loadAddresses();}
+    catch(error){message.textContent=error.message;}
+  });
+  $("addressesButton").addEventListener("click",loadAddresses);
   $("checkoutButton").addEventListener("click",async()=>{
     if(!token()){$("checkoutMessage").textContent="Sign in first to check out.";return;}
     $("checkoutButton").disabled=true;$("checkoutMessage").textContent="Creating hosted checkout…";
-    try{const result=await request("/checkout",{method:"POST",body:JSON.stringify({items:state.cart.map(item=>({productId:Number(item.product_id),quantity:Number(item.quantity)}))})});
+    try{const result=await request("/checkout",{method:"POST",body:JSON.stringify({items:state.cart.map(item=>({productId:Number(item.product_id),quantity:Number(item.quantity)})),addressId:$("shippingAddressSelect").value?Number($("shippingAddressSelect").value):null})});
       if(!result.checkoutUrl||!result.checkoutUrl.startsWith("https://"))throw new Error("The server did not return a valid hosted checkout URL.");
       window.location.assign(result.checkoutUrl);
     }catch(error){$("checkoutMessage").textContent=error.message;$("checkoutButton").disabled=false;}
   });
   $("productForm").addEventListener("submit",async event=>{
     event.preventDefault();const form=new FormData(event.currentTarget);const message=$("adminMessage");message.textContent="Creating product…";
-    const body={name:String(form.get("name")||"").trim(),category:String(form.get("category")||"General").trim(),description:String(form.get("description")||"").trim(),priceMinor:Number(form.get("priceMinor")),currency:String(form.get("currency")||"RWF"),stockQuantity:Number(form.get("stockQuantity")),imageUrl:String(form.get("imageUrl")||"").trim()||null,sku:String(form.get("sku")||"").trim()||null};
+    const body={name:String(form.get("name")||"").trim(),category:String(form.get("category")||"General").trim(),requiresShipping:form.get("requiresShipping")==="on",description:String(form.get("description")||"").trim(),priceMinor:Number(form.get("priceMinor")),currency:String(form.get("currency")||"RWF"),stockQuantity:Number(form.get("stockQuantity")),imageUrl:String(form.get("imageUrl")||"").trim()||null,sku:String(form.get("sku")||"").trim()||null};
     try{const result=await request("/products",{method:"POST",body:JSON.stringify(body)});message.textContent="Product created: "+result.product.name;event.currentTarget.reset();await loadProducts();}
     catch(error){message.textContent=error.message;}
   });
   $("productSearch").addEventListener("input",()=>{clearTimeout(window.marketSearchTimer);window.marketSearchTimer=setTimeout(loadProducts,180);});
   $("categoryFilter").addEventListener("change",loadProducts);
   $("productSort").addEventListener("change",loadProducts);
-  $("reloadButton").addEventListener("click",async()=>{showAuthNotice();await Promise.all([loadProducts(),loadCart(),loadWishlist()]);if(token())await loadOrders();});
+  $("reloadButton").addEventListener("click",async()=>{showAuthNotice();await Promise.all([loadProducts(),loadCart(),loadWishlist(),loadAddresses()]);if(token())await loadOrders();});
   $("wishlistButton").addEventListener("click",loadWishlist);
   $("ordersButton").addEventListener("click",loadOrders);
-  showAuthNotice();loadProducts();loadCart();loadWishlist();if(token())loadOrders();
+  showAuthNotice();loadProducts();loadCart();loadWishlist();loadAddresses();if(token())loadOrders();
 })();

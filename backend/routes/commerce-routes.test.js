@@ -33,6 +33,9 @@ test("commerce schema initializer creates indexed products and user-owned orders
   assert.match(calls[0], /CREATE TABLE IF NOT EXISTS commerce_product_reviews/);
   assert.match(calls[0], /UNIQUE \(user_id, product_id\)/);
   assert.match(calls[0], /CREATE TABLE IF NOT EXISTS commerce_orders/);
+  assert.match(calls[0], /CREATE TABLE IF NOT EXISTS commerce_addresses/);
+  assert.match(calls[0], /shipping_address JSONB/);
+  assert.match(calls[0], /requires_shipping BOOLEAN NOT NULL DEFAULT TRUE/);
   assert.match(calls[0], /CREATE TABLE IF NOT EXISTS commerce_order_items/);
   assert.match(calls[0], /CREATE TABLE IF NOT EXISTS commerce_cart_items/);
   assert.match(calls[0], /PRIMARY KEY \(user_id, product_id\)/);
@@ -62,7 +65,7 @@ test("public product endpoint returns active product data from the database", as
     pool: { async query(sql) {
       if (sql.includes("SELECT DISTINCT category")) return { rows: [{ category: "Stationery" }] };
       assert.match(sql, /FROM commerce_products p/);
-      return { rows: [{ id: "4", name: "Notebook", price_minor: "2500", currency: "RWF", stock_quantity: 8, category: "Stationery", rating_average: "4.5", review_count: 2 }] };
+      return { rows: [{ id: "4", name: "Notebook", price_minor: "2500", currency: "RWF", stock_quantity: 8, category: "Stationery", requires_shipping: false, rating_average: "4.5", review_count: 2 }] };
     } },
     authenticateToken: (req, res, next) => { req.user = { id: 7, email: "buyer@example.com" }; next(); },
     env: {}
@@ -171,7 +174,7 @@ test("product catalogue supports parameterized search, category filters and allo
 test("wishlist reads and writes are scoped to the authenticated account ID", async () => {
   const app=express();app.use(express.json());const calls=[];
   app.use("/api/commerce",createCommerceRouter({
-    pool:{async query(sql,params){calls.push({sql,params});if(sql.includes("SELECT id FROM commerce_products"))return{rows:[{id:"3"}]};if(sql.includes("FROM commerce_wishlist_items"))return{rows:[{id:"3",name:"Saved book"}]};return{rows:[]};}},
+    pool:{async query(sql,params){calls.push({sql,params});if(sql.includes("SELECT id FROM commerce_products"))return{rows:[{id:"3",requires_shipping:true}]};if(sql.includes("FROM commerce_wishlist_items"))return{rows:[{id:"3",name:"Saved book"}]};return{rows:[]};}},
     authenticateToken:(req,res,next)=>{req.user={id:42,email:"private@example.com"};next();},env:{}
   }));
   await withServer(app,async base=>{
@@ -201,7 +204,7 @@ test("hosted checkout uses the authenticated account email, never a browser-supp
   const client={
     async query(sql){
       if(sql==="BEGIN"||sql==="COMMIT"||sql==="ROLLBACK")return{rows:[]};
-      if(sql.includes("FROM commerce_products"))return{rows:[{id:"5",name:"Book",price_minor:"1200",currency:"RWF",stock_quantity:3}]};
+      if(sql.includes("FROM commerce_products"))return{rows:[{id:"5",name:"Book",price_minor:"1200",currency:"RWF",stock_quantity:3,requires_shipping:false}]};
       if(sql.includes("INSERT INTO commerce_orders"))return{rows:[{id:"71"}]};
       return{rows:[]};
     },release(){}
@@ -215,5 +218,47 @@ test("hosted checkout uses the authenticated account email, never a browser-supp
   await withServer(app,async base=>{
     const response=await fetch(base+"/api/commerce/checkout",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:"attacker@example.com",items:[{productId:5,quantity:1}]})});
     assert.equal(response.status,201);assert.equal(providerPayload.customer.email,"account@example.com");assert.equal(providerPayload.meta.user_id,"8");
+  });
+});
+
+
+test("shipping addresses are stored and listed only for the authenticated account", async () => {
+  const app=express();app.use(express.json());const calls=[];
+  app.use("/api/commerce",createCommerceRouter({
+    pool:{async query(sql,params){calls.push({sql,params});if(sql.includes("INSERT INTO commerce_addresses"))return{rows:[{id:"11",label:params[1],recipient_name:params[2],city:params[6],country:params[4],is_default:params[10]}]};if(sql.includes("FROM commerce_addresses WHERE user_id=$1"))return{rows:[{id:"11",label:"Home",city:"Kigali",country:"Rwanda"}]};return{rows:[]};}},
+    authenticateToken:(req,res,next)=>{req.user={id:77,email:"account@example.com"};next();},env:{}
+  }));
+  await withServer(app,async base=>{
+    const create=await fetch(base+"/api/commerce/addresses",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({label:"Home",recipientName:"Buyer",phone:"+250780000000",country:"Rwanda",city:"Kigali",addressLine1:"Kicukiro",isDefault:true})});
+    assert.equal(create.status,201);assert.equal(calls[0].params[0],77);
+    const list=await fetch(base+"/api/commerce/addresses");assert.equal(list.status,200);
+    assert.ok(calls.some(call=>call.sql.includes("WHERE user_id=$1")&&call.params[0]===77));
+  });
+});
+
+test("checkout rejects a shipping address that does not belong to the signed-in account", async () => {
+  const app=express();app.use(express.json());let providerCalled=false;
+  const client={async query(sql){if(sql==="BEGIN"||sql==="ROLLBACK")return{rows:[]};if(sql.includes("FROM commerce_products"))return{rows:[{id:"5",name:"Physical item",price_minor:"1200",currency:"RWF",stock_quantity:3,requires_shipping:true}]};if(sql.includes("FROM commerce_addresses"))return{rows:[]};return{rows:[]};},release(){}};
+  app.use("/api/commerce",createCommerceRouter({
+    pool:{async connect(){return client;},async query(){return{rows:[]};}},
+    authenticateToken:(req,res,next)=>{req.user={id:8,email:"account@example.com"};next();},
+    fetchImpl:async()=>{providerCalled=true;throw new Error("provider should not be called");},
+    env:{FLW_SECRET_KEY:"test-secret",FLW_SECRET_HASH:"test-hash",FLW_REDIRECT_URL:"https://market.example.test/return"}
+  }));
+  await withServer(app,async base=>{
+    const response=await fetch(base+"/api/commerce/checkout",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({addressId:999,items:[{productId:5,quantity:1}]})});
+    assert.equal(response.status,400);assert.equal((await response.json()).code,"SHIPPING_ADDRESS_NOT_FOUND");assert.equal(providerCalled,false);
+  });
+});
+
+test("order details are not disclosed to a different account", async () => {
+  const app=express();app.use(express.json());let params;
+  app.use("/api/commerce",createCommerceRouter({
+    pool:{async query(sql,values){params=values;return{rows:[]};}},
+    authenticateToken:(req,res,next)=>{req.user={id:55,email:"account@example.com"};next();},env:{}
+  }));
+  await withServer(app,async base=>{
+    const response=await fetch(base+"/api/commerce/orders/12");
+    assert.equal(response.status,404);assert.equal((await response.json()).code,"ORDER_NOT_FOUND");assert.deepEqual(params,[12,55]);
   });
 });

@@ -20,10 +20,12 @@ async function ensureCommerceSchema(pool) {
       active BOOLEAN NOT NULL DEFAULT TRUE,
       image_url TEXT,
       category TEXT NOT NULL DEFAULT 'General' CHECK (length(trim(category)) BETWEEN 1 AND 80),
+      requires_shipping BOOLEAN NOT NULL DEFAULT TRUE,
       created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
     ALTER TABLE commerce_products ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'General';
+    ALTER TABLE commerce_products ADD COLUMN IF NOT EXISTS requires_shipping BOOLEAN NOT NULL DEFAULT TRUE;
     CREATE INDEX IF NOT EXISTS idx_commerce_products_active ON commerce_products(active, id);
     CREATE TABLE IF NOT EXISTS commerce_wishlist_items (
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -53,11 +55,30 @@ async function ensureCommerceSchema(pool) {
       provider TEXT NOT NULL DEFAULT 'flutterwave',
       provider_transaction_id TEXT,
       checkout_url TEXT,
+      shipping_address JSONB,
       created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
       paid_at TIMESTAMPTZ
     );
+    ALTER TABLE commerce_orders ADD COLUMN IF NOT EXISTS shipping_address JSONB;
     CREATE INDEX IF NOT EXISTS idx_commerce_orders_user_created ON commerce_orders(user_id, created_at DESC);
+    CREATE TABLE IF NOT EXISTS commerce_addresses (
+      id BIGSERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      label TEXT NOT NULL CHECK (length(trim(label)) BETWEEN 1 AND 80),
+      recipient_name TEXT NOT NULL CHECK (length(trim(recipient_name)) BETWEEN 1 AND 160),
+      phone TEXT NOT NULL CHECK (length(trim(phone)) BETWEEN 3 AND 40),
+      country TEXT NOT NULL CHECK (length(trim(country)) BETWEEN 2 AND 100),
+      region TEXT NOT NULL DEFAULT '',
+      city TEXT NOT NULL CHECK (length(trim(city)) BETWEEN 1 AND 120),
+      address_line1 TEXT NOT NULL CHECK (length(trim(address_line1)) BETWEEN 1 AND 240),
+      address_line2 TEXT NOT NULL DEFAULT '',
+      postal_code TEXT NOT NULL DEFAULT '',
+      is_default BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_commerce_addresses_user_default ON commerce_addresses(user_id, is_default DESC, updated_at DESC);
     CREATE TABLE IF NOT EXISTS commerce_order_items (
       id BIGSERIAL PRIMARY KEY,
       order_id BIGINT NOT NULL REFERENCES commerce_orders(id) ON DELETE CASCADE,
@@ -119,6 +140,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
     const currency = String(req.body?.currency || "RWF").toUpperCase();
     const imageUrl = req.body?.imageUrl == null || req.body.imageUrl === "" ? null : String(req.body.imageUrl).trim();
     const category = String(req.body?.category || "General").trim().slice(0, 80) || "General";
+    const requiresShipping = req.body?.requiresShipping !== false;
     if (!name || !priceMinor || stockQuantity === null || !CURRENCIES.has(currency)) {
       return res.status(400).json({ success: false, error: "Name, positive priceMinor, supported currency and valid stockQuantity are required.", code: "PRODUCT_INPUT_INVALID" });
     }
@@ -128,8 +150,8 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
     }
     try {
       const result = await pool.query(
-        "INSERT INTO commerce_products (name, description, sku, price_minor, currency, stock_quantity, image_url, category, active) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,TRUE) RETURNING id, name, description, sku, price_minor, currency, stock_quantity, image_url, category, active, created_at",
-        [name, description, sku || null, priceMinor, currency, stockQuantity, imageUrl, category]
+        "INSERT INTO commerce_products (name, description, sku, price_minor, currency, stock_quantity, image_url, category, requires_shipping, active) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,TRUE) RETURNING id, name, description, sku, price_minor, currency, stock_quantity, image_url, category, requires_shipping, active, created_at",
+        [name, description, sku || null, priceMinor, currency, stockQuantity, imageUrl, category, requiresShipping]
       );
       return res.status(201).json({ success: true, product: result.rows[0] });
     } catch (error) {
@@ -155,6 +177,10 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
       const value = String(body.category || "").trim().slice(0, 80);
       if (!value) return res.status(400).json({ success: false, error: "Category cannot be empty.", code: "PRODUCT_INPUT_INVALID" });
       add("category", value);
+    }
+    if (Object.prototype.hasOwnProperty.call(body, "requiresShipping")) {
+      if (typeof body.requiresShipping !== "boolean") return res.status(400).json({ success: false, error: "requiresShipping must be true or false.", code: "PRODUCT_INPUT_INVALID" });
+      add("requires_shipping", body.requiresShipping);
     }
     if (Object.prototype.hasOwnProperty.call(body, "sku")) add("sku", body.sku == null || body.sku === "" ? null : String(body.sku).trim().slice(0, 80));
     if (Object.prototype.hasOwnProperty.call(body, "priceMinor")) {
@@ -188,7 +214,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
     values.push(productId);
     try {
       const result = await pool.query(
-        "UPDATE commerce_products SET " + fields.join(", ") + ", updated_at=CURRENT_TIMESTAMP WHERE id=$" + values.length + " RETURNING id, name, description, sku, price_minor, currency, stock_quantity, image_url, category, active, updated_at",
+        "UPDATE commerce_products SET " + fields.join(", ") + ", updated_at=CURRENT_TIMESTAMP WHERE id=$" + values.length + " RETURNING id, name, description, sku, price_minor, currency, stock_quantity, image_url, category, requires_shipping, active, updated_at",
         values
       );
       if (!result.rows.length) return res.status(404).json({ success: false, error: "Product not found.", code: "PRODUCT_NOT_FOUND" });
@@ -207,7 +233,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
       const sort = String(req.query.sort || "newest");
       const orderBy = ({ newest: "p.id DESC", price_asc: "p.price_minor ASC, p.id DESC", price_desc: "p.price_minor DESC, p.id DESC", name_asc: "p.name ASC, p.id DESC", rating: "rating_average DESC, p.id DESC" })[sort] || "p.id DESC";
       const result = await pool.query(
-        "SELECT p.id, p.name, p.description, p.sku, p.price_minor, p.currency, p.stock_quantity, p.image_url, p.category, COALESCE(rv.rating_average, 0) AS rating_average, COALESCE(rv.review_count, 0) AS review_count FROM commerce_products p LEFT JOIN (SELECT product_id, ROUND(AVG(rating)::numeric, 1) AS rating_average, COUNT(*)::int AS review_count FROM commerce_product_reviews GROUP BY product_id) rv ON rv.product_id=p.id WHERE p.active=TRUE AND ($1='' OR p.name ILIKE '%' || $1 || '%' OR p.description ILIKE '%' || $1 || '%' OR p.sku ILIKE '%' || $1 || '%') AND ($2='' OR p.category=$2) ORDER BY " + orderBy + " LIMIT $3",
+        "SELECT p.id, p.name, p.description, p.sku, p.price_minor, p.currency, p.stock_quantity, p.image_url, p.category, p.requires_shipping, COALESCE(rv.rating_average, 0) AS rating_average, COALESCE(rv.review_count, 0) AS review_count FROM commerce_products p LEFT JOIN (SELECT product_id, ROUND(AVG(rating)::numeric, 1) AS rating_average, COUNT(*)::int AS review_count FROM commerce_product_reviews GROUP BY product_id) rv ON rv.product_id=p.id WHERE p.active=TRUE AND ($1='' OR p.name ILIKE '%' || $1 || '%' OR p.description ILIKE '%' || $1 || '%' OR p.sku ILIKE '%' || $1 || '%') AND ($2='' OR p.category=$2) ORDER BY " + orderBy + " LIMIT $3",
         [search, category, limit]
       );
       const categories = await pool.query("SELECT DISTINCT category FROM commerce_products WHERE active=TRUE ORDER BY category LIMIT 100");
@@ -245,7 +271,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
 
   router.get("/wishlist", authenticateToken, async (req, res) => {
     try {
-      const result = await pool.query("SELECT p.id, p.name, p.description, p.price_minor, p.currency, p.stock_quantity, p.image_url, p.category, w.created_at AS saved_at FROM commerce_wishlist_items w JOIN commerce_products p ON p.id=w.product_id WHERE w.user_id=$1 AND p.active=TRUE ORDER BY w.created_at DESC", [req.user.id]);
+      const result = await pool.query("SELECT p.id, p.name, p.description, p.price_minor, p.currency, p.stock_quantity, p.image_url, p.category, p.requires_shipping, w.created_at AS saved_at FROM commerce_wishlist_items w JOIN commerce_products p ON p.id=w.product_id WHERE w.user_id=$1 AND p.active=TRUE ORDER BY w.created_at DESC", [req.user.id]);
       return res.json({ success: true, products: result.rows });
     } catch (error) {
       return res.status(500).json({ success: false, error: "Could not load wishlist.", code: "WISHLIST_LOAD_FAILED" });
@@ -269,10 +295,78 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
     }
   });
 
+  router.get("/addresses", authenticateToken, async (req, res) => {
+    try {
+      const result = await pool.query("SELECT id, label, recipient_name, phone, country, region, city, address_line1, address_line2, postal_code, is_default, created_at, updated_at FROM commerce_addresses WHERE user_id=$1 ORDER BY is_default DESC, updated_at DESC", [req.user.id]);
+      return res.json({ success: true, addresses: result.rows });
+    } catch (error) {
+      return res.status(500).json({ success: false, error: "Could not load addresses.", code: "ADDRESSES_LOAD_FAILED" });
+    }
+  });
+
+  router.post("/addresses", authenticateToken, async (req, res) => {
+    const body = req.body || {};
+    const address = {
+      label: String(body.label || "").trim().slice(0, 80),
+      recipientName: String(body.recipientName || "").trim().slice(0, 160),
+      phone: String(body.phone || "").trim().slice(0, 40),
+      country: String(body.country || "").trim().slice(0, 100),
+      region: String(body.region || "").trim().slice(0, 120),
+      city: String(body.city || "").trim().slice(0, 120),
+      addressLine1: String(body.addressLine1 || "").trim().slice(0, 240),
+      addressLine2: String(body.addressLine2 || "").trim().slice(0, 240),
+      postalCode: String(body.postalCode || "").trim().slice(0, 40),
+      isDefault: body.isDefault === true
+    };
+    if (!address.label || !address.recipientName || address.phone.length < 3 || address.country.length < 2 || !address.city || !address.addressLine1) {
+      return res.status(400).json({ success: false, error: "Label, recipient, phone, country, city and first address line are required.", code: "ADDRESS_INPUT_INVALID" });
+    }
+    try {
+      const result = await pool.query(
+        "WITH reset AS (UPDATE commerce_addresses SET is_default=FALSE, updated_at=CURRENT_TIMESTAMP WHERE user_id=$1 AND $11::boolean RETURNING id) INSERT INTO commerce_addresses (user_id,label,recipient_name,phone,country,region,city,address_line1,address_line2,postal_code,is_default) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id,label,recipient_name,phone,country,region,city,address_line1,address_line2,postal_code,is_default,created_at,updated_at",
+        [req.user.id,address.label,address.recipientName,address.phone,address.country,address.region,address.city,address.addressLine1,address.addressLine2,address.postalCode,address.isDefault]
+      );
+      return res.status(201).json({ success: true, address: result.rows[0] });
+    } catch (error) {
+      return res.status(500).json({ success: false, error: "Could not save address.", code: "ADDRESS_SAVE_FAILED" });
+    }
+  });
+
+  router.put("/addresses/:addressId/default", authenticateToken, async (req, res) => {
+    const addressId = safeInteger(req.params.addressId, 1, Number.MAX_SAFE_INTEGER);
+    if (!addressId) return res.status(400).json({ success: false, error: "Invalid address ID.", code: "ADDRESS_ID_INVALID" });
+    const client = typeof pool.connect === "function" ? await pool.connect() : null;
+    if (!client) return res.status(503).json({ success: false, error: "Address update requires transaction support.", code: "ADDRESS_TRANSACTION_UNAVAILABLE" });
+    try {
+      await client.query("BEGIN");
+      const owned = await client.query("SELECT id FROM commerce_addresses WHERE id=$1 AND user_id=$2 FOR UPDATE", [addressId, req.user.id]);
+      if (!owned.rows.length) { await client.query("ROLLBACK"); return res.status(404).json({ success: false, error: "Address not found.", code: "ADDRESS_NOT_FOUND" }); }
+      await client.query("UPDATE commerce_addresses SET is_default=FALSE,updated_at=CURRENT_TIMESTAMP WHERE user_id=$1", [req.user.id]);
+      await client.query("UPDATE commerce_addresses SET is_default=TRUE,updated_at=CURRENT_TIMESTAMP WHERE id=$1 AND user_id=$2", [addressId, req.user.id]);
+      await client.query("COMMIT");
+      return res.json({ success: true, defaultAddressId: addressId });
+    } catch (error) {
+      try { await client.query("ROLLBACK"); } catch {}
+      return res.status(500).json({ success: false, error: "Could not set default address.", code: "ADDRESS_DEFAULT_FAILED" });
+    } finally { client.release(); }
+  });
+
+  router.delete("/addresses/:addressId", authenticateToken, async (req, res) => {
+    const addressId = safeInteger(req.params.addressId, 1, Number.MAX_SAFE_INTEGER);
+    if (!addressId) return res.status(400).json({ success: false, error: "Invalid address ID.", code: "ADDRESS_ID_INVALID" });
+    try {
+      const result = await pool.query("DELETE FROM commerce_addresses WHERE id=$1 AND user_id=$2 RETURNING id", [addressId, req.user.id]);
+      if (!result.rows.length) return res.status(404).json({ success: false, error: "Address not found.", code: "ADDRESS_NOT_FOUND" });
+      return res.json({ success: true, deleted: true });
+    } catch (error) {
+      return res.status(500).json({ success: false, error: "Could not delete address.", code: "ADDRESS_DELETE_FAILED" });
+    }
+  });
+
   router.get("/cart", authenticateToken, async (req, res) => {
     try {
       const result = await pool.query(
-        "SELECT p.id AS product_id, p.name, p.description, p.price_minor, p.currency, p.stock_quantity, p.image_url, c.quantity, (p.price_minor * c.quantity) AS line_total_minor FROM commerce_cart_items c JOIN commerce_products p ON p.id=c.product_id WHERE c.user_id=$1 AND p.active=TRUE ORDER BY c.updated_at DESC",
+        "SELECT p.id AS product_id, p.name, p.description, p.price_minor, p.currency, p.stock_quantity, p.image_url, p.requires_shipping, c.quantity, (p.price_minor * c.quantity) AS line_total_minor FROM commerce_cart_items c JOIN commerce_products p ON p.id=c.product_id WHERE c.user_id=$1 AND p.active=TRUE ORDER BY c.updated_at DESC",
         [req.user.id]
       );
       return res.json({ success: true, items: result.rows });
@@ -310,12 +404,25 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
   router.get("/orders", authenticateToken, async (req, res) => {
     try {
       const result = await pool.query(
-        "SELECT id, tx_ref, status, currency, total_minor, provider, checkout_url, created_at, updated_at, paid_at FROM commerce_orders WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100",
+        "SELECT id, tx_ref, status, currency, total_minor, provider, checkout_url, shipping_address, created_at, updated_at, paid_at FROM commerce_orders WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100",
         [req.user.id]
       );
       return res.json({ success: true, orders: result.rows });
     } catch (error) {
       return res.status(500).json({ success: false, error: "Could not load orders.", code: "ORDERS_LOAD_FAILED" });
+    }
+  });
+
+  router.get("/orders/:orderId", authenticateToken, async (req, res) => {
+    const orderId = safeInteger(req.params.orderId, 1, Number.MAX_SAFE_INTEGER);
+    if (!orderId) return res.status(400).json({ success: false, error: "Invalid order ID.", code: "ORDER_ID_INVALID" });
+    try {
+      const result = await pool.query("SELECT id, tx_ref, status, currency, total_minor, provider, provider_transaction_id, checkout_url, shipping_address, created_at, updated_at, paid_at FROM commerce_orders WHERE id=$1 AND user_id=$2 LIMIT 1", [orderId, req.user.id]);
+      if (!result.rows.length) return res.status(404).json({ success: false, error: "Order not found.", code: "ORDER_NOT_FOUND" });
+      const items = await pool.query("SELECT product_id, product_name, quantity, unit_price_minor, line_total_minor FROM commerce_order_items WHERE order_id=$1 ORDER BY id", [orderId]);
+      return res.json({ success: true, order: result.rows[0], items: items.rows });
+    } catch (error) {
+      return res.status(500).json({ success: false, error: "Could not load order details.", code: "ORDER_DETAILS_FAILED" });
     }
   });
 
@@ -353,7 +460,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
       await client.query("BEGIN");
       const ids = [...quantities.keys()];
       const productResult = await client.query(
-        "SELECT id, name, price_minor, currency, stock_quantity FROM commerce_products WHERE active = TRUE AND id = ANY($1::bigint[]) FOR UPDATE",
+        "SELECT id, name, price_minor, currency, stock_quantity, requires_shipping FROM commerce_products WHERE active = TRUE AND id = ANY($1::bigint[]) FOR UPDATE",
         [ids]
       );
       if (productResult.rows.length !== ids.length) {
@@ -367,6 +474,21 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
         return res.status(400).json({ success: false, code: "CURRENCY_MISMATCH", error: "Cart items must use the same supported currency." });
       }
       currency = productResult.rows[0].currency;
+      const requiresShipping = productResult.rows.some(product => product.requires_shipping !== false);
+      let shippingAddress = null;
+      if (requiresShipping) {
+        const addressId = safeInteger(req.body?.addressId, 1, Number.MAX_SAFE_INTEGER);
+        if (!addressId) {
+          await client.query("ROLLBACK");
+          return res.status(400).json({ success: false, code: "SHIPPING_ADDRESS_REQUIRED", error: "Select a saved shipping address before checkout." });
+        }
+        const addressResult = await client.query("SELECT label, recipient_name, phone, country, region, city, address_line1, address_line2, postal_code FROM commerce_addresses WHERE id=$1 AND user_id=$2", [addressId, req.user.id]);
+        if (!addressResult.rows.length) {
+          await client.query("ROLLBACK");
+          return res.status(400).json({ success: false, code: "SHIPPING_ADDRESS_NOT_FOUND", error: "The selected shipping address does not belong to this account." });
+        }
+        shippingAddress = addressResult.rows[0];
+      }
       totalMinor = 0;
       const items = [];
       for (const [id, quantity] of quantities) {
@@ -393,8 +515,8 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
       }
       txRef = "irhcf_" + crypto.randomUUID();
       const order = await client.query(
-        "INSERT INTO commerce_orders (user_id, tx_ref, status, currency, total_minor, provider) VALUES ($1,$2,'pending',$3,$4,'flutterwave') RETURNING id",
-        [req.user.id, txRef, currency, totalMinor]
+        "INSERT INTO commerce_orders (user_id, tx_ref, status, currency, total_minor, provider, shipping_address) VALUES ($1,$2,'pending',$3,$4,'flutterwave',$5::jsonb) RETURNING id",
+        [req.user.id, txRef, currency, totalMinor, shippingAddress ? JSON.stringify(shippingAddress) : null]
       );
       orderId = order.rows[0].id;
       for (const item of items) {
