@@ -831,7 +831,7 @@ test("marketplace seller analytics dashboard is connected to approved-account an
   const routes=fs.readFileSync(path.join(root,"backend","routes","commerce-routes.js"),"utf8");
   for(const id of ["sellerAnalyticsDays","sellerAnalyticsRefresh","sellerAnalyticsSummary","sellerSalesChart","sellerTopProducts","sellerFulfillmentSummary"]) assert.ok(html.includes('id="'+id+'"'),"missing analytics UI: "+id);
   assert.match(html,/market\.css\?v=14/);
-  assert.match(html,/market\.js\?v=16/);
+  assert.match(html,/market\.js\?v=17/);
   assert.match(js,/async function loadSellerAnalytics\(\)/);
   assert.match(js,/\/seller\/analytics\?days=/);
   assert.match(js,/sellerAnalyticsDays.*addEventListener\("change",loadSellerAnalytics\)/);
@@ -868,4 +868,22 @@ test("retired Sora video provider is blocked and the UI checks provider readines
   assert.match(app, /async function checkVideoProviderAvailability\(\)\s*\{\s*if \(!authToken\)/, "Video status checks must preserve the sign-in flow.");
   assert.match(html, /Gukora video ya HD byahagaritswe kugeza serivisi ya video yemejwe ihujwe/);
   assert.doesNotMatch(html, /Generate 720p video clips with Sora/);
+});
+
+
+test("marketplace checkout sends a persistent idempotency key and trusts only server-verified return status", () => {
+  const root=path.join(__dirname,"..","..");
+  const html=fs.readFileSync(path.join(root,"market.html"),"utf8");
+  const js=fs.readFileSync(path.join(root,"market.js"),"utf8");
+  const routes=fs.readFileSync(path.join(root,"backend","routes","commerce-routes.js"),"utf8");
+  assert.match(html,/market\.js\?v=17/);
+  assert.match(js,/CHECKOUT_KEY_STORAGE = "nkwasibwe_market_checkout_key"/);
+  assert.match(js,/headers:\{"Idempotency-Key":idempotencyKey\}/);
+  assert.match(js,/sessionStorage\.setItem\(CHECKOUT_KEY_STORAGE/);
+  assert.match(js,/handleVerifiedPaymentReturn/);
+  assert.match(js,/order\?\.status === "paid"/);
+  assert.match(js,/Payment confirmation is still pending on the server\. Do not pay again/);
+  assert.match(routes,/CREATE UNIQUE INDEX IF NOT EXISTS commerce_orders_user_idempotency_unique/);
+  assert.match(routes,/IDEMPOTENCY_KEY_REUSED/);
+  assert.match(routes,/IDEMPOTENCY_KEY_REQUIRED/);
 });
