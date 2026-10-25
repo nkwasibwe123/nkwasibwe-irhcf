@@ -2,7 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { CURRENCIES, toProviderAmount, fromProviderAmount, ensureCommerceSchema } = require("./commerce-routes");
+const { CURRENCIES, toProviderAmount, fromProviderAmount, ensureCommerceSchema, calculateCouponDiscount } = require("./commerce-routes");
 
 test("commerce money conversion preserves integer and minor-unit currencies", () => {
   assert.equal(toProviderAmount(2500, "RWF"), 2500);
@@ -34,6 +34,10 @@ test("commerce schema initializer creates indexed products and user-owned orders
   assert.match(calls[0], /UNIQUE \(user_id, product_id\)/);
   assert.match(calls[0], /CREATE TABLE IF NOT EXISTS commerce_orders/);
   assert.match(calls[0], /CREATE TABLE IF NOT EXISTS commerce_sellers/);
+  assert.match(calls[0], /CREATE TABLE IF NOT EXISTS commerce_coupons/);
+  assert.match(calls[0], /CREATE TABLE IF NOT EXISTS commerce_refund_requests/);
+  assert.match(calls[0], /coupon_code TEXT/);
+  assert.match(calls[0], /discount_minor BIGINT/);
   assert.match(calls[0], /CREATE TABLE IF NOT EXISTS commerce_addresses/);
   assert.match(calls[0], /CREATE TABLE IF NOT EXISTS commerce_order_items/);
   assert.match(calls[0], /fulfillment_status TEXT NOT NULL DEFAULT 'pending'/);
@@ -312,5 +316,50 @@ test("seller fulfillment follows allowed transitions and requires a paid owned o
   await withServer(app,async base=>{
     const response=await fetch(base+"/api/commerce/seller/order-items/9/fulfillment",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({status:"delivered"})});
     assert.equal(response.status,409);assert.equal((await response.json()).code,"FULFILLMENT_TRANSITION_INVALID");assert.equal(updated,false);
+  });
+});
+
+
+test("coupon discount calculation validates currency, minimum spend and positive order total", () => {
+  assert.deepEqual(calculateCouponDiscount({discount_type:"percent",discount_value:20,currency:"RWF",min_subtotal_minor:5000},10000,"RWF"),{discountMinor:2000,error:null});
+  assert.deepEqual(calculateCouponDiscount({discount_type:"fixed",discount_value:500,currency:"RWF",min_subtotal_minor:0},1000,"RWF"),{discountMinor:500,error:null});
+  assert.match(calculateCouponDiscount({discount_type:"percent",discount_value:10,currency:"USD",min_subtotal_minor:0},10000,"RWF").error,/currency/);
+  assert.match(calculateCouponDiscount({discount_type:"percent",discount_value:10,currency:"RWF",min_subtotal_minor:5000},4000,"RWF").error,/minimum subtotal/);
+  assert.match(calculateCouponDiscount({discount_type:"fixed",discount_value:1000,currency:"RWF",min_subtotal_minor:0},1000,"RWF").error,/positive order total/);
+});
+
+test("cart quote computes prices and coupon discount from server-owned product rows", async () => {
+  const app=express();app.use(express.json());
+  app.use("/api/commerce",createCommerceRouter({
+    pool:{async query(sql){if(sql.includes("FROM commerce_products p"))return{rows:[{id:"4",price_minor:"10000",currency:"RWF",stock_quantity:3}]};if(sql.includes("FROM commerce_coupons"))return{rows:[{code:"SAVE20",discount_type:"percent",discount_value:20,currency:"RWF",min_subtotal_minor:"5000"}]};return{rows:[]};}},
+    authenticateToken:(req,res,next)=>{req.user={id:14,email:"buyer@example.com"};next();},env:{}
+  }));
+  await withServer(app,async base=>{
+    const response=await fetch(base+"/api/commerce/quote",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({items:[{productId:4,quantity:1}],couponCode:"save20"})});
+    assert.equal(response.status,200);const quote=await response.json();assert.equal(quote.subtotalMinor,10000);assert.equal(quote.discountMinor,2000);assert.equal(quote.totalMinor,8000);assert.equal(quote.couponCode,"SAVE20");
+  });
+});
+
+test("coupon creation is restricted to configured administrators", async () => {
+  const app=express();app.use(express.json());
+  app.use("/api/commerce",createCommerceRouter({
+    pool:{async query(sql,params){assert.match(sql,/INSERT INTO commerce_coupons/);return{rows:[{id:"5",code:params[0],discount_type:params[2],discount_value:params[3],currency:params[4]}]};}},
+    authenticateToken:(req,res,next)=>{req.user={id:7,email:"admin@example.com"};next();},env:{COMMERCE_ADMIN_USER_IDS:"7"}
+  }));
+  await withServer(app,async base=>{
+    const response=await fetch(base+"/api/commerce/coupons",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({code:"save20",discountType:"percent",discountValue:20,currency:"RWF",minSubtotalMinor:0})});
+    assert.equal(response.status,201);assert.equal((await response.json()).coupon.code,"SAVE20");
+  });
+});
+
+test("refund requests are bound to the authenticated account's paid order", async () => {
+  const app=express();app.use(express.json());let insertParams;
+  app.use("/api/commerce",createCommerceRouter({
+    pool:{async query(sql,params){if(sql.includes("FROM commerce_orders WHERE id=$1 AND user_id=$2"))return{rows:[{id:10,status:"paid"}]};if(sql.includes("INSERT INTO commerce_refund_requests")){insertParams=params;return{rows:[{id:"4",order_id:params[0],user_id:params[1],status:"pending"}]};}return{rows:[]};}},
+    authenticateToken:(req,res,next)=>{req.user={id:44,email:"buyer@example.com"};next();},env:{}
+  }));
+  await withServer(app,async base=>{
+    const response=await fetch(base+"/api/commerce/orders/10/refund-request",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({reason:"The item arrived damaged."})});
+    assert.equal(response.status,201);assert.equal(insertParams[0],10);assert.equal(insertParams[1],44);assert.equal((await response.json()).refundRequest.status,"pending");
   });
 });

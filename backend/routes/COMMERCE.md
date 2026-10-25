@@ -15,6 +15,10 @@ The commerce API is mounted at `/api/commerce`.
 - `GET /api/commerce/cart` — read the signed-in user's persisted cart.
 - `GET /api/commerce/addresses`, `POST /api/commerce/addresses`, `PUT /api/commerce/addresses/:addressId/default`, `DELETE /api/commerce/addresses/:addressId` — private account-owned delivery address book.
 - `GET /api/commerce/orders/:orderId` — order details and line items; the order must belong to the signed-in account.
+- `POST /api/commerce/quote` — server-calculated cart subtotal, coupon discount and total from current database prices.
+- `POST /api/commerce/orders/:orderId/refund-request`, `GET /api/commerce/orders/:orderId/refund-request` — account-owned refund/return request workflow.
+- `GET /api/commerce/refund-requests`, `PATCH /api/commerce/refund-requests/:requestId` — administrator review; marking a request `refunded` requires the external payment-provider refund reference.
+- `POST /api/commerce/coupons`, `GET /api/commerce/coupons`, `PATCH /api/commerce/coupons/:couponId` — administrator coupon management.
 - `GET /api/commerce/wishlist` and `PUT /api/commerce/wishlist/:productId` with `{"saved":true|false}` — private, account-scoped favourites.
 - `GET /api/commerce/products/:productId/reviews` — public product reviews.
 - `POST /api/commerce/products/:productId/reviews` — create/update a 1–5 star review; the same account must have a confirmed paid order containing that product.
@@ -39,5 +43,5 @@ Set the Flutterwave webhook destination to `https://nkwasibwe-irhcf.onrender.com
 ## Not yet production complete
 
 - Do not accept real payments until a Flutterwave sandbox checkout and webhook have been verified end-to-end with test credentials.
-- Shipping carrier/rate integration, tax calculation, coupons/discounts, refunds/returns/disputes, seller payouts and settlement reconciliation, product image uploads, order expiry/stock reservation, and production operational monitoring need further work.
+- Shipping carrier/rate integration, tax calculation, automated payment-provider refunds (refund status is not changed to `refunded` until an external refund has been completed and referenced), returns/disputes logistics, seller payouts and settlement reconciliation, product image uploads, order expiry/stock reservation, and production operational monitoring need further work.
 - Add and test any required environment values without committing credentials to Git.

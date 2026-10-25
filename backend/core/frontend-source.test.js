@@ -627,3 +627,22 @@ test("marketplace seller onboarding, seller-owned inventory, paid-order fulfillm
   assert.match(routes, /FULFILLMENT_TRANSITION_INVALID/);
   assert.match(routes, /reviewed_by/);
 });
+
+
+test("marketplace coupon quotes, admin coupon controls and refund workflows are connected to the server", () => {
+  const root=path.join(__dirname,"..","..");
+  const html=fs.readFileSync(path.join(root,"market.html"),"utf8");
+  const js=fs.readFileSync(path.join(root,"market.js"),"utf8");
+  const routes=fs.readFileSync(path.join(root,"backend","routes","commerce-routes.js"),"utf8");
+  for(const id of ["couponCodeInput","applyCouponButton","couponMessage","couponForm","couponsList","refundRequestsButton","refundRequestsList"])assert.ok(html.includes('id="'+id+'"'),"missing coupon/refund UI: "+id);
+  assert.match(js,/async function loadQuote\(\)/);
+  assert.match(js,/request\("\/quote"/);
+  assert.match(js,/couponCode:state\.couponCode/);
+  assert.match(js,/\/refund-request/);
+  assert.match(js,/async function loadRefundRequests\(\)/);
+  assert.match(routes,/CREATE TABLE IF NOT EXISTS commerce_coupons/);
+  assert.match(routes,/CREATE TABLE IF NOT EXISTS commerce_refund_requests/);
+  assert.match(routes,/calculateCouponDiscount/);
+  assert.match(routes,/WHERE id=\$1 AND user_id=\$2/);
+  assert.match(routes,/provider_refund_reference/);
+});

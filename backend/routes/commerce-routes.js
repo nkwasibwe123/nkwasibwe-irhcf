@@ -61,6 +61,24 @@ async function ensureCommerceSchema(pool) {
       UNIQUE (user_id, product_id)
     );
     CREATE INDEX IF NOT EXISTS idx_commerce_reviews_product_created ON commerce_product_reviews(product_id, created_at DESC);
+    CREATE TABLE IF NOT EXISTS commerce_coupons (
+      id BIGSERIAL PRIMARY KEY,
+      code TEXT NOT NULL UNIQUE CHECK (code ~ '^[A-Z0-9_-]{3,40}$'),
+      description TEXT NOT NULL DEFAULT '',
+      discount_type TEXT NOT NULL CHECK (discount_type IN ('percent','fixed')),
+      discount_value BIGINT NOT NULL CHECK (discount_value > 0),
+      currency TEXT NOT NULL CHECK (currency IN ('RWF','USD','EUR','GBP','UGX','KES','TZS','NGN','ZAR')),
+      min_subtotal_minor BIGINT NOT NULL DEFAULT 0 CHECK (min_subtotal_minor >= 0),
+      active BOOLEAN NOT NULL DEFAULT TRUE,
+      starts_at TIMESTAMPTZ,
+      expires_at TIMESTAMPTZ,
+      redeemed_count INTEGER NOT NULL DEFAULT 0 CHECK (redeemed_count >= 0),
+      created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CHECK (discount_type <> 'percent' OR discount_value <= 90),
+      CHECK (expires_at IS NULL OR starts_at IS NULL OR expires_at > starts_at)
+    );
+    CREATE INDEX IF NOT EXISTS idx_commerce_coupons_active ON commerce_coupons(active, code);
     CREATE TABLE IF NOT EXISTS commerce_orders (
       id BIGSERIAL PRIMARY KEY,
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
@@ -68,6 +86,9 @@ async function ensureCommerceSchema(pool) {
       status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','paid','failed','cancelled','refunded')),
       currency TEXT NOT NULL,
       total_minor BIGINT NOT NULL CHECK (total_minor >= 0),
+      subtotal_minor BIGINT NOT NULL DEFAULT 0 CHECK (subtotal_minor >= 0),
+      discount_minor BIGINT NOT NULL DEFAULT 0 CHECK (discount_minor >= 0),
+      coupon_code TEXT,
       provider TEXT NOT NULL DEFAULT 'flutterwave',
       provider_transaction_id TEXT,
       checkout_url TEXT,
@@ -77,7 +98,25 @@ async function ensureCommerceSchema(pool) {
       paid_at TIMESTAMPTZ
     );
     ALTER TABLE commerce_orders ADD COLUMN IF NOT EXISTS shipping_address JSONB;
+    ALTER TABLE commerce_orders ADD COLUMN IF NOT EXISTS subtotal_minor BIGINT NOT NULL DEFAULT 0;
+    ALTER TABLE commerce_orders ADD COLUMN IF NOT EXISTS discount_minor BIGINT NOT NULL DEFAULT 0;
+    ALTER TABLE commerce_orders ADD COLUMN IF NOT EXISTS coupon_code TEXT;
     CREATE INDEX IF NOT EXISTS idx_commerce_orders_user_created ON commerce_orders(user_id, created_at DESC);
+    CREATE TABLE IF NOT EXISTS commerce_refund_requests (
+      id BIGSERIAL PRIMARY KEY,
+      order_id BIGINT NOT NULL UNIQUE REFERENCES commerce_orders(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      reason TEXT NOT NULL CHECK (length(trim(reason)) BETWEEN 5 AND 2000),
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected','refunded')),
+      admin_note TEXT NOT NULL DEFAULT '',
+      reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      provider_refund_reference TEXT,
+      reviewed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_commerce_refunds_status ON commerce_refund_requests(status, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_commerce_refunds_user ON commerce_refund_requests(user_id, created_at DESC);
     CREATE TABLE IF NOT EXISTS commerce_addresses (
       id BIGSERIAL PRIMARY KEY,
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -133,6 +172,16 @@ function toProviderAmount(minor, currency) {
 function fromProviderAmount(amount, currency) {
   return Math.round(Number(amount) * (["RWF", "UGX", "XAF", "XOF", "JPY"].includes(currency) ? 1 : 100));
 }
+function calculateCouponDiscount(coupon, subtotalMinor, currency) {
+  if (!coupon) return { discountMinor: 0, error: null };
+  if (coupon.currency !== currency) return { discountMinor: 0, error: "Coupon currency does not match the cart." };
+  if (subtotalMinor < Number(coupon.min_subtotal_minor || 0)) return { discountMinor: 0, error: "The cart does not meet this coupon's minimum subtotal." };
+  const value = Number(coupon.discount_value);
+  if (!Number.isSafeInteger(value) || value <= 0) return { discountMinor: 0, error: "Coupon discount is invalid." };
+  const discountMinor = coupon.discount_type === "percent" ? Math.floor(subtotalMinor * value / 100) : Math.min(subtotalMinor, value);
+  if (!Number.isSafeInteger(discountMinor) || discountMinor < 0 || discountMinor >= subtotalMinor) return { discountMinor: 0, error: "Coupon must leave a positive order total." };
+  return { discountMinor, error: null };
+}
 
 function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.fetch, env = process.env } = {}) {
   if (!pool || typeof pool.query !== "function") throw new Error("Commerce router requires a database pool.");
@@ -151,6 +200,74 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
     });
     next();
   }
+  router.post("/coupons", authenticateToken, requireCommerceAdmin, async (req, res) => {
+    const code = String(req.body?.code || "").trim().toUpperCase();
+    const description = String(req.body?.description || "").trim().slice(0, 500);
+    const discountType = String(req.body?.discountType || "");
+    const discountValue = safeInteger(req.body?.discountValue, 1, discountType === "percent" ? 90 : Number.MAX_SAFE_INTEGER);
+    const currency = String(req.body?.currency || "RWF").toUpperCase();
+    const minSubtotalMinor = safeInteger(req.body?.minSubtotalMinor ?? 0, 0, Number.MAX_SAFE_INTEGER);
+    const parseDate = value => value ? new Date(value) : null;
+    const startsAt = parseDate(req.body?.startsAt), expiresAt = parseDate(req.body?.expiresAt);
+    if (!/^[A-Z0-9_-]{3,40}$/.test(code) || !["percent","fixed"].includes(discountType) || !discountValue || minSubtotalMinor === null || !CURRENCIES.has(currency) ||
+        (startsAt && !Number.isFinite(startsAt.getTime())) || (expiresAt && !Number.isFinite(expiresAt.getTime())) ||
+        (startsAt && expiresAt && expiresAt <= startsAt)) {
+      return res.status(400).json({ success: false, error: "Provide a valid code, discount type/value, currency, minimum subtotal and valid date range.", code: "COUPON_INPUT_INVALID" });
+    }
+    try {
+      const result = await pool.query("INSERT INTO commerce_coupons (code,description,discount_type,discount_value,currency,min_subtotal_minor,starts_at,expires_at,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id,code,description,discount_type,discount_value,currency,min_subtotal_minor,active,starts_at,expires_at,redeemed_count", [code,description,discountType,discountValue,currency,minSubtotalMinor,startsAt,expiresAt,req.user.id]);
+      return res.status(201).json({ success: true, coupon: result.rows[0] });
+    } catch (error) {
+      if (error?.code === "23505") return res.status(409).json({ success: false, error: "That coupon code already exists.", code: "COUPON_CODE_CONFLICT" });
+      return res.status(500).json({ success: false, error: "Could not create coupon.", code: "COUPON_CREATE_FAILED" });
+    }
+  });
+
+  router.get("/coupons", authenticateToken, requireCommerceAdmin, async (req, res) => {
+    try {
+      const result = await pool.query("SELECT id,code,description,discount_type,discount_value,currency,min_subtotal_minor,active,starts_at,expires_at,redeemed_count,created_at FROM commerce_coupons ORDER BY created_at DESC LIMIT 200");
+      return res.json({ success: true, coupons: result.rows });
+    } catch (error) {
+      return res.status(500).json({ success: false, error: "Could not load coupons.", code: "COUPONS_LOAD_FAILED" });
+    }
+  });
+
+  router.patch("/coupons/:couponId", authenticateToken, requireCommerceAdmin, async (req, res) => {
+    const couponId = safeInteger(req.params.couponId, 1, Number.MAX_SAFE_INTEGER);
+    if (!couponId || typeof req.body?.active !== "boolean") return res.status(400).json({ success: false, error: "A coupon ID and active boolean are required.", code: "COUPON_INPUT_INVALID" });
+    try {
+      const result = await pool.query("UPDATE commerce_coupons SET active=$2 WHERE id=$1 RETURNING id,code,active,redeemed_count", [couponId,req.body.active]);
+      if (!result.rows.length) return res.status(404).json({ success: false, error: "Coupon not found.", code: "COUPON_NOT_FOUND" });
+      return res.json({ success: true, coupon: result.rows[0] });
+    } catch (error) {
+      return res.status(500).json({ success: false, error: "Could not update coupon.", code: "COUPON_UPDATE_FAILED" });
+    }
+  });
+
+  router.post("/quote", authenticateToken, async (req, res) => {
+    const input = req.body?.items;
+    if (!Array.isArray(input) || input.length < 1 || input.length > MAX_ITEMS) return res.status(400).json({ success: false, error: "Provide between 1 and 50 cart items.", code: "CART_INVALID" });
+    const quantities = new Map();
+    for (const item of input) {
+      const id=safeInteger(item?.productId,1,Number.MAX_SAFE_INTEGER), quantity=safeInteger(item?.quantity,1,MAX_QUANTITY);
+      if(!id||!quantity)return res.status(400).json({success:false,error:"Invalid cart item.",code:"CART_ITEM_INVALID"});
+      quantities.set(id,(quantities.get(id)||0)+quantity);
+      if(quantities.get(id)>MAX_QUANTITY)return res.status(400).json({success:false,error:"A product quantity cannot exceed 99.",code:"CART_QUANTITY_LIMIT"});
+    }
+    try {
+      const products=await pool.query("SELECT p.id,p.price_minor,p.currency,p.stock_quantity FROM commerce_products p WHERE p.active=TRUE AND (p.seller_user_id IS NULL OR EXISTS (SELECT 1 FROM commerce_sellers s WHERE s.user_id=p.seller_user_id AND s.status='approved')) AND p.id=ANY($1::bigint[])",[[...quantities.keys()]]);
+      if(products.rows.length!==quantities.size)return res.status(400).json({success:false,error:"One or more products are unavailable.",code:"PRODUCT_UNAVAILABLE"});
+      const currencies=new Set(products.rows.map(row=>row.currency));
+      if(currencies.size!==1||!CURRENCIES.has(products.rows[0].currency))return res.status(400).json({success:false,error:"Cart items must use the same supported currency.",code:"CURRENCY_MISMATCH"});
+      const byId=new Map(products.rows.map(row=>[String(row.id),row]));let subtotalMinor=0;
+      for(const [id,quantity] of quantities){const product=byId.get(String(id));const unit=Number(product.price_minor);if(Number(product.stock_quantity)<quantity)return res.status(409).json({success:false,error:"A product does not have enough stock.",code:"INSUFFICIENT_STOCK"});if(!Number.isSafeInteger(unit)||unit<0||!Number.isSafeInteger(unit*quantity))return res.status(400).json({success:false,error:"Product price is invalid.",code:"PRICE_INVALID"});subtotalMinor+=unit*quantity;if(!Number.isSafeInteger(subtotalMinor))return res.status(400).json({success:false,error:"Cart total is invalid.",code:"TOTAL_INVALID"});}
+      if(subtotalMinor<=0)return res.status(400).json({success:false,error:"Order subtotal must be greater than zero.",code:"TOTAL_INVALID"});
+      const currency=products.rows[0].currency;const couponCode=String(req.body?.couponCode||"").trim().toUpperCase().slice(0,40)||null;let discountMinor=0;
+      if(couponCode){const couponResult=await pool.query("SELECT code,discount_type,discount_value,currency,min_subtotal_minor FROM commerce_coupons WHERE code=$1 AND active=TRUE AND (starts_at IS NULL OR starts_at<=CURRENT_TIMESTAMP) AND (expires_at IS NULL OR expires_at>CURRENT_TIMESTAMP) LIMIT 1",[couponCode]);if(!couponResult.rows.length)return res.status(400).json({success:false,error:"Coupon is invalid, inactive or expired.",code:"COUPON_INVALID"});const calculation=calculateCouponDiscount(couponResult.rows[0],subtotalMinor,currency);if(calculation.error)return res.status(400).json({success:false,error:calculation.error,code:"COUPON_NOT_APPLICABLE"});discountMinor=calculation.discountMinor;}
+      return res.json({success:true,currency,subtotalMinor,discountMinor,totalMinor:subtotalMinor-discountMinor,couponCode});
+    } catch(error){return res.status(500).json({success:false,error:"Could not calculate cart quote.",code:"QUOTE_FAILED"});}
+  });
+
   async function requireProductManager(req, res, next) {
     if (isCommerceAdmin(req)) return next();
     try {
@@ -365,7 +482,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
       const sort = String(req.query.sort || "newest");
       const orderBy = ({ newest: "p.id DESC", price_asc: "p.price_minor ASC, p.id DESC", price_desc: "p.price_minor DESC, p.id DESC", name_asc: "p.name ASC, p.id DESC", rating: "rating_average DESC, p.id DESC" })[sort] || "p.id DESC";
       const result = await pool.query(
-        "SELECT p.id, p.name, p.description, p.sku, p.price_minor, p.currency, p.stock_quantity, p.image_url, p.category, p.requires_shipping, COALESCE(s.shop_name, 'Nkwasibwe Market') AS seller_name, COALESCE(rv.rating_average, 0) AS rating_average, COALESCE(rv.review_count, 0) AS review_count FROM commerce_products p LEFT JOIN commerce_sellers s ON s.user_id=p.seller_user_id AND s.status='approved' LEFT JOIN (SELECT product_id, ROUND(AVG(rating)::numeric, 1) AS rating_average, COUNT(*)::int AS review_count FROM commerce_product_reviews GROUP BY product_id) rv ON rv.product_id=p.id WHERE p.active=TRUE AND ($1='' OR p.name ILIKE '%' || $1 || '%' OR p.description ILIKE '%' || $1 || '%' OR p.sku ILIKE '%' || $1 || '%') AND ($2='' OR p.category=$2) ORDER BY " + orderBy + " LIMIT $3",
+        "SELECT p.id, p.name, p.description, p.sku, p.price_minor, p.currency, p.stock_quantity, p.image_url, p.category, p.requires_shipping, COALESCE(s.shop_name, 'Nkwasibwe Market') AS seller_name, COALESCE(rv.rating_average, 0) AS rating_average, COALESCE(rv.review_count, 0) AS review_count FROM commerce_products p LEFT JOIN commerce_sellers s ON s.user_id=p.seller_user_id AND s.status='approved' LEFT JOIN (SELECT product_id, ROUND(AVG(rating)::numeric, 1) AS rating_average, COUNT(*)::int AS review_count FROM commerce_product_reviews GROUP BY product_id) rv ON rv.product_id=p.id WHERE p.active=TRUE AND (p.seller_user_id IS NULL OR s.user_id IS NOT NULL) AND ($1='' OR p.name ILIKE '%' || $1 || '%' OR p.description ILIKE '%' || $1 || '%' OR p.sku ILIKE '%' || $1 || '%') AND ($2='' OR p.category=$2) ORDER BY " + orderBy + " LIMIT $3",
         [search, category, limit]
       );
       const categories = await pool.query("SELECT DISTINCT category FROM commerce_products WHERE active=TRUE ORDER BY category LIMIT 100");
@@ -536,7 +653,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
   router.get("/orders", authenticateToken, async (req, res) => {
     try {
       const result = await pool.query(
-        "SELECT id, tx_ref, status, currency, total_minor, provider, checkout_url, shipping_address, created_at, updated_at, paid_at FROM commerce_orders WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100",
+        "SELECT id, tx_ref, status, currency, total_minor, subtotal_minor, discount_minor, coupon_code, provider, checkout_url, shipping_address, created_at, updated_at, paid_at FROM commerce_orders WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100",
         [req.user.id]
       );
       return res.json({ success: true, orders: result.rows });
@@ -549,13 +666,61 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
     const orderId = safeInteger(req.params.orderId, 1, Number.MAX_SAFE_INTEGER);
     if (!orderId) return res.status(400).json({ success: false, error: "Invalid order ID.", code: "ORDER_ID_INVALID" });
     try {
-      const result = await pool.query("SELECT id, tx_ref, status, currency, total_minor, provider, provider_transaction_id, checkout_url, shipping_address, created_at, updated_at, paid_at FROM commerce_orders WHERE id=$1 AND user_id=$2 LIMIT 1", [orderId, req.user.id]);
+      const result = await pool.query("SELECT id, tx_ref, status, currency, total_minor, subtotal_minor, discount_minor, coupon_code, provider, provider_transaction_id, checkout_url, shipping_address, created_at, updated_at, paid_at FROM commerce_orders WHERE id=$1 AND user_id=$2 LIMIT 1", [orderId, req.user.id]);
       if (!result.rows.length) return res.status(404).json({ success: false, error: "Order not found.", code: "ORDER_NOT_FOUND" });
       const items = await pool.query("SELECT product_id, product_name, quantity, unit_price_minor, line_total_minor, fulfillment_status FROM commerce_order_items WHERE order_id=$1 ORDER BY id", [orderId]);
       return res.json({ success: true, order: result.rows[0], items: items.rows });
     } catch (error) {
       return res.status(500).json({ success: false, error: "Could not load order details.", code: "ORDER_DETAILS_FAILED" });
     }
+  });
+
+  router.post("/orders/:orderId/refund-request", authenticateToken, async (req, res) => {
+    const orderId=safeInteger(req.params.orderId,1,Number.MAX_SAFE_INTEGER);
+    const reason=String(req.body?.reason||"").trim().slice(0,2000);
+    if(!orderId||reason.length<5)return res.status(400).json({success:false,error:"Provide an order ID and a refund/return reason of at least 5 characters.",code:"REFUND_REQUEST_INVALID"});
+    try{
+      const order=await pool.query("SELECT id,status FROM commerce_orders WHERE id=$1 AND user_id=$2 LIMIT 1",[orderId,req.user.id]);
+      if(!order.rows.length)return res.status(404).json({success:false,error:"Order not found.",code:"ORDER_NOT_FOUND"});
+      if(order.rows[0].status!=="paid")return res.status(409).json({success:false,error:"Only paid orders can request a refund or return.",code:"ORDER_NOT_PAID"});
+      const result=await pool.query("INSERT INTO commerce_refund_requests (order_id,user_id,reason) VALUES ($1,$2,$3) RETURNING id,order_id,reason,status,created_at",[orderId,req.user.id,reason]);
+      return res.status(201).json({success:true,refundRequest:result.rows[0]});
+    }catch(error){if(error?.code==="23505")return res.status(409).json({success:false,error:"A refund/return request already exists for this order.",code:"REFUND_REQUEST_EXISTS"});return res.status(500).json({success:false,error:"Could not submit refund request.",code:"REFUND_REQUEST_FAILED"});}
+  });
+
+  router.get("/orders/:orderId/refund-request", authenticateToken, async (req, res) => {
+    const orderId=safeInteger(req.params.orderId,1,Number.MAX_SAFE_INTEGER);
+    if(!orderId)return res.status(400).json({success:false,error:"Invalid order ID.",code:"ORDER_ID_INVALID"});
+    try{
+      const owned=await pool.query("SELECT id FROM commerce_orders WHERE id=$1 AND user_id=$2 LIMIT 1",[orderId,req.user.id]);
+      if(!owned.rows.length)return res.status(404).json({success:false,error:"Order not found.",code:"ORDER_NOT_FOUND"});
+      const result=await pool.query("SELECT id,order_id,reason,status,admin_note,provider_refund_reference,created_at,updated_at,reviewed_at FROM commerce_refund_requests WHERE order_id=$1 AND user_id=$2 LIMIT 1",[orderId,req.user.id]);
+      return res.json({success:true,refundRequest:result.rows[0]||null});
+    }catch(error){return res.status(500).json({success:false,error:"Could not load refund request.",code:"REFUND_REQUEST_LOAD_FAILED"});}
+  });
+
+  router.get("/refund-requests", authenticateToken, requireCommerceAdmin, async (req, res) => {
+    try{
+      const result=await pool.query("SELECT r.id,r.order_id,r.user_id,r.reason,r.status,r.admin_note,r.provider_refund_reference,r.created_at,r.updated_at,r.reviewed_at,o.currency,o.total_minor FROM commerce_refund_requests r JOIN commerce_orders o ON o.id=r.order_id ORDER BY CASE r.status WHEN 'pending' THEN 0 WHEN 'approved' THEN 1 ELSE 2 END,r.created_at DESC LIMIT 200");
+      return res.json({success:true,refundRequests:result.rows});
+    }catch(error){return res.status(500).json({success:false,error:"Could not load refund requests.",code:"REFUND_REQUESTS_LOAD_FAILED"});}
+  });
+
+  router.patch("/refund-requests/:requestId", authenticateToken, requireCommerceAdmin, async (req, res) => {
+    const requestId=safeInteger(req.params.requestId,1,Number.MAX_SAFE_INTEGER);
+    const status=String(req.body?.status||"");
+    const adminNote=String(req.body?.adminNote||"").trim().slice(0,2000);
+    const providerReference=String(req.body?.providerRefundReference||"").trim().slice(0,200);
+    if(!requestId||!["approved","rejected","refunded"].includes(status)||(status==="refunded"&&!providerReference))return res.status(400).json({success:false,error:"Provide a valid request status; refunded requires the external provider refund reference.",code:"REFUND_REVIEW_INVALID"});
+    try{
+      const current=await pool.query("SELECT id,order_id,status FROM commerce_refund_requests WHERE id=$1 LIMIT 1",[requestId]);
+      if(!current.rows.length)return res.status(404).json({success:false,error:"Refund request not found.",code:"REFUND_REQUEST_NOT_FOUND"});
+      const allowed= current.rows[0].status==="pending"?["approved","rejected"]:current.rows[0].status==="approved"?["refunded"]:[];
+      if(!allowed.includes(status))return res.status(409).json({success:false,error:"That refund request status transition is not allowed.",code:"REFUND_TRANSITION_INVALID"});
+      const updated=await pool.query("UPDATE commerce_refund_requests SET status=$2,admin_note=$3,provider_refund_reference=$4,reviewed_by=$5,reviewed_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=$1 RETURNING id,order_id,status,admin_note,provider_refund_reference,reviewed_at",[requestId,status,adminNote,providerReference||null,req.user.id]);
+      if(status==="refunded")await pool.query("UPDATE commerce_orders SET status='refunded',updated_at=CURRENT_TIMESTAMP WHERE id=$1 AND status='paid'",[current.rows[0].order_id]);
+      return res.json({success:true,refundRequest:updated.rows[0]});
+    }catch(error){return res.status(500).json({success:false,error:"Could not review refund request.",code:"REFUND_REVIEW_FAILED"});}
   });
 
   router.post("/checkout", authenticateToken, async (req, res) => {
@@ -587,12 +752,15 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
     let orderId;
     let txRef;
     let totalMinor;
+    let subtotalMinor;
+    let discountMinor = 0;
+    let couponCode = String(req.body?.couponCode || "").trim().toUpperCase().slice(0, 40) || null;
     let currency;
     try {
       await client.query("BEGIN");
       const ids = [...quantities.keys()];
       const productResult = await client.query(
-        "SELECT id, name, price_minor, currency, stock_quantity, requires_shipping, seller_user_id FROM commerce_products WHERE active = TRUE AND id = ANY($1::bigint[]) FOR UPDATE",
+        "SELECT p.id, p.name, p.price_minor, p.currency, p.stock_quantity, p.requires_shipping, p.seller_user_id FROM commerce_products p WHERE p.active = TRUE AND (p.seller_user_id IS NULL OR EXISTS (SELECT 1 FROM commerce_sellers s WHERE s.user_id=p.seller_user_id AND s.status='approved')) AND p.id = ANY($1::bigint[]) FOR UPDATE",
         [ids]
       );
       if (productResult.rows.length !== ids.length) {
@@ -641,14 +809,33 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
         }
         items.push({ product, quantity, unit, line: unit * quantity });
       }
+      subtotalMinor = totalMinor;
+      if (subtotalMinor <= 0) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ success: false, code: "TOTAL_INVALID", error: "Order subtotal must be greater than zero." });
+      }
+      if (couponCode) {
+        const couponResult = await client.query("SELECT id,code,discount_type,discount_value,currency,min_subtotal_minor FROM commerce_coupons WHERE code=$1 AND active=TRUE AND (starts_at IS NULL OR starts_at<=CURRENT_TIMESTAMP) AND (expires_at IS NULL OR expires_at>CURRENT_TIMESTAMP) FOR UPDATE", [couponCode]);
+        if (!couponResult.rows.length) {
+          await client.query("ROLLBACK");
+          return res.status(400).json({ success: false, code: "COUPON_INVALID", error: "Coupon is invalid, inactive or expired." });
+        }
+        const calculation = calculateCouponDiscount(couponResult.rows[0], subtotalMinor, currency);
+        if (calculation.error) {
+          await client.query("ROLLBACK");
+          return res.status(400).json({ success: false, code: "COUPON_NOT_APPLICABLE", error: calculation.error });
+        }
+        discountMinor = calculation.discountMinor;
+      }
+      totalMinor = subtotalMinor - discountMinor;
       if (totalMinor <= 0) {
         await client.query("ROLLBACK");
-        return res.status(400).json({ success: false, code: "TOTAL_INVALID", error: "Order total must be greater than zero." });
+        return res.status(400).json({ success: false, code: "TOTAL_INVALID", error: "Discounted order total must be greater than zero." });
       }
       txRef = "irhcf_" + crypto.randomUUID();
       const order = await client.query(
-        "INSERT INTO commerce_orders (user_id, tx_ref, status, currency, total_minor, provider, shipping_address) VALUES ($1,$2,'pending',$3,$4,'flutterwave',$5::jsonb) RETURNING id",
-        [req.user.id, txRef, currency, totalMinor, shippingAddress ? JSON.stringify(shippingAddress) : null]
+        "INSERT INTO commerce_orders (user_id, tx_ref, status, currency, total_minor, subtotal_minor, discount_minor, coupon_code, provider, shipping_address) VALUES ($1,$2,'pending',$3,$4,$5,$6,$7,'flutterwave',$8::jsonb) RETURNING id",
+        [req.user.id, txRef, currency, totalMinor, subtotalMinor, discountMinor, couponCode, shippingAddress ? JSON.stringify(shippingAddress) : null]
       );
       orderId = order.rows[0].id;
       for (const item of items) {
@@ -694,7 +881,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
         return res.status(502).json({ success: false, code: "CHECKOUT_PROVIDER_FAILED", error: "Payment provider did not create a valid hosted checkout." });
       }
       await pool.query("UPDATE commerce_orders SET checkout_url=$2, updated_at=CURRENT_TIMESTAMP WHERE id=$1 AND status='pending'", [orderId, checkoutUrl]);
-      return res.status(201).json({ success: true, orderId, txRef, currency, totalMinor, checkoutUrl, paymentStatus: "pending" });
+      return res.status(201).json({ success: true, orderId, txRef, currency, subtotalMinor, discountMinor, totalMinor, couponCode, checkoutUrl, paymentStatus: "pending" });
     } catch (error) {
       await pool.query("UPDATE commerce_orders SET status='failed', updated_at=CURRENT_TIMESTAMP WHERE id=$1 AND status='pending'", [orderId]);
       return res.status(502).json({ success: false, code: "CHECKOUT_PROVIDER_UNAVAILABLE", error: "Payment provider could not be reached. No payment has been confirmed." });
@@ -721,7 +908,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
       if (!verifiedResponse.ok || verified?.status !== "success" || data?.status !== "successful" || String(data?.tx_ref) !== txRef) {
         return res.status(400).json({ success: false, error: "Payment could not be verified with the provider.", code: "PAYMENT_NOT_VERIFIED" });
       }
-      const orderResult = await pool.query("SELECT id, status, currency, total_minor FROM commerce_orders WHERE tx_ref=$1", [txRef]);
+      const orderResult = await pool.query("SELECT id, status, currency, total_minor, coupon_code FROM commerce_orders WHERE tx_ref=$1", [txRef]);
       const order = orderResult.rows[0];
       if (!order) return res.status(404).json({ success: false, error: "Order not found.", code: "ORDER_NOT_FOUND" });
       if (order.status === "paid") return res.json({ success: true, duplicate: true });
@@ -730,7 +917,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
         return res.status(400).json({ success: false, error: "Payment amount or currency does not match the order.", code: "PAYMENT_MISMATCH" });
       }
       const updated = await pool.query(
-        "UPDATE commerce_orders SET status='paid', provider_transaction_id=$2, paid_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=$1 AND status='pending' RETURNING id",
+        "WITH paid_order AS (UPDATE commerce_orders SET status='paid', provider_transaction_id=$2, paid_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=$1 AND status='pending' RETURNING id,coupon_code), coupon_update AS (UPDATE commerce_coupons c SET redeemed_count=c.redeemed_count+1 FROM paid_order p WHERE c.code=p.coupon_code AND p.coupon_code IS NOT NULL RETURNING c.id) SELECT id FROM paid_order",
         [order.id, String(transactionId)]
       );
       if (!updated.rows.length) return res.status(409).json({ success: false, error: "Order is no longer pending.", code: "ORDER_STATE_CONFLICT" });
@@ -743,4 +930,4 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
   return router;
 }
 
-module.exports = { MAX_ITEMS, MAX_QUANTITY, CURRENCIES, ensureCommerceSchema, createCommerceRouter, toProviderAmount, fromProviderAmount };
+module.exports = { MAX_ITEMS, MAX_QUANTITY, CURRENCIES, ensureCommerceSchema, createCommerceRouter, toProviderAmount, fromProviderAmount, calculateCouponDiscount };

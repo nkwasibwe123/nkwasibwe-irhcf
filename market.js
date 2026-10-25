@@ -3,7 +3,7 @@
   const API = "https://nkwasibwe-irhcf.onrender.com/api/commerce";
   const TOKEN_KEY = "nkwasibwe_auth_token";
   const $ = id => document.getElementById(id);
-  const state = { products: [], cart: [], orders: [], wishlist: [], addresses: [], seller: null };
+  const state = { products: [], cart: [], orders: [], wishlist: [], addresses: [], seller: null, couponCode: "", quote: null };
   const token = () => { try { return localStorage.getItem(TOKEN_KEY) || ""; } catch { return ""; } };
   const authHeaders = () => token() ? { Authorization: "Bearer " + token() } : {};
   const integerCurrencies = new Set(["RWF", "UGX", "XAF", "XOF", "JPY"]);
@@ -261,9 +261,25 @@
       updateCheckoutAvailability();
     }catch(error){box.replaceChildren(element("p","muted","Could not load addresses: "+error.message));}
   }
+  async function loadQuote() {
+    const currency=state.cart[0]?.currency;
+    const subtotal=state.cart.reduce((sum,item)=>sum+Number(item.line_total_minor||0),0);
+    if(!token()||!state.cart.length||!currency||!state.cart.every(item=>item.currency===currency)){
+      state.quote=null;$("cartSubtotal").textContent=state.cart.length?"Mixed currencies": "—";$("cartDiscount").textContent="—";$("cartTotal").textContent=state.cart.length?"Mixed currencies":"—";updateCheckoutAvailability();return;
+    }
+    try{
+      const result=await request("/quote",{method:"POST",body:JSON.stringify({items:state.cart.map(item=>({productId:Number(item.product_id),quantity:Number(item.quantity)})),couponCode:state.couponCode||null})});
+      state.quote=result;$("cartSubtotal").textContent=money(result.subtotalMinor,result.currency);$("cartDiscount").textContent=result.discountMinor?("−"+money(result.discountMinor,result.currency)):"—";$("cartTotal").textContent=money(result.totalMinor,result.currency);
+      $("couponMessage").textContent=state.couponCode?(result.discountMinor?"Coupon "+state.couponCode+" applied.":"Coupon is valid, but no discount was applied."):"";
+    }catch(error){
+      state.quote=null;$("cartSubtotal").textContent=money(subtotal,currency);$("cartDiscount").textContent="—";$("cartTotal").textContent=money(subtotal,currency);
+      $("couponMessage").textContent=state.couponCode?error.message:"Could not calculate a server quote: "+error.message;
+    }
+    updateCheckoutAvailability();
+  }
   async function loadCart() {
     const box=$("cartItems");
-    if(!token()){state.cart=[];box.replaceChildren(element("p","muted","Sign in to load and save your cart."));$("cartCount").textContent="0 items";$("cartTotal").textContent="—";$("checkoutButton").disabled=true;return;}
+    if(!token()){state.cart=[];box.replaceChildren(element("p","muted","Sign in to load and save your cart."));$("cartCount").textContent="0 items";$("cartSubtotal").textContent="—";$("cartDiscount").textContent="—";$("cartTotal").textContent="—";$("checkoutButton").disabled=true;return;}
     try{
       const result=await request("/cart");state.cart=result.items||[];box.replaceChildren();let total=0;
       if(!state.cart.length)box.append(element("p","muted","Your cart is empty. Add something from the catalogue."));
@@ -276,8 +292,9 @@
       }
       $("cartCount").textContent=state.cart.reduce((sum,item)=>sum+Number(item.quantity),0)+" items";
       const currency=state.cart[0]?.currency;
-      $("cartTotal").textContent=currency&&state.cart.every(item=>item.currency===currency)?money(total,currency):(state.cart.length?"Mixed currencies":"—");
-      updateCheckoutAvailability();
+      $("cartSubtotal").textContent=currency&&state.cart.every(item=>item.currency===currency)?money(total,currency):(state.cart.length?"Mixed currencies":"—");
+      $("cartDiscount").textContent="—";$("cartTotal").textContent=currency&&state.cart.every(item=>item.currency===currency)?money(total,currency):(state.cart.length?"Mixed currencies":"—");
+      await loadQuote();
     }catch(error){box.replaceChildren(element("p","muted","Could not load cart: "+error.message));$("checkoutButton").disabled=true;}
   }
   async function loadOrders(){
@@ -287,12 +304,24 @@
       for(const order of state.orders){const row=element("div","order-row");const info=element("div","cart-info");info.append(element("strong","","Order #"+order.id),element("small","",new Date(order.created_at).toLocaleString()+" · "+money(order.total_minor,order.currency)));
         row.append(info,element("span","status "+String(order.status),order.status));
         const detailsButton=element("button","","Order details");detailsButton.type="button";
-        detailsButton.addEventListener("click",async()=>{detailsButton.disabled=true;try{const detail=await request("/orders/"+encodeURIComponent(order.id));const panel=element("div","order-details-panel");panel.append(element("strong","","Items"));for(const item of detail.items||[])panel.append(element("p","",item.product_name+" × "+item.quantity+" — "+money(item.line_total_minor,order.currency)));const address=detail.order.shipping_address;if(address)panel.append(element("p","", "Ship to: "+[address.recipient_name,address.phone,address.address_line1,address.address_line2,address.city,address.region,address.country].filter(Boolean).join(", ")));row.after(panel);}catch(error){$("checkoutMessage").textContent=error.message;}finally{detailsButton.disabled=false;}});row.append(detailsButton);
+        detailsButton.addEventListener("click",async()=>{detailsButton.disabled=true;try{const detail=await request("/orders/"+encodeURIComponent(order.id));box.querySelector('[data-order-details="'+order.id+'"]')?.remove();const panel=element("div","order-details-panel");panel.dataset.orderDetails=String(order.id);panel.append(element("strong","","Items"));if(Number(detail.order.discount_minor||0)>0)panel.append(element("p","", "Subtotal: "+money(detail.order.subtotal_minor,order.currency)+" · Coupon "+detail.order.coupon_code+" discount: −"+money(detail.order.discount_minor,order.currency)));for(const item of detail.items||[])panel.append(element("p","",item.product_name+" × "+item.quantity+" — "+money(item.line_total_minor,order.currency)+(item.fulfillment_status?" · "+item.fulfillment_status:"")));const address=detail.order.shipping_address;if(address)panel.append(element("p","", "Ship to: "+[address.recipient_name,address.phone,address.address_line1,address.address_line2,address.city,address.region,address.country].filter(Boolean).join(", ")));if(order.status==="paid"){const refund=await request("/orders/"+encodeURIComponent(order.id)+"/refund-request");if(refund.refundRequest){panel.append(element("p","", "Refund / return request status: "+refund.refundRequest.status));if(refund.refundRequest.admin_note)panel.append(element("p","",refund.refundRequest.admin_note));}else{const form=element("form","refund-request-form");const label=element("label","","Request return / refund");const reason=document.createElement("textarea");reason.name="reason";reason.rows=3;reason.minLength=5;reason.maxLength=2000;reason.required=true;reason.placeholder="Explain the issue and what you are requesting";label.append(reason);const submit=element("button","primary-button","Submit request");submit.type="submit";const message=element("p","muted","A request is reviewed by the platform; it does not automatically refund the payment.");form.append(label,submit,message);form.addEventListener("submit",async event=>{event.preventDefault();submit.disabled=true;try{const saved=await request("/orders/"+encodeURIComponent(order.id)+"/refund-request",{method:"POST",body:JSON.stringify({reason:reason.value.trim()})});message.textContent="Request submitted: "+saved.refundRequest.status+".";submit.disabled=true;}catch(error){message.textContent=error.message;submit.disabled=false;}});panel.append(form);}}row.after(panel);}catch(error){$("checkoutMessage").textContent=error.message;}finally{detailsButton.disabled=false;}});row.append(detailsButton);
         if(order.status==="pending"&&order.checkout_url&&order.checkout_url.startsWith("https://")){const link=element("a","","Resume checkout");link.href=order.checkout_url;link.rel="noopener noreferrer";link.target="_blank";row.append(link);}
         box.append(row);
       }
     }catch(error){box.replaceChildren(element("p","muted","Could not load orders: "+error.message));}
   }
+  $("applyCouponButton").addEventListener("click",async()=>{state.couponCode=$("couponCodeInput").value.trim().toUpperCase();await loadQuote();});
+  $("couponCodeInput").addEventListener("keydown",event=>{if(event.key==="Enter"){event.preventDefault();$("applyCouponButton").click();}});
+  $("couponForm").addEventListener("submit",async event=>{
+    event.preventDefault();const form=new FormData(event.currentTarget),message=$("couponAdminMessage");message.textContent="Creating coupon…";
+    const body={code:String(form.get("code")||"").trim().toUpperCase(),description:String(form.get("description")||"").trim(),discountType:String(form.get("discountType")||"percent"),discountValue:Number(form.get("discountValue")),currency:String(form.get("currency")||"RWF"),minSubtotalMinor:Number(form.get("minSubtotalMinor")||0),startsAt:form.get("startsAt")?new Date(String(form.get("startsAt"))).toISOString():null,expiresAt:form.get("expiresAt")?new Date(String(form.get("expiresAt"))).toISOString():null};
+    try{const result=await request("/coupons",{method:"POST",body:JSON.stringify(body)});message.textContent="Coupon created: "+result.coupon.code;event.currentTarget.reset();await loadCoupons();}
+    catch(error){message.textContent=error.message;}
+  });
+  async function loadCoupons(){const box=$("couponsList");box.replaceChildren(element("p","muted","Loading coupons…"));try{const result=await request("/coupons");box.replaceChildren();if(!(result.coupons||[]).length)box.append(element("p","muted","No coupons created."));for(const coupon of result.coupons||[]){const row=element("article","seller-row"),info=element("div","cart-info");info.append(element("strong","",coupon.code+" · "+(coupon.discount_type==="percent"?coupon.discount_value+"%":money(coupon.discount_value,coupon.currency))),element("small","",coupon.description+" · "+coupon.currency+" · "+coupon.redeemed_count+" redeemed · "+(coupon.active?"active":"inactive")));const toggle=element("button","",coupon.active?"Deactivate":"Activate");toggle.type="button";toggle.addEventListener("click",async()=>{toggle.disabled=true;try{await request("/coupons/"+encodeURIComponent(coupon.id),{method:"PATCH",body:JSON.stringify({active:!coupon.active})});await loadCoupons();}catch(error){$("couponAdminMessage").textContent=error.message;toggle.disabled=false;}});row.append(info,toggle);box.append(row);}}catch(error){box.replaceChildren(element("p","muted","Coupon management: "+error.message));}}
+  async function loadRefundRequests(){const box=$("refundRequestsList");box.replaceChildren(element("p","muted","Loading refund requests…"));try{const result=await request("/refund-requests");box.replaceChildren();if(!(result.refundRequests||[]).length)box.append(element("p","muted","No refund/return requests."));for(const item of result.refundRequests||[]){const row=element("article","seller-row"),info=element("div","cart-info");info.append(element("strong","", "Order #"+item.order_id+" · "+item.status+" · "+money(item.total_minor,item.currency)),element("small","", "User "+item.user_id+" · "+item.reason));row.append(info);const action=async(status,providerRefundReference)=>{try{await request("/refund-requests/"+encodeURIComponent(item.id),{method:"PATCH",body:JSON.stringify({status,providerRefundReference:providerRefundReference||null})});await loadRefundRequests();}catch(error){$("couponAdminMessage").textContent=error.message;}};if(item.status==="pending"){for(const status of ["approved","rejected"]){const button=element("button",status==="approved"?"primary-button":"",status==="approved"?"Approve":"Reject");button.type="button";button.addEventListener("click",()=>action(status));row.append(button);}}else if(item.status==="approved"){const button=element("button","primary-button","Mark refunded");button.type="button";button.addEventListener("click",()=>{const ref=window.prompt("Enter the refund reference from the payment provider after completing the refund externally:");if(ref&&ref.trim())action("refunded",ref.trim());});row.append(button);}if(item.provider_refund_reference)info.append(element("small","", "Refund ref: "+item.provider_refund_reference));box.append(row);}}catch(error){box.replaceChildren(element("p","muted","Refund management: "+error.message));}}
+  $("couponsButton").addEventListener("click",loadCoupons);
+  $("refundRequestsButton").addEventListener("click",loadRefundRequests);
   $("sellerApplicationForm").addEventListener("submit",async event=>{
     event.preventDefault();const form=new FormData(event.currentTarget),message=$("sellerMessage");message.textContent="Submitting seller application…";
     const body={shopName:String(form.get("shopName")||"").trim(),description:String(form.get("description")||"").trim(),contactEmail:String(form.get("contactEmail")||"").trim(),contactPhone:String(form.get("contactPhone")||"").trim()};
@@ -314,7 +343,7 @@
   $("checkoutButton").addEventListener("click",async()=>{
     if(!token()){$("checkoutMessage").textContent="Sign in first to check out.";return;}
     $("checkoutButton").disabled=true;$("checkoutMessage").textContent="Creating hosted checkout…";
-    try{const result=await request("/checkout",{method:"POST",body:JSON.stringify({items:state.cart.map(item=>({productId:Number(item.product_id),quantity:Number(item.quantity)})),addressId:$("shippingAddressSelect").value?Number($("shippingAddressSelect").value):null})});
+    try{const result=await request("/checkout",{method:"POST",body:JSON.stringify({items:state.cart.map(item=>({productId:Number(item.product_id),quantity:Number(item.quantity)})),addressId:$("shippingAddressSelect").value?Number($("shippingAddressSelect").value):null,couponCode:state.couponCode||null})});
       if(!result.checkoutUrl||!result.checkoutUrl.startsWith("https://"))throw new Error("The server did not return a valid hosted checkout URL.");
       window.location.assign(result.checkoutUrl);
     }catch(error){$("checkoutMessage").textContent=error.message;$("checkoutButton").disabled=false;}
