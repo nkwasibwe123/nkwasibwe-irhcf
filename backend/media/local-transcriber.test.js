@@ -4,6 +4,14 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { getLocalTranscriberConfig, getLocalTranscriberStatus, timestampToSeconds, MAX_AUDIO_BYTES } = require("./local-transcriber");
 
+test("default local transcriber paths point to Render's cached npm directory", () => {
+  const path = require("node:path");
+  const config = getLocalTranscriberConfig({});
+  const cacheRoot = path.resolve(process.cwd(), "node_modules/.cache/irhcf-whisper");
+  assert.equal(config.binaryPath, path.join(cacheRoot, "whisper.cpp", "build", "bin", "whisper-cli"));
+  assert.equal(config.modelPath, path.join(cacheRoot, "models", "ggml-tiny.bin"));
+});
+
 test("partial local configuration fails closed instead of silently falling back to a paid provider", () => {
   assert.equal(getLocalTranscriberConfig({}).enabled, false);
   assert.equal(getLocalTranscriberConfig({ WHISPER_CPP_PATH: "/usr/bin/whisper-cli" }).enabled, true);
