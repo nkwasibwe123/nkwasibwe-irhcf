@@ -109,9 +109,27 @@
       card.append(head,node("p","post-body",post.body || (Array.isArray(post.media)&&post.media.length ? "Media post" : "")));
       (Array.isArray(post.media)?post.media:[]).forEach(item=>{
         if(!item||typeof item.url!=="string")return;
-        const url=item.url.startsWith("/api/social/media/")?API_BASE+item.url:item.url;
-        if(String(item.mimeType||"").startsWith("image/")){const img=node("img","post-media");img.src=url;img.alt=item.fileName||"Post image";img.loading="lazy";card.append(img);}
-        else {const link=node("a","feed-action","Open "+(item.fileName||"attached media"));link.href=url;link.target="_blank";link.rel="noopener noreferrer";card.append(link);}
+        const internal=item.url.startsWith("/api/social/media/");
+        const url=internal?API_BASE+item.url:item.url;
+        const mime=String(item.mimeType||"");
+        if(mime.startsWith("image/")){
+          const img=node("img","post-media");img.alt=item.fileName||"Post image";img.loading="lazy";card.append(img);
+          if(internal) loadInternalMediaBlob(url).then(blob=>{const objectUrl=URL.createObjectURL(blob);img.src=objectUrl;img.addEventListener("error",()=>URL.revokeObjectURL(objectUrl),{once:true});}).catch(()=>{img.alt+=" (could not load)";});
+          else img.src=url;
+        }else if(mime.startsWith("video/")||mime.startsWith("audio/")){
+          const media=node(mime.startsWith("video/")?"video":"audio","post-media");media.controls=true;media.preload="metadata";card.append(media);
+          if(internal) loadInternalMediaBlob(url).then(blob=>{media.src=URL.createObjectURL(blob);}).catch(()=>{media.replaceWith(node("p","feed-subtitle","Could not load attached media."));});
+          else media.src=url;
+        }else{
+          const link=node("a","feed-action","Download "+(item.fileName||"attached media"));link.href=internal?"#":url;link.rel="noopener noreferrer";
+          if(internal)link.addEventListener("click",async event=>{
+            event.preventDefault();link.setAttribute("aria-busy","true");
+            try{const blob=await loadInternalMediaBlob(url);const objectUrl=URL.createObjectURL(blob);const a=document.createElement("a");a.href=objectUrl;a.download=item.fileName||"download";document.body.append(a);a.click();a.remove();window.setTimeout(()=>URL.revokeObjectURL(objectUrl),60000);}
+            catch(e){say(e.message);}finally{link.removeAttribute("aria-busy");}
+          });
+          else {link.target="_blank";link.rel="noopener noreferrer";}
+          card.append(link);
+        }
       });
       const actions=node("div","post-actions");
       const reactionChoices=[["like","👍 Like"],["love","❤️ Love"],["laugh","😂 Haha"],["wow","😮 Wow"],["sad","😢 Sad"],["angry","😠 Angry"]];
@@ -152,6 +170,11 @@
     let data={};try{data=await response.json();}catch(_){}
     if(!response.ok) throw new Error(data.error || "Request failed (HTTP "+response.status+").");
     return data;
+  }
+  async function loadInternalMediaBlob(url){
+    const response=await fetch(url,{headers:{"Authorization":"Bearer "+token()}});
+    if(!response.ok){let message="Media request failed (HTTP "+response.status+").";try{const data=await response.json();message=data.error||message;}catch(_){}throw new Error(message);}
+    return response.blob();
   }
   async function load(){
     try { const data=await request("/api/social/feed?limit=20");render(data.posts||[]);say("Feed loaded."); }
