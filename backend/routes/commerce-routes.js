@@ -913,7 +913,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
   return router;
 }
 
-module.exports = { MAX_ITEMS, MAX_QUANTITY, CURRENCIES, ensureCommerceSchema, createCommerceRouter, toProviderAmount, fromProviderAmount };
+module.exports = { MAX_ITEMS, MAX_QUANTITY, CURRENCIES, ensureCommerceSchema, createCommerceRouter, toProviderAmount, fromProviderAmount, calculateCouponDiscount };
 ),
       description TEXT NOT NULL DEFAULT '',
       discount_type TEXT NOT NULL CHECK (discount_type IN ('percent','fixed')),
