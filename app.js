@@ -207,6 +207,9 @@ const API_ENDPOINTS = Object.freeze({
   videoGenerationStatus:
     "/api/media/video/status",
 
+  photoAnimation:
+    "/api/media/video/photo-animation",
+
   videoEditing:
     "/api/media/video/edit",
 
@@ -6254,13 +6257,101 @@ async function transcribeAudioFile(file) {
   }
 }
 
+async function animatePhotoLocally(file, motion = "zoom-in") {
+  if (!authToken) {
+    setDashboardStatus("Banza winjire muri konti kugira ngo ukore video uhereye ku ifoto.");
+    showAuthenticationDialog();
+    return;
+  }
+  if (!file || !file.size) {
+    showToast("Banza uhitemo ifoto.", "warning");
+    return;
+  }
+  if (file.size > 6 * 1024 * 1024) {
+    showToast("Ifoto ntigomba kurenza 6 MB.", "warning");
+    return;
+  }
+  const allowedMotions = new Set(["zoom-in", "zoom-out", "pan-left", "pan-right"]);
+  if (!allowedMotions.has(motion)) {
+    showToast("Hitamo zoom-in, zoom-out, pan-left cyangwa pan-right.", "warning");
+    return;
+  }
+
+  setStatus("IRHCF iri gukora video ya MP4 ikoresheje FFmpeg kuri seriveri.", "loading");
+  setDashboardStatus("Ifoto iri guhindurwa video ya MP4; nta AI video provider cyangwa credit ikoreshwa.");
+  try {
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(new Error("Ntibyashobotse gusoma ifoto."));
+      reader.readAsDataURL(file);
+    });
+    const comma = dataUrl.indexOf(",");
+    if (comma < 0) throw new Error("Ntibyashobotse gutegura ifoto.");
+    const response = await fetch(API_BASE_URL + API_ENDPOINTS.photoAnimation, {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer " + authToken,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        mimeType: String(file.type || "").toLowerCase(),
+        imageBase64: dataUrl.slice(comma + 1),
+        motion,
+        durationSeconds: 8,
+        size: "1280x720"
+      })
+    });
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(String(errorData?.error || "Ntibyashobotse gukora video y'ifoto."));
+    }
+    const blob = await response.blob();
+    if (!blob.size || blob.type !== "video/mp4") {
+      throw new Error("Serivisi ntiyagaruye dosiye ya MP4 yemewe.");
+    }
+    const objectUrl = URL.createObjectURL(blob);
+    const row = addMessage("Ifoto yahinduwe video ya MP4 hakoreshejwe FFmpeg motion effect (si AI-generated video).", "ai");
+    const wrapper = row?.querySelector(".message-content-wrapper");
+    if (!wrapper) throw new Error("Ntibyashobotse kwerekana video muri chat.");
+
+    const player = document.createElement("video");
+    player.controls = true;
+    player.playsInline = true;
+    player.preload = "metadata";
+    player.src = objectUrl;
+    player.style.display = "block";
+    player.style.maxWidth = "100%";
+    player.style.maxHeight = "640px";
+    player.style.borderRadius = "12px";
+    player.style.marginTop = "10px";
+    wrapper.appendChild(player);
+
+    const download = document.createElement("a");
+    download.href = objectUrl;
+    download.download = "nkwasibwe-photo-animation.mp4";
+    download.textContent = "Download MP4";
+    download.style.display = "inline-block";
+    download.style.marginTop = "8px";
+    wrapper.appendChild(download);
+    setStatus("Video y'ifoto ya MP4 yiteguye.", "online");
+    setDashboardStatus("Video y'ifoto yarakozwe; ushobora kuyireba cyangwa kuyikuramo.");
+  } catch (error) {
+    const message = String(error?.message || "Serivisi ya local video ntiboneka.").slice(0, 300);
+    setStatus("Video ntiyakozwe: " + message, "normal");
+    setDashboardStatus("Video ntiyakozwe: " + message);
+    addMessage("Video ntiyakozwe: " + message, "ai");
+  }
+}
+
 async function prepareVideoFromReference(file) {
   const prompt = window.prompt(
-    "Sobanura uko ushaka ko iyi foto ihinduka video ya HD: movement, camera, lighting, style n'ibindi."
+    "Hitamo motion effect imwe: zoom-in, zoom-out, pan-left cyangwa pan-right. Iyi ni animation ya FFmpeg, si AI-generated video.",
+    "zoom-in"
   );
-  if (prompt && prompt.trim()) {
-    void generateVideoFromPrompt(prompt, file);
-  }
+  if (!prompt || !prompt.trim()) return;
+  const normalized = prompt.trim().toLowerCase().replace(/\s+/g, "-");
+  void animatePhotoLocally(file, normalized);
 }
 
 function handleFileSelection(
@@ -10072,14 +10163,11 @@ async function dashboardAction(action) {
 
   if (action === "video-from-photo") {
     if (!fileInput) return;
-    void checkVideoProviderAvailability().then(available => {
-      if (!available) return;
-      fileInput.dataset.transcribeAudio = "false";
-      fileInput.dataset.videoReference = "true";
-      fileInput.setAttribute("accept", "image/jpeg,image/png,image/webp");
-      setDashboardOpen(false);
-      fileInput.click();
-    });
+    fileInput.dataset.transcribeAudio = "false";
+    fileInput.dataset.videoReference = "true";
+    fileInput.setAttribute("accept", "image/jpeg,image/png,image/webp");
+    setDashboardOpen(false);
+    fileInput.click();
     return;
   }
 
