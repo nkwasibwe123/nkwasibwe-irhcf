@@ -817,4 +817,6 @@ test("Chat with Friends has a sticky dashboard bar and focused full-page module 
   assert.match(html, /socialProfileForm/);
   assert.match(html, /profileDocumentForm/);
   assert.match(html, /messageComposer/);
+  assert.match(html, /<footer data-dashboard="overview">/);
+  assert.doesNotMatch(html, /\n  loadProfileDocuments\(\);\n  load\(\);/);
 });
