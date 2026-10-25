@@ -19,10 +19,30 @@ async function ensureCommerceSchema(pool) {
       stock_quantity INTEGER NOT NULL DEFAULT 0 CHECK (stock_quantity >= 0),
       active BOOLEAN NOT NULL DEFAULT TRUE,
       image_url TEXT,
+      category TEXT NOT NULL DEFAULT 'General' CHECK (length(trim(category)) BETWEEN 1 AND 80),
       created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
+    ALTER TABLE commerce_products ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'General';
     CREATE INDEX IF NOT EXISTS idx_commerce_products_active ON commerce_products(active, id);
+    CREATE TABLE IF NOT EXISTS commerce_wishlist_items (
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      product_id BIGINT NOT NULL REFERENCES commerce_products(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (user_id, product_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_commerce_wishlist_user_created ON commerce_wishlist_items(user_id, created_at DESC);
+    CREATE TABLE IF NOT EXISTS commerce_product_reviews (
+      id BIGSERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      product_id BIGINT NOT NULL REFERENCES commerce_products(id) ON DELETE CASCADE,
+      rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+      review_text TEXT NOT NULL DEFAULT '' CHECK (length(review_text) <= 2000),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (user_id, product_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_commerce_reviews_product_created ON commerce_product_reviews(product_id, created_at DESC);
     CREATE TABLE IF NOT EXISTS commerce_orders (
       id BIGSERIAL PRIMARY KEY,
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
@@ -98,6 +118,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
     const stockQuantity = safeInteger(req.body?.stockQuantity ?? 0, 0, 1000000);
     const currency = String(req.body?.currency || "RWF").toUpperCase();
     const imageUrl = req.body?.imageUrl == null || req.body.imageUrl === "" ? null : String(req.body.imageUrl).trim();
+    const category = String(req.body?.category || "General").trim().slice(0, 80) || "General";
     if (!name || !priceMinor || stockQuantity === null || !CURRENCIES.has(currency)) {
       return res.status(400).json({ success: false, error: "Name, positive priceMinor, supported currency and valid stockQuantity are required.", code: "PRODUCT_INPUT_INVALID" });
     }
@@ -107,8 +128,8 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
     }
     try {
       const result = await pool.query(
-        "INSERT INTO commerce_products (name, description, sku, price_minor, currency, stock_quantity, image_url, active) VALUES ($1,$2,$3,$4,$5,$6,$7,TRUE) RETURNING id, name, description, sku, price_minor, currency, stock_quantity, image_url, active, created_at",
-        [name, description, sku || null, priceMinor, currency, stockQuantity, imageUrl]
+        "INSERT INTO commerce_products (name, description, sku, price_minor, currency, stock_quantity, image_url, category, active) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,TRUE) RETURNING id, name, description, sku, price_minor, currency, stock_quantity, image_url, category, active, created_at",
+        [name, description, sku || null, priceMinor, currency, stockQuantity, imageUrl, category]
       );
       return res.status(201).json({ success: true, product: result.rows[0] });
     } catch (error) {
@@ -130,6 +151,11 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
       add("name", value);
     }
     if (Object.prototype.hasOwnProperty.call(body, "description")) add("description", String(body.description || "").trim().slice(0, 5000));
+    if (Object.prototype.hasOwnProperty.call(body, "category")) {
+      const value = String(body.category || "").trim().slice(0, 80);
+      if (!value) return res.status(400).json({ success: false, error: "Category cannot be empty.", code: "PRODUCT_INPUT_INVALID" });
+      add("category", value);
+    }
     if (Object.prototype.hasOwnProperty.call(body, "sku")) add("sku", body.sku == null || body.sku === "" ? null : String(body.sku).trim().slice(0, 80));
     if (Object.prototype.hasOwnProperty.call(body, "priceMinor")) {
       const value = safeInteger(body.priceMinor, 1, Number.MAX_SAFE_INTEGER);
@@ -162,7 +188,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
     values.push(productId);
     try {
       const result = await pool.query(
-        "UPDATE commerce_products SET " + fields.join(", ") + ", updated_at=CURRENT_TIMESTAMP WHERE id=$" + values.length + " RETURNING id, name, description, sku, price_minor, currency, stock_quantity, image_url, active, updated_at",
+        "UPDATE commerce_products SET " + fields.join(", ") + ", updated_at=CURRENT_TIMESTAMP WHERE id=$" + values.length + " RETURNING id, name, description, sku, price_minor, currency, stock_quantity, image_url, category, active, updated_at",
         values
       );
       if (!result.rows.length) return res.status(404).json({ success: false, error: "Product not found.", code: "PRODUCT_NOT_FOUND" });
@@ -176,13 +202,70 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
   router.get("/products", async (req, res) => {
     try {
       const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 50));
+      const search = String(req.query.q || "").trim().slice(0, 120);
+      const category = String(req.query.category || "").trim().slice(0, 80);
+      const sort = String(req.query.sort || "newest");
+      const orderBy = ({ newest: "p.id DESC", price_asc: "p.price_minor ASC, p.id DESC", price_desc: "p.price_minor DESC, p.id DESC", name_asc: "p.name ASC, p.id DESC", rating: "rating_average DESC, p.id DESC" })[sort] || "p.id DESC";
       const result = await pool.query(
-        "SELECT id, name, description, sku, price_minor, currency, stock_quantity, image_url FROM commerce_products WHERE active = TRUE ORDER BY id LIMIT $1",
-        [limit]
+        "SELECT p.id, p.name, p.description, p.sku, p.price_minor, p.currency, p.stock_quantity, p.image_url, p.category, COALESCE(rv.rating_average, 0) AS rating_average, COALESCE(rv.review_count, 0) AS review_count FROM commerce_products p LEFT JOIN (SELECT product_id, ROUND(AVG(rating)::numeric, 1) AS rating_average, COUNT(*)::int AS review_count FROM commerce_product_reviews GROUP BY product_id) rv ON rv.product_id=p.id WHERE p.active=TRUE AND ($1='' OR p.name ILIKE '%' || $1 || '%' OR p.description ILIKE '%' || $1 || '%' OR p.sku ILIKE '%' || $1 || '%') AND ($2='' OR p.category=$2) ORDER BY " + orderBy + " LIMIT $3",
+        [search, category, limit]
       );
-      return res.json({ success: true, products: result.rows });
+      const categories = await pool.query("SELECT DISTINCT category FROM commerce_products WHERE active=TRUE ORDER BY category LIMIT 100");
+      return res.json({ success: true, products: result.rows, categories: categories.rows.map(row => row.category) });
     } catch (error) {
       return res.status(500).json({ success: false, error: "Could not load products.", code: "PRODUCTS_LOAD_FAILED" });
+    }
+  });
+
+  router.get("/products/:productId/reviews", async (req, res) => {
+    const productId = safeInteger(req.params.productId, 1, Number.MAX_SAFE_INTEGER);
+    if (!productId) return res.status(400).json({ success: false, error: "Invalid product ID.", code: "PRODUCT_ID_INVALID" });
+    try {
+      const result = await pool.query("SELECT rating, review_text, created_at FROM commerce_product_reviews WHERE product_id=$1 ORDER BY created_at DESC LIMIT 100", [productId]);
+      return res.json({ success: true, reviews: result.rows });
+    } catch (error) {
+      return res.status(500).json({ success: false, error: "Could not load reviews.", code: "REVIEWS_LOAD_FAILED" });
+    }
+  });
+
+  router.post("/products/:productId/reviews", authenticateToken, async (req, res) => {
+    const productId = safeInteger(req.params.productId, 1, Number.MAX_SAFE_INTEGER);
+    const rating = safeInteger(req.body?.rating, 1, 5);
+    const reviewText = String(req.body?.reviewText || "").trim().slice(0, 2000);
+    if (!productId || !rating) return res.status(400).json({ success: false, error: "A product ID and rating from 1 to 5 are required.", code: "REVIEW_INPUT_INVALID" });
+    try {
+      const purchased = await pool.query("SELECT 1 FROM commerce_orders o JOIN commerce_order_items oi ON oi.order_id=o.id WHERE o.user_id=$1 AND oi.product_id=$2 AND o.status='paid' LIMIT 1", [req.user.id, productId]);
+      if (!purchased.rows.length) return res.status(403).json({ success: false, error: "Reviews are available only after this account has paid for the product.", code: "REVIEW_PURCHASE_REQUIRED" });
+      const result = await pool.query("INSERT INTO commerce_product_reviews (user_id, product_id, rating, review_text) VALUES ($1,$2,$3,$4) ON CONFLICT (user_id, product_id) DO UPDATE SET rating=EXCLUDED.rating, review_text=EXCLUDED.review_text, updated_at=CURRENT_TIMESTAMP RETURNING rating, review_text, created_at, updated_at", [req.user.id, productId, rating, reviewText]);
+      return res.status(201).json({ success: true, review: result.rows[0] });
+    } catch (error) {
+      return res.status(500).json({ success: false, error: "Could not save review.", code: "REVIEW_SAVE_FAILED" });
+    }
+  });
+
+  router.get("/wishlist", authenticateToken, async (req, res) => {
+    try {
+      const result = await pool.query("SELECT p.id, p.name, p.description, p.price_minor, p.currency, p.stock_quantity, p.image_url, p.category, w.created_at AS saved_at FROM commerce_wishlist_items w JOIN commerce_products p ON p.id=w.product_id WHERE w.user_id=$1 AND p.active=TRUE ORDER BY w.created_at DESC", [req.user.id]);
+      return res.json({ success: true, products: result.rows });
+    } catch (error) {
+      return res.status(500).json({ success: false, error: "Could not load wishlist.", code: "WISHLIST_LOAD_FAILED" });
+    }
+  });
+
+  router.put("/wishlist/:productId", authenticateToken, async (req, res) => {
+    const productId = safeInteger(req.params.productId, 1, Number.MAX_SAFE_INTEGER);
+    if (!productId || typeof req.body?.saved !== "boolean") return res.status(400).json({ success: false, error: "A valid product ID and saved boolean are required.", code: "WISHLIST_INPUT_INVALID" });
+    try {
+      if (req.body.saved) {
+        const product = await pool.query("SELECT id FROM commerce_products WHERE id=$1 AND active=TRUE", [productId]);
+        if (!product.rows.length) return res.status(404).json({ success: false, error: "Product not found.", code: "PRODUCT_NOT_FOUND" });
+        await pool.query("INSERT INTO commerce_wishlist_items (user_id, product_id) VALUES ($1,$2) ON CONFLICT (user_id, product_id) DO NOTHING", [req.user.id, productId]);
+      } else {
+        await pool.query("DELETE FROM commerce_wishlist_items WHERE user_id=$1 AND product_id=$2", [req.user.id, productId]);
+      }
+      return res.json({ success: true, saved: req.body.saved });
+    } catch (error) {
+      return res.status(500).json({ success: false, error: "Could not update wishlist.", code: "WISHLIST_UPDATE_FAILED" });
     }
   });
 
@@ -328,7 +411,9 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
       client.release();
     }
 
-    const customerEmail = String(req.user.email || req.body?.email || "").trim().slice(0, 254);
+    // Payment identity is taken only from the authenticated account. A browser-supplied
+    // email must never redirect a charge/receipt to a different account identity.
+    const customerEmail = String(req.user.email || "").trim().slice(0, 254);
     const redirectUrl = String(env.FLW_REDIRECT_URL || "").trim();
     if (!customerEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail) || !redirectUrl) {
       await pool.query("UPDATE commerce_orders SET status='failed', updated_at=CURRENT_TIMESTAMP WHERE id=$1 AND status='pending'", [orderId]);

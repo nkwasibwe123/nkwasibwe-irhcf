@@ -4,10 +4,13 @@ The commerce API is mounted at `/api/commerce`.
 
 ## Catalogue and cart
 
-- `GET /api/commerce/products` — list active products.
+- `GET /api/commerce/products?q=&category=&sort=&limit=` — list active products with server-side search/category filtering and allowlisted sorting (`newest`, `price_asc`, `price_desc`, `name_asc`, `rating`); returns categories and rating aggregates.
 - `POST /api/commerce/products` — create a product; requires an authenticated user whose numeric ID is listed in `COMMERCE_ADMIN_USER_IDS` (comma-separated).
 - `PATCH /api/commerce/products/:productId` — update an existing product; same administrator allowlist.
 - `GET /api/commerce/cart` — read the signed-in user's persisted cart.
+- `GET /api/commerce/wishlist` and `PUT /api/commerce/wishlist/:productId` with `{"saved":true|false}` — private, account-scoped favourites.
+- `GET /api/commerce/products/:productId/reviews` — public product reviews.
+- `POST /api/commerce/products/:productId/reviews` — create/update a 1–5 star review; the same account must have a confirmed paid order containing that product.
 - `PUT /api/commerce/cart/items/:productId` with JSON `{"quantity":2}` — set quantity; quantity 0 removes the item.
 - `GET /api/commerce/orders` — list only the signed-in user's orders.
 
