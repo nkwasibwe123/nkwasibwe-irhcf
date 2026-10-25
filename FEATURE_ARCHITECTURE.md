@@ -144,6 +144,45 @@ These sources informed the initial baseline. They do not replace per-feature res
 9. WebMash Labs dashboard guidance — role-based visibility and progressive disclosure: https://www.webmashlabs.com/blog/saas-dashboard-ux-design-best-practices
 10. Cluma information architecture — navigation trees, feature states, permissions and depth: https://www.cluma.design/blog-posts/information-architecture-for-saas-products
 
-## 7. Definition of done
+## 7. Feature research record — Software & Website Factory (initial research)
+
+**Status: researched baseline; implementation still requires code-level and deployed verification.**
+
+### Sources reviewed (six distinct product/documentation sources)
+
+1. Cursor Agent documentation: searches a codebase, edits multiple files, runs terminal commands, writes tests and repairs errors: https://prod.cursor.com/help/ai-features/agent
+2. Cursor Agent overview: project-level coordinator can plan a feature or migration and delegate work; agents combine instructions, tools and a model: https://cursor.com/docs/agent/overview
+3. Cursor terminal integration: execution modes, allowlists/sandboxing and approval controls for commands: https://prod.cursor.com/help/ai-features/terminal
+4. Lovable AI App Builder: prompt-to-app workflow, screens, database/logic, auth/hosting, iterative editing, integrations and security scanning: https://lovable.dev/build/app-builder
+5. Vercel v0 documentation: full-stack app creation, connected project, environment variables and deployment workflow: https://vercel.com/docs/v0
+6. v0 full-stack apps guide: incremental UI → data layer → auth/CRUD/realtime → optimization workflow, with databases and integrations: https://v0.dev/docs/full-stack-apps
+7. v0 FAQ: GitHub import, branching/commits/PRs, editor/preview, project organization and existing-codebase workflow: https://v0.app/docs/faqs
+8. OpenAI ChatGPT overview: coding tasks progress from understanding and planning through writing, testing, reviewing and shipping: https://chatgpt.com/overview/
+
+### Synthesis for Nkwasibwe
+
+- Accept a plain-language goal, inspect the existing repository and constraints before writing files; avoid replacing working code blindly.
+- Produce an explicit plan, file manifest and task ID before execution. Delegate independent tasks only when file ownership and dependencies are clear.
+- Build in small verifiable steps: UI/structure, data/API, auth and account ownership, then integrations and polish.
+- Run real syntax/tests/build commands in an isolated, resource-limited workspace. Record command output and exact failing tests; use a bounded repair loop and rerun the failed checks.
+- Show a reviewable diff, changed-file list, preview and downloadable source bundle. Keep deployment a distinct, permission-gated stage.
+- Apply command allowlists/sandboxing, secrets isolation, dependency/security checks, timeouts, cancellation and resource limits. Never run arbitrary user code inside the public web process.
+- Store task state and activity events durably; the UI must render backend events rather than simulate progress.
+- Treat provider quotas, missing credentials, sandbox unavailability and build failures as explicit blocked states, not success.
+- Keep user-owned project files and outputs isolated by authenticated account and project; verify authorization server-side.
+- A generated file set is not a verified app: require project-specific tests, build/preview checks and downloadable artifacts before reporting completion.
+
+### Acceptance criteria for this feature
+
+1. Requirements and constraints are captured before edits; the planned files and acceptance tests are visible.
+2. Every generated project includes only the files needed for its requested stack, plus setup/use documentation where appropriate.
+3. A task run persists status, timestamps, logs, artifact manifest and structured errors across refresh/restart.
+4. Tests/build run in an isolated runner with explicit allowlist and timeout; arbitrary shell commands are not run on the main backend.
+5. Failed checks trigger bounded repair, followed by a repeat of the failing check; unresolved errors remain visible.
+6. User can inspect/download actual generated files; no missing placeholder files are reported as delivered.
+7. Preview/deploy occurs only after verification and required user approval.
+8. Tests cover invalid project input, runner unavailable, timeout, dependency failure, missing env vars, cross-account access, retry/cancel and mobile status visibility.
+
+## 8. Definition of done
 
 A feature is verified only when its five-source research record is complete, code is merged through review, automated tests pass, the real deployed end-to-end workflow succeeds where applicable, security/account isolation/mobile/failure paths are checked, promised outputs are real and downloadable, UI status matches backend state, and limitations/provider requirements/costs are visible.
