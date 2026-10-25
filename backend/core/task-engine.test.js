@@ -622,3 +622,59 @@ test("artifact download converts task-storage failures into a safe 500 response"
   assert.equal(response.body.success, false);
   assert.doesNotMatch(response.body.error, /connection string/i);
 });
+
+
+test("task detail route converts storage errors into a safe response", async () => {
+  const engine = { getTask: async () => { throw new Error("private database details"); } };
+  const router = createTaskRouter({ engine, authenticateToken: (_req, _res, next) => next() });
+  const layer = router.stack.find(item => item.route?.path === "/:id");
+  assert.ok(layer, "task detail route must be registered");
+  const handler = layer.route.stack[1].handle;
+  const response = {
+    statusCode: 200,
+    status(code) { this.statusCode = code; return this; },
+    json(body) { this.body = body; return this; }
+  };
+  const originalError = console.error;
+  console.error = () => {};
+  try {
+    await handler({ params: { id: "45" }, user: { id: "owner-1" } }, response);
+  } finally {
+    console.error = originalError;
+  }
+  assert.equal(response.statusCode, 500);
+  assert.equal(response.body.code, "TASK_LOOKUP_FAILED");
+  assert.doesNotMatch(response.body.error, /private database/i);
+});
+
+test("task transition routes validate ids and safely handle storage failures", async () => {
+  const engine = {
+    pauseTask: async () => { throw new Error("private database details"); },
+    resumeTask: async () => null,
+    cancelTask: async () => null
+  };
+  const router = createTaskRouter({ engine, authenticateToken: (_req, _res, next) => next() });
+  const layer = router.stack.find(item => item.route?.path === "/:id/pause");
+  assert.ok(layer, "pause route must be registered");
+  const handler = layer.route.stack[1].handle;
+  const response = {
+    statusCode: 200,
+    status(code) { this.statusCode = code; return this; },
+    json(body) { this.body = body; return this; }
+  };
+  const originalError = console.error;
+  console.error = () => {};
+  try {
+    await handler({ params: { id: "45" }, user: { id: "owner-1" } }, response);
+  } finally {
+    console.error = originalError;
+  }
+  assert.equal(response.statusCode, 500);
+  assert.equal(response.body.code, "TASK_TRANSITION_FAILED");
+  assert.doesNotMatch(response.body.error, /private database/i);
+
+  const invalid = { ...response, statusCode: 200, body: undefined };
+  await handler({ params: { id: "../45" }, user: { id: "owner-1" } }, invalid);
+  assert.equal(invalid.statusCode, 400);
+  assert.equal(invalid.body.code, "TASK_ID_INVALID");
+});
