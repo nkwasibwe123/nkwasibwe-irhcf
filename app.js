@@ -8375,7 +8375,8 @@ document.addEventListener(
 function showDashboardHome() {
   activeDashboardCategory = null;
   if (taskManager) taskManager.hidden = true;
-  if (dashboardActivityCenter) dashboardActivityCenter.hidden = false;
+  // The main dashboard only lists workspaces; activity summaries belong inside each workspace.
+  if (dashboardActivityCenter) dashboardActivityCenter.hidden = true;
   if (workspaceChatPanel) workspaceChatPanel.hidden = true;
   if (workspaceActivityCenter) workspaceActivityCenter.hidden = true;
   if (dashboardCategories) dashboardCategories.hidden = false;
