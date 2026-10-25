@@ -238,7 +238,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
       if(quantities.get(id)>MAX_QUANTITY)return res.status(400).json({success:false,error:"A product quantity cannot exceed 99.",code:"CART_QUANTITY_LIMIT"});
     }
     try {
-      const products=await pool.query("SELECT id,price_minor,currency,stock_quantity FROM commerce_products WHERE active=TRUE AND id=ANY($1::bigint[])",[[...quantities.keys()]]);
+      const products=await pool.query("SELECT p.id,p.price_minor,p.currency,p.stock_quantity FROM commerce_products p WHERE p.active=TRUE AND (p.seller_user_id IS NULL OR EXISTS (SELECT 1 FROM commerce_sellers s WHERE s.user_id=p.seller_user_id AND s.status='approved')) AND p.id=ANY($1::bigint[])",[[...quantities.keys()]]);
       if(products.rows.length!==quantities.size)return res.status(400).json({success:false,error:"One or more products are unavailable.",code:"PRODUCT_UNAVAILABLE"});
       const currencies=new Set(products.rows.map(row=>row.currency));
       if(currencies.size!==1||!CURRENCIES.has(products.rows[0].currency))return res.status(400).json({success:false,error:"Cart items must use the same supported currency.",code:"CURRENCY_MISMATCH"});
