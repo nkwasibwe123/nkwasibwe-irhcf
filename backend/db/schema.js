@@ -2131,6 +2131,30 @@ await pool.query(`
   `);
 
   // ------------------------------------------------------------
+  // EVIDENCE-BACKED CAPABILITY DISCOVERY PROPOSALS
+  // ------------------------------------------------------------
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS capability_discovery_proposals (
+      id BIGSERIAL PRIMARY KEY,
+      fingerprint TEXT NOT NULL UNIQUE,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL,
+      source TEXT NOT NULL,
+      capability TEXT NOT NULL,
+      risks JSONB NOT NULL DEFAULT '[]'::jsonb,
+      status TEXT NOT NULL DEFAULT 'PROPOSED',
+      requires_sandbox BOOLEAN NOT NULL DEFAULT TRUE,
+      requires_security_review BOOLEAN NOT NULL DEFAULT TRUE,
+      requires_regression_tests BOOLEAN NOT NULL DEFAULT TRUE,
+      requires_human_promotion BOOLEAN NOT NULL DEFAULT TRUE,
+      discovered_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_capability_discovery_status_created
+      ON capability_discovery_proposals (status, created_at DESC);
+  `);
+
+  // ------------------------------------------------------------
   // GUARDED SELF-IMPROVEMENT PROPOSALS
   // ------------------------------------------------------------
   await pool.query(`
