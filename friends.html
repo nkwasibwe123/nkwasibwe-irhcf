@@ -332,9 +332,6 @@
     try{await loadConversations();if(activeConversation)await loadMessages();}
     finally{pollingBusy=false;}
   },5000);
-
-  loadFriends();
-  loadProfile();
 })();
 </script>
 </body>
