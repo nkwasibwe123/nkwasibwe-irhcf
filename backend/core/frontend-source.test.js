@@ -96,7 +96,7 @@ test("chat attachments are included as bounded text context and unsupported bina
     "Individual text attachments must have a size limit.");
   assert.match(app, /totalCharacters > 80000/,
     "Combined attachment content must have a total size limit.");
-  assert.match(app, /message:\s*taskText/,
+  assert.match(app, /message:\s*(?:buildLengthAwarePrompt\(taskText\)|taskText)/,
     "The backend chat payload must contain the actual attachment content.");
   assert.match(app, /ATTACHED FILE:/,
     "Attachment boundaries and filenames must be preserved in the AI context.");
@@ -504,3 +504,21 @@ test("verified project artifacts expose a revision action that carries forward t
   assert.match(engine, /===== EXISTING FILE: /);
 });
 
+
+test("assistant answers expose action controls and long-form length specifications", () => {
+  const app = fs.readFileSync(path.join(__dirname, "..", "..", "app.js"), "utf8");
+  const css = fs.readFileSync(path.join(__dirname, "..", "..", "style.css"), "utf8");
+  for (const label of ["Copy", "Edit", "Read aloud", "Share", "Helpful", "Not helpful", "Dashboard"]) assert.ok(app.includes(label), "missing action: " + label);
+  assert.match(app, /navigator\.clipboard/);
+  assert.match(app, /speechSynthesis\.speak/);
+  assert.match(app, /navigator\.share/);
+  assert.match(css, /\.message-actions\s*\{/);
+  assert.match(app, /function getRequestedOutputLength\(/);
+  assert.ok(app.includes(String.raw`source.match(/\b(?:amagambo)`), "Kinyarwanda requests such as 'amagambo 2000' must be recognized.");
+  assert.ok(app.includes(String.raw`source.match(/\b(?:imirongo)`), "Kinyarwanda requests such as 'imirongo 100' must be recognized.");
+  assert.match(app, /neza neza/, "Exact-count instructions in Kinyarwanda must be recognized.");
+  assert.match(app, /function buildLengthAwarePrompt\(/);
+  assert.match(app, /buildLengthAwarePrompt\(taskText\)/);
+  assert.match(app, /5000/);
+  assert.match(app, /20000/);
+});
