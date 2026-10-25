@@ -1,5 +1,7 @@
 # Nkwasibwe Market — Research Record
 
+> **Document status:** supplementary historical baseline. The canonical, current hierarchy and acceptance contract is [MARKETPLACE_FEATURE_RESEARCH.md](MARKETPLACE_FEATURE_RESEARCH.md). Keep the codebase-review notes below as additional context; update the canonical record first when requirements change.
+
 Status: researched baseline; the codebase has marketplace components and tests, but production payment/payout readiness must be confirmed with provider sandbox and deployment configuration.
 
 ## Sources reviewed

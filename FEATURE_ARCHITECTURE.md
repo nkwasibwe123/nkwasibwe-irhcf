@@ -23,8 +23,8 @@ Use these feature-specific records as the starting point for the five-source res
 
 - Software & Website Factory: the feature research section in this document.
 - Agents & Automation: research/AGENT_ORCHESTRATION_RESEARCH.md
-- Nkwasibwe Market: research/MARKETPLACE_RESEARCH.md
-- Social & Communication: research/SOCIAL_COMMUNITY_RESEARCH.md
+- Nkwasibwe Market (canonical deep dive): research/MARKETPLACE_FEATURE_RESEARCH.md; `MARKETPLACE_RESEARCH.md` remains supplementary baseline/codebase notes.
+- Chat with Friends / Social Integrations (canonical deep dive): research/SOCIAL_FEATURE_RESEARCH.md; `SOCIAL_COMMUNITY_RESEARCH.md` remains supplementary native-social/API baseline.
 - Media Studio: research/MEDIA_STUDIO_RESEARCH.md
 - Research & Search: research/RESEARCH_SEARCH_WORKSPACE.md
 - Chat & Personal Assistant: research/CHAT_ASSISTANT_RESEARCH.md
@@ -209,6 +209,6 @@ A feature is verified only when its five-source research record is complete, cod
 
 The six-source comparison, deep marketplace hierarchy, payment/ledger state machines, security invariants, and release acceptance gates are maintained in [research/MARKETPLACE_FEATURE_RESEARCH.md](research/MARKETPLACE_FEATURE_RESEARCH.md). Use [research/FEATURE_DEEP_DIVE_TEMPLATE.md](research/FEATURE_DEEP_DIVE_TEMPLATE.md) before changing or claiming completion of each Market sub-feature.
 
-## 10. Feature research record — Chat with Friends & Social Integrations
+## 11. Feature research record — Chat with Friends & Social Integrations
 
 The seven-source comparison, provider capability matrix, detailed feature hierarchy, and completion evidence requirements are maintained in [research/SOCIAL_FEATURE_RESEARCH.md](research/SOCIAL_FEATURE_RESEARCH.md). Use [research/FEATURE_DEEP_DIVE_TEMPLATE.md](research/FEATURE_DEEP_DIVE_TEMPLATE.md) for every additional main feature before implementation or completion claims.

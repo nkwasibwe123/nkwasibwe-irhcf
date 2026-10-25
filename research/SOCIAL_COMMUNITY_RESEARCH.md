@@ -1,5 +1,7 @@
 # Chat with Friends / Social & Communication — Research Record
 
+> **Document status:** supplementary baseline for native social/community capabilities. The canonical connected-account, provider capability and Phoenix-style download hierarchy is [SOCIAL_FEATURE_RESEARCH.md](SOCIAL_FEATURE_RESEARCH.md). Keep any distinct native-social findings here and update the canonical record first when requirements change.
+
 Status: researched baseline. Native Nkwasibwe social functionality and third-party integrations are separate workstreams; live external integrations require provider approval, credentials, OAuth consent and end-to-end tests.
 
 ## Sources reviewed
