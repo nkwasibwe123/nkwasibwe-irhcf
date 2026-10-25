@@ -19,6 +19,7 @@ The commerce API is mounted at `/api/commerce`.
 - `GET /api/commerce/cart` — read the signed-in user's persisted cart.
 - `GET /api/commerce/addresses`, `POST /api/commerce/addresses`, `PUT /api/commerce/addresses/:addressId/default`, `DELETE /api/commerce/addresses/:addressId` — private account-owned delivery address book.
 - `GET /api/commerce/orders/:orderId` — order details and line items; the order must belong to the signed-in account.
+- `GET /api/commerce/orders/:orderId/receipt` — printable HTML receipt/invoice for a paid or refunded order; owner-scoped, HTML-escaped and no-store.
 - `POST /api/commerce/quote` — server-calculated cart subtotal, coupon discount, shipping, tax and total from current database prices and server configuration.
 - `POST /api/commerce/orders/:orderId/refund-request`, `GET /api/commerce/orders/:orderId/refund-request` — account-owned refund/return request workflow.
 - `GET /api/commerce/refund-requests`, `PATCH /api/commerce/refund-requests/:requestId` — administrator review; marking a request `refunded` requires the external payment-provider refund reference.
