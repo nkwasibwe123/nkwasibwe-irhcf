@@ -42,7 +42,7 @@ jobs:
           fi
           export IRHCF_EXPECTED_DEPLOY_COMMIT="$expected_commit"
           for attempt in $(seq 1 36); do
-            current_main_sha="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+            current_main_sha="$(curl --silent --fail --max-time 10 "https://api.github.com/repos/$GITHUB_REPOSITORY/commits/main" 2>/dev/null | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{process.stdout.write(JSON.parse(d).sha||"")}catch{}})' || true)"
             if [[ -n "$current_main_sha" && "$current_main_sha" != "$GITHUB_SHA" ]]; then
               echo "This run was superseded by newer main commit $current_main_sha; the newer run owns deployment verification."
               exit 0
@@ -50,7 +50,7 @@ jobs:
             echo "Render health check attempt ${attempt}/36"
             if curl --silent --show-error --fail --max-time 15 "$health_url" --output /tmp/irhcf-health.json; then
               cat /tmp/irhcf-health.json
-              if node -e 'const h = JSON.parse(require("fs").readFileSync("/tmp/irhcf-health.json", "utf8")); const expected = process.env.IRHCF_EXPECTED_DEPLOY_COMMIT; const baseHealthy = h.success === true && h.system?.status === "healthy" && h.system?.ready === true && h.components?.database?.status === "healthy" && h.components?.authentication?.status === "healthy"; const detailedReady = !expected || (h.mediaProviders && typeof h.mediaProviders.videoGeneration === "boolean" && h.researchProviders && typeof h.researchProviders.googleSearchGrounding === "boolean" && h.integrationProviders && h.mediaProviderConfiguration?.localImageService && typeof h.mediaProviderConfiguration.localImageService.urlConfigured === "boolean" && typeof h.mediaProviderConfiguration.localImageService.tokenConfigured === "boolean" && typeof h.mediaProviderConfiguration.localImageService.enabled === "boolean" && typeof h.integrationProviders.googleOAuth === "boolean" && typeof h.integrationProviders.credentialEncryption === "boolean" && h.selfImprovement?.enabled === true && h.selfImprovement?.automaticFailureScanning === true && h.selfImprovement?.worker?.running === true); if (!baseHealthy || !detailedReady || (expected && h.deployment?.commit !== expected)) { console.log("Render has not deployed the expected runtime commit or is unhealthy. Expected " + (expected || "any healthy existing runtime for a tests/docs/workflow-only change") + "; serving " + (h.deployment && h.deployment.commit || "unknown") + "."); process.exit(1); } for (const [name, ready] of Object.entries(h.mediaProviders)) if (!ready) console.log("::warning::Media provider " + name + " is not configured."); if (h.integrationProviders) for (const [name, ready] of Object.entries(h.integrationProviders)) if (!ready) console.log("::warning::Integration provider " + name + " is not configured.");'; then
+              if node -e 'const h = JSON.parse(require("fs").readFileSync("/tmp/irhcf-health.json", "utf8")); const expected = process.env.IRHCF_EXPECTED_DEPLOY_COMMIT; const baseHealthy = h.success === true && h.system?.status === "healthy" && h.system?.ready === true && h.components?.database?.status === "healthy" && h.components?.authentication?.status === "healthy"; const detailedReady = !expected || (h.mediaProviders && typeof h.mediaProviders.videoGeneration === "boolean" && h.researchProviders && typeof h.researchProviders.googleSearchGrounding === "boolean" && h.integrationProviders && h.mediaProviderConfiguration?.localImageService && typeof h.mediaProviderConfiguration.localImageService.urlConfigured === "boolean" && typeof h.mediaProviderConfiguration.localImageService.tokenConfigured === "boolean" && h.mediaProviderConfiguration.localImageService.enabled === true && typeof h.integrationProviders.googleOAuth === "boolean" && typeof h.integrationProviders.credentialEncryption === "boolean" && h.selfImprovement?.enabled === true && h.selfImprovement?.automaticFailureScanning === true && h.selfImprovement?.worker?.running === true); if (!baseHealthy || !detailedReady || (expected && h.deployment?.commit !== expected)) { console.log("Render has not deployed the expected runtime commit or is unhealthy. Expected " + (expected || "any healthy existing runtime for a tests/docs/workflow-only change") + "; serving " + (h.deployment && h.deployment.commit || "unknown") + "."); process.exit(1); } for (const [name, ready] of Object.entries(h.mediaProviders)) if (!ready) console.log("::warning::Media provider " + name + " is not configured."); if (h.integrationProviders) for (const [name, ready] of Object.entries(h.integrationProviders)) if (!ready) console.log("::warning::Integration provider " + name + " is not configured.");'; then
                 base_url="https://nkwasibwe-irhcf.onrender.com"
                 route_code=$(curl --silent --show-error --max-time 15 -o /tmp/irhcf-task-route.json -w "%{http_code}" -X POST -H "Content-Type: application/json" -d '{}' "$base_url/api/tasks")
                 echo "POST /api/tasks deployment readiness -> HTTP $route_code"
@@ -106,3 +106,23 @@ jobs:
               exit 1
             fi
           done
+
+      - name: Verify self-hosted image service readiness
+        shell: bash
+        run: |
+          health_url="https://nkwasibwe-irhcf-image-service.onrender.com/health"
+          for attempt in $(seq 1 12); do
+            echo "Local image service health check attempt ${attempt}/12"
+            if curl --silent --show-error --fail --max-time 20 "$health_url" --output /tmp/irhcf-image-health.json; then
+              cat /tmp/irhcf-image-health.json
+              if node -e 'const h=JSON.parse(require("fs").readFileSync("/tmp/irhcf-image-health.json","utf8")); if (h.success !== true || h.service !== "irhcf-local-image" || h.ready !== true || !Array.isArray(h.capabilities) || !h.capabilities.includes("background-replacement-solid-color")) process.exit(1);'; then
+                echo "Self-hosted image service is healthy and advertises the expected background-edit capability."
+                exit 0
+              fi
+              echo "Image service responded but its health contract is incomplete."
+            fi
+            sleep 10
+          done
+          echo "Self-hosted image service did not become ready within the retry window."
+          exit 1
+
