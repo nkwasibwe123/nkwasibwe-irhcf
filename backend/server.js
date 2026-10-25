@@ -26,6 +26,7 @@ const { editAudioFile } = require("./media/audio-editor");
 const { toFile } = require("openai/uploads");
 const { getLocalTranscriberConfig, getLocalTranscriberStatus, transcribeLocally } = require("./media/local-transcriber");
 const { getVideoProviderStatus } = require("./media/video-provider-status");
+const { checkRateLimitEntry } = require("./core/rate-limit-store");
 
 // ============================================================
 // INTERNAL MODULES
@@ -801,6 +802,9 @@ const SECURITY = Object.freeze({
   MAX_REQUESTS_PER_WINDOW:
     120,
 
+  MAX_RATE_LIMIT_ENTRIES:
+    100000,
+
   RATE_WINDOW_MS:
     60 * 1000,
 
@@ -1490,95 +1494,22 @@ function getRateLimitKey(
 function checkRateLimit(
   req,
   namespace = "global",
-  limit =
-    SECURITY.MAX_REQUESTS_PER_WINDOW
+  limit = SECURITY.MAX_REQUESTS_PER_WINDOW
 ) {
-
-  const now =
-    Date.now();
-
-  const key =
-    getRateLimitKey(
-      req,
-      namespace
-    );
-
-  const current =
-    securityState
-      .requestCounts
-      .get(key);
-
-
-  if (
-    !current ||
-    now - current.startedAt >
-      SECURITY.RATE_WINDOW_MS
-  ) {
-
-    securityState
-      .requestCounts
-      .set(
-        key,
-        {
-          startedAt:
-            now,
-          count:
-            1
-        }
-      );
-
-    return {
-      allowed: true,
-      remaining:
-        Math.max(
-          0,
-          limit - 1
-        )
-    };
-
-  }
-
-
-  current.count += 1;
-
-
-  if (
-    current.count >
-    limit
-  ) {
-
-    return {
-      allowed: false,
-      remaining: 0,
-      retryAfter:
-        Math.ceil(
-          (
-            SECURITY.RATE_WINDOW_MS -
-            (
-              now -
-              current.startedAt
-            )
-          ) / 1000
-        )
-    };
-
-  }
-
-
-  return {
-    allowed: true,
-    remaining:
-      Math.max(
-        0,
-        limit -
-          current.count
-      )
-  };
-
+  const key = getRateLimitKey(req, namespace);
+  return checkRateLimitEntry(
+    securityState.requestCounts,
+    key,
+    limit,
+    Date.now(),
+    {
+      windowMs: SECURITY.RATE_WINDOW_MS,
+      maxEntries: SECURITY.MAX_RATE_LIMIT_ENTRIES
+    }
+  );
 }
 
 
-// ============================================================
 // GLOBAL RATE LIMIT
 // ============================================================
 
