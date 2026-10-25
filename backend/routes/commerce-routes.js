@@ -518,6 +518,22 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
     (COALESCE(e.total_earned,0)-COALESCE(p.total_paid,0)-COALESCE(p.reserved,0))::bigint AS available
   FROM currencies c LEFT JOIN earned e USING(currency) LEFT JOIN payouts p USING(currency) ORDER BY c.currency`;
 
+  router.get("/seller/analytics", authenticateToken, async (req, res) => {
+    const requestedDays=Number(req.query?.days||30);
+    const days=[7,30,90].includes(requestedDays)?requestedDays:30;
+    try{
+      const seller=await pool.query("SELECT status FROM commerce_sellers WHERE user_id=$1 LIMIT 1",[req.user.id]);
+      if(seller.rows[0]?.status!=="approved")return res.status(403).json({success:false,error:"Only approved sellers can view marketplace analytics.",code:"APPROVED_SELLER_REQUIRED"});
+      const [summary,dailySales,topProducts,fulfillment]=await Promise.all([
+        pool.query("SELECT l.currency,COUNT(DISTINCT l.order_id)::int AS paid_orders,COALESCE(SUM(oi.quantity),0)::bigint AS units_sold,COALESCE(SUM(l.gross_minor),0)::bigint AS gross_sales_minor,COALESCE(SUM(l.net_minor-l.reversed_net_minor),0)::bigint AS seller_earnings_minor FROM commerce_seller_ledger l JOIN commerce_order_items oi ON oi.id=l.order_item_id JOIN commerce_orders o ON o.id=l.order_id WHERE l.seller_user_id=$1 AND o.status='paid' AND o.paid_at>=CURRENT_TIMESTAMP-($2::int*INTERVAL '1 day') GROUP BY l.currency ORDER BY l.currency",[req.user.id,days]),
+        pool.query("SELECT TO_CHAR(DATE_TRUNC('day',o.paid_at),'YYYY-MM-DD') AS day,l.currency,SUM(l.gross_minor)::bigint AS gross_sales_minor,COUNT(DISTINCT o.id)::int AS paid_orders FROM commerce_seller_ledger l JOIN commerce_orders o ON o.id=l.order_id WHERE l.seller_user_id=$1 AND o.status='paid' AND o.paid_at>=CURRENT_TIMESTAMP-($2::int*INTERVAL '1 day') GROUP BY DATE_TRUNC('day',o.paid_at),l.currency ORDER BY DATE_TRUNC('day',o.paid_at),l.currency",[req.user.id,days]),
+        pool.query("SELECT oi.product_id,oi.product_name,o.currency,SUM(oi.quantity)::bigint AS units_sold,SUM(l.gross_minor)::bigint AS gross_sales_minor,COUNT(DISTINCT o.id)::int AS paid_orders FROM commerce_seller_ledger l JOIN commerce_order_items oi ON oi.id=l.order_item_id JOIN commerce_orders o ON o.id=l.order_id WHERE l.seller_user_id=$1 AND o.status='paid' AND o.paid_at>=CURRENT_TIMESTAMP-($2::int*INTERVAL '1 day') GROUP BY oi.product_id,oi.product_name,o.currency ORDER BY SUM(l.gross_minor) DESC, SUM(oi.quantity) DESC LIMIT 10",[req.user.id,days]),
+        pool.query("SELECT oi.fulfillment_status,COUNT(*)::int AS item_count FROM commerce_order_items oi JOIN commerce_orders o ON o.id=oi.order_id WHERE oi.seller_user_id=$1 AND o.status='paid' AND o.paid_at>=CURRENT_TIMESTAMP-($2::int*INTERVAL '1 day') GROUP BY oi.fulfillment_status ORDER BY oi.fulfillment_status",[req.user.id,days])
+      ]);
+      return res.json({success:true,periodDays:days,summary:summary.rows,dailySales:dailySales.rows,topProducts:topProducts.rows,fulfillment:fulfillment.rows,accountingNote:"Sales include only provider-confirmed paid orders and exclude orders marked refunded. Available balances and payout eligibility are reported separately by the seller payouts endpoint."});
+    }catch(error){return res.status(500).json({success:false,error:"Could not load seller analytics.",code:"SELLER_ANALYTICS_FAILED"});}
+  });
+
   router.get("/seller/payouts", authenticateToken, async (req, res) => {
     try {
       const seller=await pool.query("SELECT status FROM commerce_sellers WHERE user_id=$1 LIMIT 1",[req.user.id]);
