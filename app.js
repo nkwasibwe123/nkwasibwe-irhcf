@@ -9998,7 +9998,8 @@ function initializeVideoEditor() {
           effect: document.getElementById("videoEditorEffect").value,
           startSeconds,
           endSeconds,
-          outputFormat: document.getElementById("videoEditorFormat").value
+          outputFormat: document.getElementById("videoEditorFormat").value,
+          subtitles: document.getElementById("videoEditorSubtitles")?.value || null
         })
       });
       if (!result?.success || !result.videoBase64) throw new Error(result?.error || "Server ntiyagaruye video yahinduwe.");
