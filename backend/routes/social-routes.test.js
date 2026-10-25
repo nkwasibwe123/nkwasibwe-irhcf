@@ -128,3 +128,27 @@ test("reaction endpoint saves supported reactions and removes a reaction with no
     assert.ok(statements.some(item=>/DELETE FROM social_post_reactions/.test(item.sql)));
   });
 });
+
+test("friends list is scoped to the signed-in user and excludes blocked relationships",async()=>{
+  let sql,params;
+  const pool={query:async(q,p)=>{sql=q;params=p;return {rows:[{id:8,display_name:"Friend"}]};}};
+  await withServer(appFor(pool),async base=>{
+    const r=await fetch(base+"/api/social/friends");
+    assert.equal(r.status,200);
+    assert.deepEqual((await r.json()).friends,[{id:8,display_name:"Friend"}]);
+    assert.match(sql,/mine\.follower_id=\$1/);
+    assert.match(sql,/NOT EXISTS/);
+    assert.deepEqual(params,[7]);
+  });
+});
+
+test("declining a friend request only changes the recipient's pending request",async()=>{
+  let sql,params;
+  const pool={query:async(q,p)=>{sql=q;params=p;return {rows:[{id:12,status:"declined"}]};}};
+  await withServer(appFor(pool),async base=>{
+    const r=await fetch(base+"/api/social/friend-requests/12/decline",{method:"POST"});
+    assert.equal(r.status,200);
+    assert.match(sql,/recipient_id=\$2 AND status='pending'/);
+    assert.deepEqual(params,["12",7]);
+  });
+});
