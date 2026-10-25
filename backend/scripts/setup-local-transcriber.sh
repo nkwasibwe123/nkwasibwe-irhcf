@@ -97,7 +97,7 @@ rm -rf "$SMOKE_DIR"
 trap - EXIT
 
 FINGERPRINT="$(fingerprint_engine)"
-printf "%s\\n" "$FINGERPRINT" > "$VERIFIED_MARKER.tmp"
+printf '%s\n' "$FINGERPRINT" > "$VERIFIED_MARKER.tmp"
 mv "$VERIFIED_MARKER.tmp" "$VERIFIED_MARKER"
 echo "[local-transcriber] whisper.cpp binary, multilingual model, FFmpeg and speech inference verified."
 echo "[local-transcriber] WHISPER_CPP_PATH=$BIN"
