@@ -760,8 +760,8 @@ test("seller product management includes inline editing for price, stock and ful
   const js=fs.readFileSync(path.join(root,"market.js"),"utf8");
   assert.match(html,/id="sellerProductsList"/);
   assert.match(js,/product-edit-form/);
-  assert.match(js,/name="priceMinor"/);
-  assert.match(js,/name="stockQuantity"/);
-  assert.match(js,/name="requiresShipping"/);
+  assert.match(js,/addField\("Price \(minor units\)","priceMinor"/);
+  assert.match(js,/addField\("Available stock","stockQuantity"/);
+  assert.match(js,/shipping\.name="requiresShipping"/);
   assert.match(js,/request\("\/products\/"\+encodeURIComponent\(product\.id\),\{method:"PATCH"/);
 });
