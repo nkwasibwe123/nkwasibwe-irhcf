@@ -3,7 +3,17 @@
   const API = "https://nkwasibwe-irhcf.onrender.com/api/commerce";
   const TOKEN_KEY = "nkwasibwe_auth_token";
   const $ = id => document.getElementById(id);
-  const state = { products: [], cart: [], orders: [], wishlist: [], addresses: [], seller: null, couponCode: "", quote: null, compareItems: [] };
+  const CHECKOUT_KEY_STORAGE = "nkwasibwe_market_checkout_key";
+  const readCheckoutKey = () => { try { return sessionStorage.getItem(CHECKOUT_KEY_STORAGE) || ""; } catch { return ""; } };
+  const state = { products: [], cart: [], orders: [], wishlist: [], addresses: [], seller: null, couponCode: "", quote: null, compareItems: [], checkoutIdempotencyKey: readCheckoutKey() };
+  function resetCheckoutIdempotencyKey() {
+    state.checkoutIdempotencyKey = "";
+    try { sessionStorage.removeItem(CHECKOUT_KEY_STORAGE); } catch {}
+  }
+  function createCheckoutIdempotencyKey() {
+    try { if (globalThis.crypto && typeof globalThis.crypto.randomUUID === "function") return globalThis.crypto.randomUUID(); } catch {}
+    return "irhcf-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+  }
   const token = () => { try { return localStorage.getItem(TOKEN_KEY) || ""; } catch { return ""; } };
   const authHeaders = () => token() ? { Authorization: "Bearer " + token() } : {};
   const integerCurrencies = new Set(["RWF", "UGX", "XAF", "XOF", "JPY"]);
@@ -19,7 +29,12 @@
     });
     let data = {};
     try { data = await response.json(); } catch {}
-    if (!response.ok) throw new Error(data.error || ("Request failed (" + response.status + ")"));
+    if (!response.ok) {
+      const error = new Error(data.error || ("Request failed (" + response.status + ")"));
+      error.code = data.code || "";
+      error.status = response.status;
+      throw error;
+    }
     return data;
   }
   function element(tag, className, text) {
@@ -475,6 +490,22 @@
       await loadQuote();
     }catch(error){box.replaceChildren(element("p","muted","Could not load cart: "+error.message));$("checkoutButton").disabled=true;}
   }
+  async function clearPaidOrderCart(orderId) {
+    const detail = await request("/orders/" + encodeURIComponent(orderId));
+    const cart = await request("/cart");
+    const currentItems = new Map((cart.items || []).map(item => [String(item.product_id), Number(item.quantity || 0)]));
+    for (const item of (detail.items || [])) {
+      const productId = String(item.product_id);
+      const remaining = Math.max(0, (currentItems.get(productId) || 0) - Number(item.quantity || 0));
+      await request("/cart/items/" + encodeURIComponent(productId), {
+        method: "PUT",
+        body: JSON.stringify({ quantity: remaining })
+      });
+    }
+    await loadCart();
+    await loadOrders();
+  }
+
   async function loadOrders(){
     const box=$("ordersList");if(!token()){box.replaceChildren(element("p","muted","Sign in to view orders."));return;}
     box.replaceChildren(element("p","muted","Loading orders…"));
@@ -532,10 +563,35 @@
   $("checkoutButton").addEventListener("click",async()=>{
     if(!token()){$("checkoutMessage").textContent="Sign in first to check out.";return;}
     $("checkoutButton").disabled=true;$("checkoutMessage").textContent="Creating hosted checkout…";
-    try{const result=await request("/checkout",{method:"POST",body:JSON.stringify({items:state.cart.map(item=>({productId:Number(item.product_id),quantity:Number(item.quantity)})),addressId:$("shippingAddressSelect").value?Number($("shippingAddressSelect").value):null,couponCode:state.couponCode||null})});
+    if(!state.checkoutIdempotencyKey){
+      state.checkoutIdempotencyKey=createCheckoutIdempotencyKey();
+      try{sessionStorage.setItem(CHECKOUT_KEY_STORAGE,state.checkoutIdempotencyKey);}catch{}
+    }
+    const idempotencyKey=state.checkoutIdempotencyKey;
+    try{
+      const result=await request("/checkout",{
+        method:"POST",
+        headers:{"Idempotency-Key":idempotencyKey},
+        body:JSON.stringify({items:state.cart.map(item=>({productId:Number(item.product_id),quantity:Number(item.quantity)})),addressId:$("shippingAddressSelect").value?Number($("shippingAddressSelect").value):null,couponCode:state.couponCode||null})
+      });
+      if(result.paymentStatus==="paid"){
+        try{
+          await clearPaidOrderCart(result.orderId);
+          resetCheckoutIdempotencyKey();
+          $("checkoutMessage").textContent="Order #"+result.orderId+" is already paid. Your cart has been refreshed; no second payment was created.";
+        }catch{
+          $("checkoutMessage").textContent="Order #"+result.orderId+" is already paid. Refresh the cart before starting another checkout.";
+        }
+        $("checkoutButton").disabled=false;
+        return;
+      }
       if(!result.checkoutUrl||!result.checkoutUrl.startsWith("https://"))throw new Error("The server did not return a valid hosted checkout URL.");
       window.location.assign(result.checkoutUrl);
-    }catch(error){$("checkoutMessage").textContent=error.message;$("checkoutButton").disabled=false;}
+    }catch(error){
+      if(["CHECKOUT_PROVIDER_FAILED","CHECKOUT_PROVIDER_UNAVAILABLE","CHECKOUT_CONFIGURATION_INCOMPLETE","IDEMPOTENCY_KEY_ALREADY_USED","IDEMPOTENCY_KEY_REUSED"].includes(error.code))resetCheckoutIdempotencyKey();
+      $("checkoutMessage").textContent=error.message;
+      $("checkoutButton").disabled=false;
+    }
   });
   $("productForm").addEventListener("submit",async event=>{
     event.preventDefault();const form=new FormData(event.currentTarget);const message=$("adminMessage");message.textContent="Creating product…";
@@ -551,5 +607,39 @@
   $("reloadButton").addEventListener("click",async()=>{showAuthNotice();await Promise.all([loadProducts(),loadCart(),loadWishlist(),loadAddresses()]);if(token())await loadOrders();});
   $("wishlistButton").addEventListener("click",loadWishlist);
   $("ordersButton").addEventListener("click",loadOrders);
-  showAuthNotice();loadMarketplaceStatus();loadProducts();loadCart();loadWishlist();loadAddresses();loadSellerProfile();loadSellerProducts();loadSellerOrders();loadSellerPayouts();loadSellerAnalytics();if(token())loadOrders();
+    async function handleVerifiedPaymentReturn() {
+    const params = new URLSearchParams(window.location.search);
+    const txRef = String(params.get("tx_ref") || "").trim();
+    if (!txRef) return;
+    if (!token()) {
+      $("checkoutMessage").textContent = "Payment return received. Sign in to check the verified order status.";
+      return;
+    }
+    $("checkoutMessage").textContent = "Checking the payment with Nkwasibwe Market…";
+    for (let attempt = 0; attempt < 10; attempt++) {
+      await loadOrders();
+      const order = state.orders.find(item => String(item.tx_ref) === txRef);
+      if (order?.status === "paid") {
+        try {
+          await clearPaidOrderCart(order.id);
+          resetCheckoutIdempotencyKey();
+          $("checkoutMessage").textContent = "Payment confirmed for order #" + order.id + ". Your cart has been updated.";
+          history.replaceState({}, "", window.location.pathname);
+        } catch {
+          $("checkoutMessage").textContent = "Payment confirmed for order #" + order.id + ". Refresh the cart before another checkout.";
+        }
+        return;
+      }
+      if (order && ["failed", "cancelled", "refunded"].includes(String(order.status))) {
+        resetCheckoutIdempotencyKey();
+        $("checkoutMessage").textContent = "Order #" + order.id + " was not paid. You can start a new checkout when ready.";
+        history.replaceState({}, "", window.location.pathname);
+        return;
+      }
+      await new Promise(resolve => setTimeout(resolve, 3000));
+    }
+    $("checkoutMessage").textContent = "Payment confirmation is still pending on the server. Do not pay again; refresh Orders shortly.";
+  }
+
+showAuthNotice();loadMarketplaceStatus();loadProducts();loadCart();loadWishlist();loadAddresses();loadSellerProfile();loadSellerProducts();loadSellerOrders();loadSellerPayouts();loadSellerAnalytics();if(token())loadOrders().then(handleVerifiedPaymentReturn);
 })();
