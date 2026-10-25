@@ -808,3 +808,58 @@ test("Flutterwave webhook refuses an underpaid successful transaction", async ()
     assert.equal(sqlCalls.length,1);
   });
 });
+
+
+test("Flutterwave webhook rejects an invalid signature before querying provider or database", async () => {
+  const app = express();
+  let providerCalls = 0;
+  let databaseCalls = 0;
+  app.use(express.json());
+  app.use("/api/commerce", createCommerceRouter({
+    pool: { async query() { databaseCalls += 1; throw new Error("Database must not be queried."); } },
+    authenticateToken: (req,res,next) => next(),
+    env: { FLW_SECRET_HASH: "test-webhook-secret", FLW_SECRET_KEY: "test-provider-key" },
+    fetchImpl: async () => { providerCalls += 1; throw new Error("Provider must not be queried."); }
+  }));
+  await withServer(app, async base => {
+    const response = await fetch(base + "/api/commerce/webhook/flutterwave", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "verif-hash": "wrong-secret" },
+      body: JSON.stringify({ data: { id: 111, tx_ref: "irhcf_ref_1" } })
+    });
+    assert.equal(response.status, 401);
+    assert.equal((await response.json()).code, "WEBHOOK_SIGNATURE_INVALID");
+    assert.equal(providerCalls, 0);
+    assert.equal(databaseCalls, 0);
+  });
+});
+
+test("replayed successful Flutterwave webhook is idempotent for an already-paid order", async () => {
+  const app = express();
+  const queries = [];
+  app.use(express.json());
+  app.use("/api/commerce", createCommerceRouter({
+    pool: { async query(sql, params) {
+      queries.push({ sql, params });
+      if (sql.includes("SELECT id, status, currency, total_minor, coupon_code")) {
+        return { rows: [{ id: "order-1", status: "paid", currency: "RWF", total_minor: 1000 }] };
+      }
+      throw new Error("A replay must not repeat ledger or order mutations.");
+    } },
+    authenticateToken: (req,res,next) => next(),
+    env: { FLW_SECRET_HASH: "test-webhook-secret", FLW_SECRET_KEY: "test-provider-key" },
+    fetchImpl: async () => ({ ok: true, async json() { return { status: "success", data: {
+      id: 111, tx_ref: "irhcf_ref_1", status: "successful", amount: 1000, currency: "RWF"
+    } }; } })
+  }));
+  await withServer(app, async base => {
+    const response = await fetch(base + "/api/commerce/webhook/flutterwave", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "verif-hash": "test-webhook-secret" },
+      body: JSON.stringify({ data: { id: 111, tx_ref: "irhcf_ref_1" } })
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { success: true, duplicate: true });
+    assert.equal(queries.length, 1);
+  });
+});
