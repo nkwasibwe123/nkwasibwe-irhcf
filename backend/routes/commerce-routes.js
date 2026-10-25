@@ -162,10 +162,18 @@ async function ensureCommerceSchema(pool) {
       unit_price_minor BIGINT NOT NULL CHECK (unit_price_minor >= 0),
       line_total_minor BIGINT NOT NULL CHECK (line_total_minor >= 0),
       seller_user_id INTEGER REFERENCES commerce_sellers(user_id) ON DELETE SET NULL,
-      fulfillment_status TEXT NOT NULL DEFAULT 'pending' CHECK (fulfillment_status IN ('pending','processing','shipped','delivered','cancelled'))
+      fulfillment_status TEXT NOT NULL DEFAULT 'pending' CHECK (fulfillment_status IN ('pending','processing','shipped','delivered','cancelled')),
+      tracking_carrier TEXT,
+      tracking_number TEXT,
+      shipped_at TIMESTAMPTZ,
+      delivered_at TIMESTAMPTZ
     );
     ALTER TABLE commerce_order_items ADD COLUMN IF NOT EXISTS seller_user_id INTEGER REFERENCES commerce_sellers(user_id) ON DELETE SET NULL;
     ALTER TABLE commerce_order_items ADD COLUMN IF NOT EXISTS fulfillment_status TEXT NOT NULL DEFAULT 'pending';
+    ALTER TABLE commerce_order_items ADD COLUMN IF NOT EXISTS tracking_carrier TEXT;
+    ALTER TABLE commerce_order_items ADD COLUMN IF NOT EXISTS tracking_number TEXT;
+    ALTER TABLE commerce_order_items ADD COLUMN IF NOT EXISTS shipped_at TIMESTAMPTZ;
+    ALTER TABLE commerce_order_items ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ;
     CREATE INDEX IF NOT EXISTS idx_commerce_order_items_seller ON commerce_order_items(seller_user_id, fulfillment_status, id);
     CREATE TABLE IF NOT EXISTS commerce_stock_reservations (
       order_id BIGINT NOT NULL REFERENCES commerce_orders(id) ON DELETE CASCADE,
@@ -472,7 +480,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
     try {
       const seller = await pool.query("SELECT status FROM commerce_sellers WHERE user_id=$1 LIMIT 1", [req.user.id]);
       if (seller.rows[0]?.status !== "approved") return res.status(403).json({ success: false, error: "Only approved sellers can view seller orders.", code: "APPROVED_SELLER_REQUIRED" });
-      const result = await pool.query("SELECT oi.id AS item_id, o.id AS order_id, o.status AS payment_status, o.paid_at, o.currency, oi.product_name, oi.quantity, oi.line_total_minor, oi.fulfillment_status, o.shipping_address FROM commerce_order_items oi JOIN commerce_orders o ON o.id=oi.order_id WHERE oi.seller_user_id=$1 AND o.status='paid' ORDER BY o.paid_at DESC LIMIT 200", [req.user.id]);
+      const result = await pool.query("SELECT oi.id AS item_id, o.id AS order_id, o.status AS payment_status, o.paid_at, o.currency, oi.product_name, oi.quantity, oi.line_total_minor, oi.fulfillment_status, oi.tracking_carrier, oi.tracking_number, o.shipping_address FROM commerce_order_items oi JOIN commerce_orders o ON o.id=oi.order_id WHERE oi.seller_user_id=$1 AND o.status='paid' ORDER BY o.paid_at DESC LIMIT 200", [req.user.id]);
       return res.json({ success: true, orders: result.rows });
     } catch (error) {
       return res.status(500).json({ success: false, error: "Could not load seller orders.", code: "SELLER_ORDERS_LOAD_FAILED" });
@@ -558,7 +566,10 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
   router.patch("/seller/order-items/:itemId/fulfillment", authenticateToken, async (req, res) => {
     const itemId = safeInteger(req.params.itemId, 1, Number.MAX_SAFE_INTEGER);
     const nextStatus = String(req.body?.status || "");
+    const trackingCarrier=String(req.body?.trackingCarrier||"").trim().slice(0,120);
+    const trackingNumber=String(req.body?.trackingNumber||"").trim().slice(0,200);
     if (!itemId || !["processing","shipped","delivered","cancelled"].includes(nextStatus)) return res.status(400).json({ success: false, error: "A valid item ID and fulfillment status are required.", code: "FULFILLMENT_INPUT_INVALID" });
+    if(nextStatus==="shipped"&&(trackingCarrier.length<2||trackingNumber.length<3||/[\u0000-\u001f]/.test(trackingCarrier+trackingNumber)))return res.status(400).json({success:false,error:"Carrier name and tracking/reference number are required before marking an item shipped.",code:"TRACKING_DETAILS_REQUIRED"});
     try {
       const seller = await pool.query("SELECT status FROM commerce_sellers WHERE user_id=$1 LIMIT 1", [req.user.id]);
       if (seller.rows[0]?.status !== "approved") return res.status(403).json({ success: false, error: "Only approved sellers can update fulfillment.", code: "APPROVED_SELLER_REQUIRED" });
@@ -568,7 +579,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
       const current = item.rows[0].fulfillment_status;
       const allowed = ({ pending:["processing","cancelled"], processing:["shipped","cancelled"], shipped:["delivered"], delivered:[], cancelled:[] })[current] || [];
       if (!allowed.includes(nextStatus)) return res.status(409).json({ success: false, error: "That fulfillment status transition is not allowed.", code: "FULFILLMENT_TRANSITION_INVALID" });
-      const updated = await pool.query("UPDATE commerce_order_items SET fulfillment_status=$2 WHERE id=$1 AND seller_user_id=$3 RETURNING id,fulfillment_status", [itemId,nextStatus,req.user.id]);
+      const updated = await pool.query("UPDATE commerce_order_items SET fulfillment_status=$2,tracking_carrier=CASE WHEN $2='shipped' THEN $3 ELSE tracking_carrier END,tracking_number=CASE WHEN $2='shipped' THEN $4 ELSE tracking_number END,shipped_at=CASE WHEN $2='shipped' THEN CURRENT_TIMESTAMP ELSE shipped_at END,delivered_at=CASE WHEN $2='delivered' THEN CURRENT_TIMESTAMP ELSE delivered_at END WHERE id=$1 AND seller_user_id=$5 RETURNING id,fulfillment_status,tracking_carrier,tracking_number,shipped_at,delivered_at", [itemId,nextStatus,trackingCarrier||null,trackingNumber||null,req.user.id]);
       return res.json({ success: true, item: updated.rows[0] });
     } catch (error) {
       return res.status(500).json({ success: false, error: "Could not update fulfillment.", code: "FULFILLMENT_UPDATE_FAILED" });
@@ -904,7 +915,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
     try {
       const result = await pool.query("SELECT id, tx_ref, status, currency, total_minor, subtotal_minor, discount_minor, shipping_minor, tax_minor, tax_rate_bps, coupon_code, provider, provider_transaction_id, checkout_url, shipping_address, expires_at, stock_released_at, created_at, updated_at, paid_at FROM commerce_orders WHERE id=$1 AND user_id=$2 LIMIT 1", [orderId, req.user.id]);
       if (!result.rows.length) return res.status(404).json({ success: false, error: "Order not found.", code: "ORDER_NOT_FOUND" });
-      const items = await pool.query("SELECT product_id, product_name, quantity, unit_price_minor, line_total_minor, fulfillment_status FROM commerce_order_items WHERE order_id=$1 ORDER BY id", [orderId]);
+      const items = await pool.query("SELECT product_id, product_name, quantity, unit_price_minor, line_total_minor, fulfillment_status, tracking_carrier, tracking_number, shipped_at, delivered_at FROM commerce_order_items WHERE order_id=$1 ORDER BY id", [orderId]);
       return res.json({ success: true, order: result.rows[0], items: items.rows });
     } catch (error) {
       return res.status(500).json({ success: false, error: "Could not load order details.", code: "ORDER_DETAILS_FAILED" });
