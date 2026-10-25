@@ -680,7 +680,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
   router.get("/orders", authenticateToken, async (req, res) => {
     try {
       const result = await pool.query(
-        "SELECT id, tx_ref, status, currency, total_minor, subtotal_minor, discount_minor, coupon_code, provider, checkout_url, shipping_address, created_at, updated_at, paid_at FROM commerce_orders WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100",
+        "SELECT id, tx_ref, status, currency, total_minor, subtotal_minor, discount_minor, shipping_minor, tax_minor, tax_rate_bps, coupon_code, provider, checkout_url, shipping_address, created_at, updated_at, paid_at FROM commerce_orders WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100",
         [req.user.id]
       );
       return res.json({ success: true, orders: result.rows });
@@ -693,7 +693,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
     const orderId = safeInteger(req.params.orderId, 1, Number.MAX_SAFE_INTEGER);
     if (!orderId) return res.status(400).json({ success: false, error: "Invalid order ID.", code: "ORDER_ID_INVALID" });
     try {
-      const result = await pool.query("SELECT id, tx_ref, status, currency, total_minor, subtotal_minor, discount_minor, coupon_code, provider, provider_transaction_id, checkout_url, shipping_address, created_at, updated_at, paid_at FROM commerce_orders WHERE id=$1 AND user_id=$2 LIMIT 1", [orderId, req.user.id]);
+      const result = await pool.query("SELECT id, tx_ref, status, currency, total_minor, subtotal_minor, discount_minor, shipping_minor, tax_minor, tax_rate_bps, coupon_code, provider, provider_transaction_id, checkout_url, shipping_address, created_at, updated_at, paid_at FROM commerce_orders WHERE id=$1 AND user_id=$2 LIMIT 1", [orderId, req.user.id]);
       if (!result.rows.length) return res.status(404).json({ success: false, error: "Order not found.", code: "ORDER_NOT_FOUND" });
       const items = await pool.query("SELECT product_id, product_name, quantity, unit_price_minor, line_total_minor, fulfillment_status FROM commerce_order_items WHERE order_id=$1 ORDER BY id", [orderId]);
       return res.json({ success: true, order: result.rows[0], items: items.rows });
@@ -854,15 +854,33 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
         }
         discountMinor = calculation.discountMinor;
       }
-      totalMinor = subtotalMinor - discountMinor;
-      if (totalMinor <= 0) {
+      let shippingMinor = 0;
+      if (requiresShipping) {
+        shippingMinor = getShippingRateMinor(shippingAddress?.country, currency, env);
+        if (shippingMinor === null) {
+          await client.query("ROLLBACK");
+          return res.status(503).json({ success: false, code: "SHIPPING_RATE_NOT_CONFIGURED", error: "No shipping rate is configured for this country and currency." });
+        }
+      }
+      const taxRateBps = getTaxRateBps(env);
+      if (taxRateBps === null) {
         await client.query("ROLLBACK");
-        return res.status(400).json({ success: false, code: "TOTAL_INVALID", error: "Discounted order total must be greater than zero." });
+        return res.status(503).json({ success: false, code: "TAX_CONFIGURATION_INVALID", error: "Tax configuration must be an integer between 0 and 3000 basis points." });
+      }
+      const taxMinor = calculateTaxMinor(subtotalMinor, discountMinor, shippingMinor, taxRateBps);
+      if (taxMinor === null) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ success: false, code: "TAX_CALCULATION_INVALID", error: "Tax calculation overflowed." });
+      }
+      totalMinor = subtotalMinor - discountMinor + shippingMinor + taxMinor;
+      if (!Number.isSafeInteger(totalMinor) || totalMinor <= 0) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ success: false, code: "TOTAL_INVALID", error: "Order total must be greater than zero." });
       }
       txRef = "irhcf_" + crypto.randomUUID();
       const order = await client.query(
-        "INSERT INTO commerce_orders (user_id, tx_ref, status, currency, total_minor, subtotal_minor, discount_minor, coupon_code, provider, shipping_address) VALUES ($1,$2,'pending',$3,$4,$5,$6,$7,'flutterwave',$8::jsonb) RETURNING id",
-        [req.user.id, txRef, currency, totalMinor, subtotalMinor, discountMinor, couponCode, shippingAddress ? JSON.stringify(shippingAddress) : null]
+        "INSERT INTO commerce_orders (user_id, tx_ref, status, currency, total_minor, subtotal_minor, discount_minor, shipping_minor, tax_minor, tax_rate_bps, coupon_code, provider, shipping_address) VALUES ($1,$2,'pending',$3,$4,$5,$6,$7,$8,$9,$10,'flutterwave',$11::jsonb) RETURNING id",
+        [req.user.id, txRef, currency, totalMinor, subtotalMinor, discountMinor, shippingMinor, taxMinor, taxRateBps, couponCode, shippingAddress ? JSON.stringify(shippingAddress) : null]
       );
       orderId = order.rows[0].id;
       for (const item of items) {
@@ -908,7 +926,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
         return res.status(502).json({ success: false, code: "CHECKOUT_PROVIDER_FAILED", error: "Payment provider did not create a valid hosted checkout." });
       }
       await pool.query("UPDATE commerce_orders SET checkout_url=$2, updated_at=CURRENT_TIMESTAMP WHERE id=$1 AND status='pending'", [orderId, checkoutUrl]);
-      return res.status(201).json({ success: true, orderId, txRef, currency, subtotalMinor, discountMinor, totalMinor, couponCode, checkoutUrl, paymentStatus: "pending" });
+      return res.status(201).json({ success: true, orderId, txRef, currency, subtotalMinor, discountMinor, shippingMinor, taxMinor, taxRateBps, totalMinor, couponCode, checkoutUrl, paymentStatus: "pending" });
     } catch (error) {
       await pool.query("UPDATE commerce_orders SET status='failed', updated_at=CURRENT_TIMESTAMP WHERE id=$1 AND status='pending'", [orderId]);
       return res.status(502).json({ success: false, code: "CHECKOUT_PROVIDER_UNAVAILABLE", error: "Payment provider could not be reached. No payment has been confirmed." });
@@ -957,4 +975,4 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
   return router;
 }
 
-module.exports = { MAX_ITEMS, MAX_QUANTITY, CURRENCIES, ensureCommerceSchema, createCommerceRouter, toProviderAmount, fromProviderAmount, calculateCouponDiscount };
+module.exports = { MAX_ITEMS, MAX_QUANTITY, CURRENCIES, ensureCommerceSchema, createCommerceRouter, toProviderAmount, fromProviderAmount, calculateCouponDiscount, getShippingRateMinor, getTaxRateBps, calculateTaxMinor };
