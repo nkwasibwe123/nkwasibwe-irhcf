@@ -225,7 +225,7 @@ test("review submission requires a confirmed paid purchase for the same account"
 });
 
 test("hosted checkout uses the authenticated account email, never a browser-supplied email", async () => {
-  const app=express();app.use(express.json());let providerPayload;
+  const app=express();app.use(express.json());let providerPayload;let providerOptions;
   const client={
     async query(sql){
       if(sql==="BEGIN"||sql==="COMMIT"||sql==="ROLLBACK")return{rows:[]};
@@ -238,12 +238,12 @@ test("hosted checkout uses the authenticated account email, never a browser-supp
   app.use("/api/commerce",createCommerceRouter({
     pool:{async connect(){return client;},async query(){return{rows:[]};}},
     authenticateToken:(req,res,next)=>{req.user={id:8,email:"account@example.com"};next();},
-    fetchImpl:async(_url,options)=>{providerPayload=JSON.parse(options.body);return{ok:true,json:async()=>({status:"success",data:{link:"https://checkout.example.test/pay"}})};},
+    fetchImpl:async(_url,options)=>{providerOptions=options;providerPayload=JSON.parse(options.body);return{ok:true,json:async()=>({status:"success",data:{link:"https://checkout.example.test/pay"}})};},
     env:{FLW_SECRET_KEY:"test-secret",FLW_SECRET_HASH:"test-hash",FLW_REDIRECT_URL:"https://market.example.test/return"}
   }));
   await withServer(app,async base=>{
     const response=await fetch(base+"/api/commerce/checkout",{method:"POST",headers:{"Content-Type":"application/json","Idempotency-Key":"test-checkout-key-0001"},body:JSON.stringify({email:"attacker@example.com",items:[{productId:5,quantity:1}]})});
-    assert.equal(response.status,201);assert.equal(providerPayload.customer.email,"account@example.com");assert.equal(providerPayload.meta.user_id,"8");assert.equal(providerPayload.configuration.session_duration,30);assert.equal(providerPayload.configuration.max_retry_attempt,3);assert.ok(providerPayload.link_expiration);
+    assert.equal(response.status,201);assert.equal(providerPayload.customer.email,"account@example.com");assert.equal(providerPayload.meta.user_id,"8");assert.equal(providerPayload.configuration.session_duration,30);assert.equal(providerPayload.configuration.max_retry_attempt,3);assert.ok(providerPayload.link_expiration);assert.ok(providerOptions.signal instanceof AbortSignal);
   });
 });
 
@@ -1064,5 +1064,27 @@ test("Flutterwave pending verification cannot mark an order paid", async () => {
     assert.equal(response.status,400);
     assert.equal((await response.json()).code,"PAYMENT_NOT_SUCCESSFUL");
     assert.equal(sqlCalls.length,1);
+  });
+});
+
+
+test("hosted checkout rejects non-HTTPS redirect URLs before opening an order transaction", async () => {
+  const app=express();app.use(express.json());
+  let databaseCalls=0;let providerCalls=0;
+  app.use("/api/commerce",createCommerceRouter({
+    pool:{async query(){databaseCalls++;throw new Error("Invalid redirect must fail before database access.");}},
+    authenticateToken:(req,res,next)=>{req.user={id:8,email:"account@example.com"};next();},
+    fetchImpl:async()=>{providerCalls++;throw new Error("Provider must not be called.");},
+    env:{FLW_SECRET_KEY:"test-secret",FLW_SECRET_HASH:"test-hash",FLW_REDIRECT_URL:"http://market.example.test/return"}
+  }));
+  await withServer(app,async base=>{
+    const response=await fetch(base+"/api/commerce/checkout",{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({items:[{productId:5,quantity:1}]})
+    });
+    assert.equal(response.status,503);
+    assert.equal((await response.json()).code,"CHECKOUT_CONFIGURATION_INCOMPLETE");
+    assert.equal(databaseCalls,0);
+    assert.equal(providerCalls,0);
   });
 });
