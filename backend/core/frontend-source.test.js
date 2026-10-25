@@ -548,3 +548,15 @@ test("Chat with Friends includes poll creation and authenticated poll voting UI"
   assert.match(html,/\/vote/);
   assert.match(html,/poll\.options/);
 });
+
+
+test("Chat with Friends shows read receipt counts for messages sent by the current user",()=>{
+  const root=path.join(__dirname,"..","..");
+  const route=fs.readFileSync(path.join(root,"backend","routes","social-routes.js"),"utf8");
+  const html=fs.readFileSync(path.join(root,"friends.html"),"utf8");
+  assert.match(route,/AS read_by_count/);
+  assert.match(route,/AS recipient_count/);
+  assert.match(route,/recipient\.last_read_at>=recent\.created_at/);
+  assert.match(html,/Seen by /);
+  assert.match(html,/Number\(m\.read_by_count\)/);
+});
