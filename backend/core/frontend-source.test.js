@@ -548,3 +548,12 @@ test("Chat with Friends includes poll creation and authenticated poll voting UI"
   assert.match(html,/\/vote/);
   assert.match(html,/poll\.options/);
 });
+
+
+test("Chat with Friends shows a non-blocking profile completion checklist",()=>{
+  const html=fs.readFileSync(path.join(__dirname,"..","..","friends.html"),"utf8");
+  assert.match(html,/id="profileCompletionPanel"/);
+  assert.match(html,/loadProfileCompletion/);
+  assert.match(html,/\/profile\/completion/);
+  assert.match(html,/You can use Chat with Friends before reaching 100%/);
+});
