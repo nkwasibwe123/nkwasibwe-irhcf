@@ -60,6 +60,7 @@ test("public product endpoint returns active product data from the database", as
   app.use(express.json());
   app.use("/api/commerce", createCommerceRouter({
     pool: { async query(sql) {
+      if (sql.includes("SELECT DISTINCT category")) return { rows: [{ category: "Stationery" }] };
       assert.match(sql, /FROM commerce_products p/);
       return { rows: [{ id: "4", name: "Notebook", price_minor: "2500", currency: "RWF", stock_quantity: 8, category: "Stationery", rating_average: "4.5", review_count: 2 }] };
     } },
@@ -170,7 +171,7 @@ test("product catalogue supports parameterized search, category filters and allo
 test("wishlist reads and writes are scoped to the authenticated account ID", async () => {
   const app=express();app.use(express.json());const calls=[];
   app.use("/api/commerce",createCommerceRouter({
-    pool:{async query(sql,params){calls.push({sql,params});if(sql.includes("FROM commerce_wishlist_items"))return{rows:[{id:"3",name:"Saved book"}]};return{rows:[]};}},
+    pool:{async query(sql,params){calls.push({sql,params});if(sql.includes("SELECT id FROM commerce_products"))return{rows:[{id:"3"}]};if(sql.includes("FROM commerce_wishlist_items"))return{rows:[{id:"3",name:"Saved book"}]};return{rows:[]};}},
     authenticateToken:(req,res,next)=>{req.user={id:42,email:"private@example.com"};next();},env:{}
   }));
   await withServer(app,async base=>{
