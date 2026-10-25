@@ -563,6 +563,24 @@ function createSocialRouter({ pool, authenticateToken } = {}) {
     } catch(error){return next(error);}
   });
 
+  router.delete("/conversations/:conversationId/messages/:messageId", async (req,res,next) => {
+    if(!validId(req.params.conversationId)||!validId(req.params.messageId)) return fail(res,400,"Invalid conversation or message ID.");
+    try {
+      const member=await pool.query(
+        "SELECT 1 FROM social_conversation_members WHERE conversation_id=$1 AND user_id=$2",
+        [req.params.conversationId,userId(req)]
+      );
+      if(!member.rows.length) return fail(res,404,"Conversation not found.");
+      const removed=await pool.query(
+        "DELETE FROM social_messages WHERE id=$1 AND conversation_id=$2 AND sender_id=$3 RETURNING id",
+        [req.params.messageId,req.params.conversationId,userId(req)]
+      );
+      if(!removed.rows.length) return fail(res,404,"Message not found or you do not have permission to delete it.");
+      await pool.query("UPDATE social_conversations SET updated_at=NOW() WHERE id=$1",[req.params.conversationId]);
+      return res.json({success:true,deletedMessageId:Number(removed.rows[0].id)});
+    } catch(error){return next(error);}
+  });
+
   return router;
 }
 
