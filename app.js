@@ -5771,8 +5771,10 @@ function renderMessageContent(container, value) {
 
 function getRequestedOutputLength(text) {
   const source = String(text || "");
-  const wm = source.match(/\b(?:exactly|precisely|about|approximately|at least)?\s*(\d[\d,]*)\s*(?:words?|amagambo)\b/i);
-  const lm = source.match(/\b(?:exactly|precisely|about|approximately|at least)?\s*(\d[\d,]*)\s*(?:lines?|imirongo)\b/i);
+  const wm = source.match(/\b(?:exactly|precisely|about|approximately|at least)?\s*(\d[\d,]*)\s*words?\b/i)
+    || source.match(/\b(?:amagambo)\s*(\d[\d,]*)\b/i);
+  const lm = source.match(/\b(?:exactly|precisely|about|approximately|at least)?\s*(\d[\d,]*)\s*lines?\b/i)
+    || source.match(/\b(?:imirongo)\s*(\d[\d,]*)\b/i);
   const parse = m => m ? Number(m[1].replace(/,/g, "")) : null;
   const words = parse(wm), lines = parse(lm);
   if ((!words || words < 1 || words > 20000) && (!lines || lines < 1 || lines > 5000)) return null;
@@ -5781,7 +5783,7 @@ function getRequestedOutputLength(text) {
 function buildLengthAwarePrompt(text) {
   const target = getRequestedOutputLength(text);
   if (!target) return String(text || "");
-  const exact = /\bexactly|precisely\b/i.test(text);
+  const exact = /\\b(?:exactly|precisely|neza neza)\\b/i.test(text);
   const rules = [
     "OUTPUT LENGTH REQUIREMENT (explicit user requirement):",
     target.words ? "- Produce " + (exact ? "exactly " : "approximately ") + target.words + " words. Count/estimate and expand or trim before finalizing." : null,
