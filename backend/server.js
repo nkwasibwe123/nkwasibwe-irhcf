@@ -32568,7 +32568,7 @@ const capabilityDiscoveryWorker = capabilityDiscoveryEnabled
             const description = String(item.snippet || "").trim().slice(0, 1600);
             if (!title || !description) continue;
             const slug = title.toLowerCase().normalize("NFKD")
-              .replace(/[\\u0300-\\u036f]/g, "").replace(/[^a-z0-9]+/g, "-")
+              .replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-")
               .replace(/^-|-$/g, "").slice(0, 100);
             if (!slug) continue;
             discoveries.push({
