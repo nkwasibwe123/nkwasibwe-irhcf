@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Nkwasibwe Market — browse products, manage your cart and securely check out.">
   <title>Nkwasibwe Market</title>
-  <link rel="stylesheet" href="market.css?v=2">
-  <script defer src="market.js?v=2"></script>
+  <link rel="stylesheet" href="market.css?v=3">
+  <script defer src="market.js?v=3"></script>
 </head>
 <body>
   <header class="market-header">
@@ -30,10 +30,11 @@
       <div id="productGrid" class="product-grid"><p class="muted">Loading products…</p></div>
     </section>
     <section class="wishlist-section"><div class="section-heading"><div><h2>Saved favourites</h2><p>Your wishlist is private to your account.</p></div><button id="wishlistButton" type="button">Load favourites</button></div><div id="wishlistList" class="wishlist-list"><p class="muted">Sign in to save and view favourites.</p></div></section>
+    <section class="addresses-section"><div class="section-heading"><div><h2>Delivery addresses</h2><p>Addresses are private to your account. Choose one for physical products.</p></div><button id="addressesButton" type="button">Refresh addresses</button></div><div id="addressesList" class="addresses-list"><p class="muted">Sign in to manage delivery addresses.</p></div><details class="address-editor"><summary>Add a delivery address</summary><form id="addressForm"><div class="form-row"><label>Address label<input name="label" maxlength="80" required placeholder="Home, Work"></label><label>Recipient name<input name="recipientName" maxlength="160" required></label></div><div class="form-row"><label>Phone number<input name="phone" maxlength="40" required autocomplete="tel"></label><label>Country<input name="country" maxlength="100" value="Rwanda" required autocomplete="country-name"></label></div><div class="form-row"><label>Province / region<input name="region" maxlength="120" autocomplete="address-level1"></label><label>City / district<input name="city" maxlength="120" required autocomplete="address-level2"></label></div><label>Address line 1<input name="addressLine1" maxlength="240" required placeholder="Sector, cell, village or street"></label><label>Address line 2 (optional)<input name="addressLine2" maxlength="240"></label><label>Postal code (optional)<input name="postalCode" maxlength="40" autocomplete="postal-code"></label><label class="checkbox-label"><input name="isDefault" type="checkbox"> Set as my default address</label><button class="primary-button" type="submit">Save address</button><p id="addressMessage" class="muted" role="status"></p></form></details></section>
     <section class="cart-section">
       <div class="section-heading"><div><h2>Your cart</h2><p>Saved to your account when signed in.</p></div><span id="cartCount" class="count">0 items</span></div>
       <div id="cartItems" class="cart-items"><p class="muted">Sign in to load your saved cart.</p></div>
-      <div class="cart-footer"><div><span>Subtotal</span><strong id="cartTotal">—</strong></div><button id="checkoutButton" class="primary-button" type="button" disabled>Continue to secure checkout</button><p id="checkoutMessage" class="muted" role="status"></p></div>
+      <div class="cart-footer"><div><span>Subtotal</span><strong id="cartTotal">—</strong></div><label id="shippingAddressWrap" class="shipping-address-wrap" hidden>Ship to<select id="shippingAddressSelect"><option value="">Select a saved address</option></select></label><p id="shippingAddressHint" class="muted" role="status"></p><button id="checkoutButton" class="primary-button" type="button" disabled>Continue to secure checkout</button><p id="checkoutMessage" class="muted" role="status"></p></div>
     </section>
     <section class="orders-section">
       <div class="section-heading"><div><h2>My orders & payments</h2><p>Orders and payment status are visible only to the signed-in account. Nkwasibwe does not store card numbers.</p></div><button id="ordersButton" type="button">Load orders</button></div>
@@ -44,7 +45,7 @@
       <p class="muted">This form works only for user IDs configured in the server's COMMERCE_ADMIN_USER_IDS setting.</p>
       <form id="productForm">
         <label>Product name<input name="name" maxlength="180" required></label>
-        <label>Category<input name="category" maxlength="80" value="General" required placeholder="e.g. Electronics, Clothing, Home"></label>
+        <label>Category<input name="category" maxlength="80" value="General" required placeholder="e.g. Electronics, Clothing, Home"></label><label class="checkbox-label"><input name="requiresShipping" type="checkbox" checked> Physical product (requires delivery address)</label>
         <label>Description<textarea name="description" maxlength="5000" rows="3"></textarea></label>
         <div class="form-row"><label>Price (minor units)<input name="priceMinor" type="number" min="1" step="1" required></label><label>Currency<select name="currency"><option>RWF</option><option>USD</option><option>EUR</option><option>GBP</option><option>KES</option><option>UGX</option><option>TZS</option><option>NGN</option><option>ZAR</option></select></label></div>
         <label>Stock quantity<input name="stockQuantity" type="number" min="0" step="1" value="0" required></label>
