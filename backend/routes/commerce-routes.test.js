@@ -1034,3 +1034,35 @@ test("checkout idempotency rejects reusing a key for different cart details", as
     assert.equal((await response.json()).code,"IDEMPOTENCY_KEY_REUSED");
   });
 });
+
+
+test("Flutterwave pending verification cannot mark an order paid", async () => {
+  const app = express();
+  const sqlCalls = [];
+  app.use(express.json());
+  app.use("/api/commerce", createCommerceRouter({
+    pool: { async query(sql) {
+      sqlCalls.push(sql);
+      if (sql.includes("SELECT id, status, currency, total_minor, coupon_code")) return { rows: [{
+        id: "order-1", status: "pending", currency: "RWF", total_minor: 1000,
+        coupon_code: null, expires_at: new Date(Date.now() + 60000).toISOString(),
+        subtotal_minor: 1000, discount_minor: 0, platform_fee_bps: 500
+      }] };
+      throw new Error("Pending provider status must not mutate payment or ledger state.");
+    } },
+    authenticateToken: (req,res,next) => next(),
+    env: { FLW_SECRET_HASH:"test-webhook-secret", FLW_SECRET_KEY:"test-provider-key" },
+    fetchImpl: async () => ({ ok:true, async json() { return { status:"success", data:{
+      id:111, tx_ref:"irhcf_ref_1", status:"pending", amount:1000, currency:"RWF"
+    } }; } })
+  }));
+  await withServer(app,async base=>{
+    const response=await fetch(base+"/api/commerce/webhook/flutterwave",{
+      method:"POST",headers:{"Content-Type":"application/json","verif-hash":"test-webhook-secret"},
+      body:JSON.stringify({data:{id:111,tx_ref:"irhcf_ref_1"}})
+    });
+    assert.equal(response.status,400);
+    assert.equal((await response.json()).code,"PAYMENT_NOT_SUCCESSFUL");
+    assert.equal(sqlCalls.length,1);
+  });
+});
