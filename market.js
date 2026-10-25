@@ -189,6 +189,30 @@
       }
     }catch(error){box.replaceChildren(element("p","muted","Seller orders: "+error.message));}
   }
+  async function loadSellerPayouts() {
+    const balancesBox=$("sellerBalancesList"),requestsBox=$("sellerPayoutRequestsList");
+    if(!token()){balancesBox.replaceChildren(element("p","muted","Sign in to view earnings."));requestsBox.replaceChildren();return;}
+    try{
+      const result=await request("/seller/payouts");balancesBox.replaceChildren();requestsBox.replaceChildren();
+      if(!(result.balances||[]).length)balancesBox.append(element("p","muted","No seller earnings recorded yet."));
+      for(const balance of result.balances||[]){const row=element("article","seller-row"),info=element("div","cart-info");info.append(element("strong","",balance.currency+" balance"),element("small","", "Earned: "+money(balance.total_earned,balance.currency)+" · Paid: "+money(balance.total_paid,balance.currency)),element("small","", "Reserved in pending/approved requests: "+money(balance.reserved,balance.currency)),element("strong","", "Available: "+money(balance.available,balance.currency)));row.append(info);balancesBox.append(row);}
+      if(!(result.payoutRequests||[]).length)requestsBox.append(element("p","muted","No payout requests yet."));
+      for(const payout of result.payoutRequests||[]){const row=element("article","seller-row"),info=element("div","cart-info");info.append(element("strong","",money(payout.amount_minor,payout.currency)+" · "+payout.status),element("small","", "Reference: "+payout.destination_reference),element("small","",payout.admin_note||""));if(payout.provider_transfer_reference)info.append(element("small","", "Transfer reference: "+payout.provider_transfer_reference));row.append(info);requestsBox.append(row);}
+    }catch(error){balancesBox.replaceChildren(element("p","muted","Earnings/payouts: "+error.message));requestsBox.replaceChildren();}
+  }
+  async function loadAdminPayoutRequests() {
+    const box=$("payoutRequestsList");box.replaceChildren(element("p","muted","Loading payout requests…"));
+    try{
+      const result=await request("/payout-requests");box.replaceChildren();
+      if(!(result.payoutRequests||[]).length)box.append(element("p","muted","No seller payout requests."));
+      for(const payout of result.payoutRequests||[]){const row=element("article","seller-row"),info=element("div","cart-info");info.append(element("strong","",payout.shop_name+" · "+money(payout.amount_minor,payout.currency)+" · "+payout.status),element("small","", "Seller account "+payout.seller_user_id+" · beneficiary reference "+payout.destination_reference));if(payout.provider_transfer_reference)info.append(element("small","", "Transfer reference: "+payout.provider_transfer_reference));row.append(info);
+        const action=async(status,providerTransferReference)=>{try{await request("/payout-requests/"+encodeURIComponent(payout.id),{method:"PATCH",body:JSON.stringify({status,providerTransferReference:providerTransferReference||null})});await loadAdminPayoutRequests();}catch(error){$("payoutMessage").textContent=error.message;}};
+        if(payout.status==="pending"){for(const status of ["approved","rejected"]){const button=element("button",status==="approved"?"primary-button":"",status==="approved"?"Approve":"Reject");button.type="button";button.addEventListener("click",()=>action(status));row.append(button);}}
+        else if(payout.status==="approved"){const button=element("button","primary-button","Mark paid");button.type="button";button.addEventListener("click",()=>{const reference=window.prompt("Enter the transfer reference after completing the transfer in the payment provider:");if(reference&&reference.trim())action("paid",reference.trim());});row.append(button);}
+        box.append(row);
+      }
+    }catch(error){box.replaceChildren(element("p","muted","Payout administration: "+error.message));}
+  }
   async function loadSellerApplications() {
     const box=$("sellerApplicationsList");box.replaceChildren(element("p","muted","Loading applications…"));
     try{
@@ -333,13 +357,21 @@
   async function loadRefundRequests(){const box=$("refundRequestsList");box.replaceChildren(element("p","muted","Loading refund requests…"));try{const result=await request("/refund-requests");box.replaceChildren();if(!(result.refundRequests||[]).length)box.append(element("p","muted","No refund/return requests."));for(const item of result.refundRequests||[]){const row=element("article","seller-row"),info=element("div","cart-info");info.append(element("strong","", "Order #"+item.order_id+" · "+item.status+" · "+money(item.total_minor,item.currency)),element("small","", "User "+item.user_id+" · "+item.reason));row.append(info);const action=async(status,providerRefundReference)=>{try{await request("/refund-requests/"+encodeURIComponent(item.id),{method:"PATCH",body:JSON.stringify({status,providerRefundReference:providerRefundReference||null})});await loadRefundRequests();}catch(error){$("couponAdminMessage").textContent=error.message;}};if(item.status==="pending"){for(const status of ["approved","rejected"]){const button=element("button",status==="approved"?"primary-button":"",status==="approved"?"Approve":"Reject");button.type="button";button.addEventListener("click",()=>action(status));row.append(button);}}else if(item.status==="approved"){const button=element("button","primary-button","Mark refunded");button.type="button";button.addEventListener("click",()=>{const ref=window.prompt("Enter the refund reference from the payment provider after completing the refund externally:");if(ref&&ref.trim())action("refunded",ref.trim());});row.append(button);}if(item.provider_refund_reference)info.append(element("small","", "Refund ref: "+item.provider_refund_reference));box.append(row);}}catch(error){box.replaceChildren(element("p","muted","Refund management: "+error.message));}}
   $("couponsButton").addEventListener("click",loadCoupons);
   $("refundRequestsButton").addEventListener("click",loadRefundRequests);
+  $("sellerPayoutForm").addEventListener("submit",async event=>{
+    event.preventDefault();const form=new FormData(event.currentTarget),message=$("payoutMessage");message.textContent="Submitting payout request…";
+    const body={amountMinor:Number(form.get("amountMinor")),currency:String(form.get("currency")||"RWF"),destinationReference:String(form.get("destinationReference")||"").trim()};
+    try{const result=await request("/seller/payout-requests",{method:"POST",body:JSON.stringify(body)});message.textContent="Payout request #"+result.payoutRequest.id+" submitted for review.";event.currentTarget.reset();await loadSellerPayouts();}
+    catch(error){message.textContent=error.message;}
+  });
+  $("sellerPayoutsButton").addEventListener("click",loadSellerPayouts);
+  $("payoutRequestsButton").addEventListener("click",loadAdminPayoutRequests);
   $("sellerApplicationForm").addEventListener("submit",async event=>{
     event.preventDefault();const form=new FormData(event.currentTarget),message=$("sellerMessage");message.textContent="Submitting seller application…";
     const body={shopName:String(form.get("shopName")||"").trim(),description:String(form.get("description")||"").trim(),contactEmail:String(form.get("contactEmail")||"").trim(),contactPhone:String(form.get("contactPhone")||"").trim()};
-    try{const result=await request("/seller/apply",{method:"POST",body:JSON.stringify(body)});message.textContent="Application saved. Status: "+result.seller.status+".";await loadSellerProfile();await Promise.all([loadSellerProducts(),loadSellerOrders()]);}
+    try{const result=await request("/seller/apply",{method:"POST",body:JSON.stringify(body)});message.textContent="Application saved. Status: "+result.seller.status+".";await loadSellerProfile();await Promise.all([loadSellerProducts(),loadSellerOrders(),loadSellerPayouts()]);}
     catch(error){message.textContent=error.message;}
   });
-  $("sellerRefreshButton").addEventListener("click",async()=>{await loadSellerProfile();await Promise.all([loadSellerProducts(),loadSellerOrders()]);});
+  $("sellerRefreshButton").addEventListener("click",async()=>{await loadSellerProfile();await Promise.all([loadSellerProducts(),loadSellerOrders(),loadSellerPayouts()]);});
   $("sellerProductsButton").addEventListener("click",loadSellerProducts);
   $("sellerOrdersButton").addEventListener("click",loadSellerOrders);
   $("sellerApplicationsButton").addEventListener("click",loadSellerApplications);
@@ -371,5 +403,5 @@
   $("reloadButton").addEventListener("click",async()=>{showAuthNotice();await Promise.all([loadProducts(),loadCart(),loadWishlist(),loadAddresses()]);if(token())await loadOrders();});
   $("wishlistButton").addEventListener("click",loadWishlist);
   $("ordersButton").addEventListener("click",loadOrders);
-  showAuthNotice();loadProducts();loadCart();loadWishlist();loadAddresses();loadSellerProfile();loadSellerProducts();loadSellerOrders();if(token())loadOrders();
+  showAuthNotice();loadProducts();loadCart();loadWishlist();loadAddresses();loadSellerProfile();loadSellerProducts();loadSellerOrders();loadSellerPayouts();if(token())loadOrders();
 })();
