@@ -736,3 +736,19 @@ test("buyer order history opens an authenticated printable receipt only for comp
   assert.match(routes,/escapeHtml\(item\.product_name\)/);
   assert.match(routes,/Content-Disposition/);
 });
+
+
+test("marketplace setup panel explains missing payment/shipping configuration without secret values", () => {
+  const root=path.join(__dirname,"..","..");
+  const html=fs.readFileSync(path.join(root,"market.html"),"utf8");
+  const js=fs.readFileSync(path.join(root,"market.js"),"utf8");
+  const routes=fs.readFileSync(path.join(root,"backend","routes","commerce-routes.js"),"utf8");
+  assert.ok(html.includes('id="marketReadiness"'));
+  assert.match(js,/async function loadMarketplaceStatus\(\)/);
+  assert.match(js,/FLW_SECRET_KEY/);
+  assert.match(js,/COMMERCE_SHIPPING_RATES_JSON/);
+  assert.match(routes,/router\.get\("\/status"/);
+  assert.match(routes,/checkoutReady/);
+  assert.match(routes,/missingWebhookSettings/);
+  assert.match(routes,/automatedTransfers:false/);
+});
