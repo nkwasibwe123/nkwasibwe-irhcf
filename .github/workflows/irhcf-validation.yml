@@ -12,6 +12,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -33,13 +35,33 @@ jobs:
         shell: bash
         run: |
           health_url="https://nkwasibwe-irhcf.onrender.com/api/health"
-          changed_files="$(node -e 'const e=JSON.parse(require("fs").readFileSync(process.env.GITHUB_EVENT_PATH,"utf8")); const c=e.head_commit||{}; console.log([...new Set([...(c.added||[]),...(c.modified||[]),...(c.removed||[])])].sort().join("\\n"));' )"
-          runtime_files="$(grep -Ev '(^\\.github/workflows/|(^|/)[^/]+\\.test\\.[^/]+$|(^|/)(test|tests|__tests__)/|(^|/)[^/]+\\.md$)' <<< "$changed_files" || true)"
-          expected_commit="$GITHUB_SHA"
-          if [[ -z "$runtime_files" ]]; then
-            expected_commit=""
-            echo "Tests/docs/workflow-only change: validate the currently deployed service without requiring a runtime redeploy."
+          # Always verify the newest runtime-changing commit in this commit's
+          # first-parent history, even when a newer docs/tests/workflow commit
+          # supersedes it. Otherwise a docs-only run can pass against the old
+          # healthy deployment while the preceding runtime deploy is still rolling out.
+          expected_commit="$(node <<'NODE'
+          const { execFileSync } = require("node:child_process");
+          const commits = execFileSync("git", ["log", "--first-parent", "--format=%H", process.env.GITHUB_SHA], { encoding: "utf8" }).trim().split("\\n").filter(Boolean);
+          const isNonRuntime = file =>
+            file.startsWith(".github/workflows/") ||
+            /(^|\\/)(test|tests|__tests__)\\//.test(file) ||
+            /(^|\\/)[^/]+\\.test\\.[^/]+$/.test(file) ||
+            file.endsWith(".md");
+          for (const sha of commits) {
+            const files = execFileSync("git", ["diff-tree", "--root", "--no-commit-id", "--name-only", "-r", sha], { encoding: "utf8" }).trim().split("\\n").filter(Boolean);
+            if (files.some(file => !isNonRuntime(file))) {
+              process.stdout.write(sha);
+              process.exit(0);
+            }
+          }
+          process.stdout.write("");
+          NODE
+          )"
+          if [[ -z "$expected_commit" ]]; then
+            echo "Could not determine the latest runtime-changing commit; refusing to pass deployment verification."
+            exit 1
           fi
+          echo "Expected latest runtime commit: $expected_commit"
           export IRHCF_EXPECTED_DEPLOY_COMMIT="$expected_commit"
           for attempt in $(seq 1 36); do
             current_main_sha="$(curl --silent --fail --max-time 10 "https://api.github.com/repos/$GITHUB_REPOSITORY/commits/main" 2>/dev/null | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{process.stdout.write(JSON.parse(d).sha||"")}catch{}})' || true)"
