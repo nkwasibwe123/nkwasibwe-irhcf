@@ -44,6 +44,7 @@ const {
 } = require("./core/task-engine");
 const { ensureCommerceSchema, createCommerceRouter } = require("./routes/commerce-routes");
 const { createSelfImprovementRouter } = require("./routes/self-improvement-routes");
+const { createSocialRouter, ensureSocialSchema } = require("./routes/social-routes");
 const { SelfImprovementWorker } = require("./core/self-improvement-worker");
 const { CapabilityDiscoveryWorker } = require("./core/capability-discovery-worker");
 const { createCapabilityDiscoveryRepository } = require("./core/capability-discovery-repository");
@@ -32592,6 +32593,11 @@ const scheduleWorker =
   });
 
 app.use(
+  "/api/social",
+  createSocialRouter({ pool, authenticateToken })
+);
+
+app.use(
   "/api/self-improvement",
   createSelfImprovementRouter({ pool, authenticateToken, taskEngine: persistentTaskEngine, selfImprovementWorker })
 );
@@ -32866,6 +32872,8 @@ async function startServer() {
       await createSchema();
 
       await ensureCommerceSchema(pool);
+      await ensureSocialSchema(pool);
+      console.log("[SOCIAL] Profiles, feed, reactions, comments, friend requests and blocks schema ready.");
       console.log("[COMMERCE] Products, orders, and checkout schema ready.");
 
       console.log(

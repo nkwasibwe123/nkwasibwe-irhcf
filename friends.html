@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Chat with Friends — Nkwasibwe IRHCF social and communication workspace">
+<title>Chat with Friends · Nkwasibwe IRHCF</title>
+<style>
+:root{color-scheme:light;--ink:#172033;--muted:#64748b;--line:#e5eaf1;--surface:#fff;--wash:#f5f7fb;--accent:#2457d6;--soft:#eaf0ff;--green:#16794b}
+*{box-sizing:border-box}body{margin:0;background:var(--wash);color:var(--ink);font:15px/1.5 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}a{color:inherit}.top{height:68px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 clamp(16px,4vw,52px);gap:18px}.brand{display:flex;align-items:center;gap:11px;font-weight:750}.mark{width:38px;height:38px;border-radius:12px;background:var(--accent);color:white;display:grid;place-items:center;font-weight:800}.top a{text-decoration:none;color:var(--accent);font-weight:650}.wrap{max-width:1200px;margin:auto;padding:32px clamp(16px,4vw,40px) 60px}.eyebrow{color:var(--accent);font-size:12px;letter-spacing:.13em;font-weight:800;text-transform:uppercase}.hero{display:flex;justify-content:space-between;align-items:flex-end;gap:24px;margin-bottom:26px}.hero h1{font-size:clamp(30px,4vw,44px);letter-spacing:-.04em;line-height:1.1;margin:8px 0 10px}.hero p{color:var(--muted);max-width:680px;margin:0}.status{white-space:nowrap;background:#fff5df;border:1px solid #f0d9a1;color:#79520a;border-radius:999px;padding:7px 12px;font-size:12px;font-weight:750}.notice{background:#fff;border:1px solid var(--line);border-left:4px solid var(--accent);padding:16px 18px;border-radius:12px;margin-bottom:25px;color:#39465b}.notice strong{color:var(--ink)}.section-title{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:26px 0 14px}.section-title h2{margin:0;font-size:20px}.section-title span{font-size:12px;color:var(--muted)}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:19px;min-height:190px;display:flex;flex-direction:column;box-shadow:0 3px 12px #1c2b4506}.icon{width:42px;height:42px;display:grid;place-items:center;border-radius:12px;background:var(--soft);font-size:21px}.card h3{font-size:16px;margin:13px 0 5px}.card p{margin:0;color:var(--muted);font-size:13px}.pill{margin-top:auto;align-self:flex-start;padding:5px 9px;border-radius:999px;background:#f1f5f9;color:#526176;font-size:11px;font-weight:750}.pill.ready{background:#e6f6ed;color:var(--green)}.pill.build{background:#fff4df;color:#8a5a08}.bottom{margin-top:26px;background:#fff;border:1px solid var(--line);border-radius:16px;padding:20px}.bottom h2{margin:0 0 8px;font-size:18px}.bottom p{margin:0;color:var(--muted);font-size:13px}.steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:16px}.step{padding:13px;border-radius:12px;background:var(--wash);border:1px solid var(--line);font-size:12px}.step b{display:block;margin-bottom:4px;font-size:13px}.step small{color:var(--muted)}footer{color:var(--muted);font-size:12px;margin-top:24px}.chat-workspace{background:#fff;border:1px solid var(--line);border-radius:16px;padding:20px;margin:20px 0}.chat-layout{display:grid;grid-template-columns:minmax(180px,.8fr) minmax(0,1.4fr);gap:16px}.people-results,.conversation-list,.message-list{display:grid;gap:8px;align-content:start}.person-option,.conversation-option{border:1px solid var(--line);background:#fff;border-radius:9px;padding:10px;text-align:left;cursor:pointer;color:var(--ink)}.conversation-option.active{border-color:var(--accent);background:var(--soft)}.chat-messages{border:1px solid var(--line);border-radius:12px;padding:12px;min-height:220px;display:flex;flex-direction:column;gap:8px}.message-list{flex:1;max-height:360px;overflow:auto}.message-bubble{max-width:90%;padding:9px 12px;border-radius:12px;background:var(--wash);align-self:flex-start;overflow-wrap:anywhere;white-space:pre-wrap}.message-bubble.mine{align-self:flex-end;background:var(--soft)}.chat-send{display:flex;gap:8px;margin-top:10px}.chat-send input{min-width:0;flex:1;padding:10px;border:1px solid var(--line);border-radius:9px;font:inherit}.chat-send button{padding:10px 13px;background:var(--accent);color:white;border:0;border-radius:9px;font-weight:700}@media(max-width:620px){.chat-layout{grid-template-columns:1fr}.chat-workspace{padding:14px}}.feed-panel{background:#fff;border:1px solid var(--line);border-radius:16px;padding:20px;margin:20px 0}.feed-panel h2{margin:0 0 6px}.feed-subtitle{margin:0 0 15px;color:var(--muted);font-size:13px}.composer{display:grid;gap:10px}.composer textarea{width:100%;min-height:94px;resize:vertical;padding:12px;border:1px solid var(--line);border-radius:10px;font:inherit;color:var(--ink)}.composer-row{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}.composer select,.composer button,.feed-action{border:1px solid var(--line);border-radius:9px;padding:9px 12px;font:inherit;background:#fff;color:var(--ink)}.composer button{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:700}.composer button:disabled{opacity:.55}.feed-status{font-size:13px;color:var(--muted);min-height:20px}.feed-list{display:grid;gap:12px;margin-top:18px}.post{border:1px solid var(--line);border-radius:12px;padding:15px}.post-head{display:flex;justify-content:space-between;gap:12px;color:var(--muted);font-size:12px}.post-body{white-space:pre-wrap;overflow-wrap:anywhere;margin:12px 0}.post-actions{display:flex;gap:8px;flex-wrap:wrap}.feed-action{font-size:12px;cursor:pointer}.feed-empty{color:var(--muted);padding:14px 0}@media(max-width:520px){.feed-panel{padding:14px}}@media(max-width:850px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.steps{grid-template-columns:repeat(2,minmax(0,1fr))}.hero{align-items:flex-start;flex-direction:column}}@media(max-width:520px){.grid{grid-template-columns:1fr}.card{min-height:155px}.top{height:60px}.wrap{padding-top:24px}}
+</style>
+</head>
+<body>
+<header class="top"><div class="brand"><div class="mark">N</div><span>Nkwasibwe IRHCF</span></div><a href="index.html">← Back to IRHCF</a></header>
+<main class="wrap">
+<div class="hero"><div><div class="eyebrow">Social · Communication · Creators</div><h1>Chat with Friends</h1><p>A dedicated home for conversations, communities, sharing, creators and professional connections—built into Nkwasibwe IRHCF.</p></div><div class="status">Foundation phase · In progress</div></div>
+<div class="notice"><strong>Honest progress status.</strong> This workspace entry and feature map are now defined. The cards below describe the target modules; they are not claims that messaging, uploads, calls or feeds are already connected. Those require authenticated backend APIs, durable storage, safety controls and end-to-end tests before being marked live.</div>
+<section class="feed-panel" aria-labelledby="feedTitle">
+<h2 id="feedTitle">Community feed</h2>
+<p class="feed-subtitle">This first connected feature supports authenticated text posts, public feed loading, reactions and comments-ready API foundations. Sign in to IRHCF first.</p>
+<form id="socialComposer" class="composer">
+<textarea id="socialPostBody" maxlength="5000" placeholder="Share something with your community…" aria-label="Post text"></textarea>
+<div class="composer-row"><label>Audience <select id="socialVisibility"><option value="public">Public</option><option value="friends">Friends</option><option value="private">Only me</option></select></label><button id="socialPostSubmit" type="submit">Publish post</button></div>
+<div id="socialFeedStatus" class="feed-status" role="status" aria-live="polite">Checking sign-in…</div>
+</form>
+<div id="socialFeedList" class="feed-list"><p class="feed-empty">Loading posts…</p></div>
+</section>
+<section class="chat-workspace" aria-labelledby="chatTitle">
+<h2 id="chatTitle">Private messages</h2>
+<p class="feed-subtitle">Search for a public profile to start a private or group conversation. Messages are stored by IRHCF and only conversation members can read them.</p>
+<div class="composer"><input id="peopleSearch" type="search" placeholder="Find people by display name…" aria-label="Search people" style="width:100%;padding:11px;border:1px solid var(--line);border-radius:9px;font:inherit"><div id="peopleResults" class="people-results"></div></div>
+<div class="chat-layout" style="margin-top:16px"><div><h3>Conversations</h3><div id="conversationList" class="conversation-list"><p class="feed-empty">Sign in to load conversations.</p></div></div>
+<div><h3 id="activeConversationTitle">Choose a conversation</h3><div class="chat-messages"><div id="messageList" class="message-list"><p class="feed-empty">Select a conversation to view messages.</p></div><form id="messageComposer" class="chat-send"><input id="messageBody" maxlength="5000" placeholder="Write a message…" aria-label="Message text" disabled><button id="sendMessage" type="submit" disabled>Send</button></form></div></div></div>
+</section>
+<div class="section-title"><h2>Communication</h2><span>Private by default</span></div>
+<section class="grid">
+<article class="card"><div class="icon">💬</div><h3>Private & group chats</h3><p>One-to-one and group messages, replies, reactions, unread counts, voice notes and attachment sharing.</p><span class="pill build">Backend + realtime pending</span></article>
+<article class="card"><div class="icon">📞</div><h3>Audio & video calls</h3><p>Permission-based calls, call controls, reconnection and privacy-preserving call history.</p><span class="pill">WebRTC / signaling pending</span></article>
+<article class="card"><div class="icon">👥</div><h3>Friends & communities</h3><p>Friend requests, follows, groups, community roles, events, blocking and reporting.</p><span class="pill build">Social graph pending</span></article>
+</section>
+<div class="section-title"><h2>Share & discover</h2><span>Feed and creator tools</span></div>
+<section class="grid">
+<article class="card"><div class="icon">📰</div><h3>Social feed</h3><p>Text, image and video posts, comments, reactions, reposts, threaded replies, mentions, hashtags and saved posts.</p><span class="pill">Feed API pending</span></article>
+<article class="card"><div class="icon">▶️</div><h3>Video & channels</h3><p>Creator channels, video processing, captions, playlists, subscriptions, watch history and search.</p><span class="pill">Media pipeline pending</span></article>
+<article class="card"><div class="icon">🎬</div><h3>Short videos</h3><p>Vertical playback, creator profiles, captions, likes, comments and user-controlled recommendations.</p><span class="pill">Upload + feed pending</span></article>
+</section>
+<div class="section-title"><h2>Telegram & downloads</h2><span>Messaging, browser and files</span></div>
+<section class="grid">
+<article class="card"><div class="icon">✈️</div><h3>Telegram-style chats & channels</h3><p>Cloud-backed chats, groups, channels, replies, forwards, pinned messages, polls, bots and file sharing. Telegram account linking must use official APIs and user consent.</p><span class="pill">Messaging integration pending</span></article>
+<article class="card"><div class="icon">⬇️</div><h3>Browser & download manager</h3><p>Multi-tab browsing, bookmarks, history, supported video/audio/document downloads, queue progress, pause/resume where supported and offline files.</p><span class="pill">Downloader engine pending</span></article>
+<article class="card"><div class="icon">📂</div><h3>Status saver & file manager</h3><p>Import accessible status media with permission, preview files, organize downloads and play supported media offline. Respect copyright, privacy, DRM and platform rules.</p><span class="pill">Android integration pending</span></article>
+</section>
+<div class="section-title"><h2>Work & identity</h2><span>Professional connections</span></div>
+<section class="grid">
+<article class="card"><div class="icon">🧑‍💼</div><h3>Professional profile</h3><p>Skills, experience, education, connections, company pages and professional posts.</p><span class="pill">Profile schema pending</span></article>
+<article class="card"><div class="icon">💼</div><h3>Jobs & applications</h3><p>Job listings, search, application tracking, employer profiles and status notifications.</p><span class="pill">Jobs module pending</span></article>
+<article class="card"><div class="icon">🔔</div><h3>Notifications & privacy</h3><p>In-app alerts, session controls, privacy settings, content reports, moderation and account data controls.</p><span class="pill">Safety APIs pending</span></article>
+</section>
+<section class="bottom"><h2>Build sequence and release gates</h2><p>We will deliver the system in verified layers: authenticated data model → profiles and social graph → posts/feed → persistent messages → realtime → safe media storage → video/creator tools → professional features → security and Android end-to-end tests. External platforms will only be connected through documented APIs and user-authorized account linking. “Phoenix” still needs identification (product name or URL) so its features can be mapped accurately.</p><div class="steps"><div class="step"><b>1 · Foundation</b><small>Workspace + contracts</small></div><div class="step"><b>2 · Core social</b><small>Profiles, feed, chat</small></div><div class="step"><b>3 · Media + realtime</b><small>Uploads, calls, video</small></div><div class="step"><b>4 · Release</b><small>Safety, tests, rollout</small></div></div></section>
+<footer>Original Nkwasibwe IRHCF product design. Feature parity depends on staged implementation, provider availability, storage, and testing.</footer>
+</main>
+<script>
+(function(){
+  const API_BASE = window.IRHCF_API_BASE_URL || "https://nkwasibwe-irhcf.onrender.com";
+  const token = () => { try { return localStorage.getItem("nkwasibwe_auth_token") || ""; } catch (_) { return ""; } };
+  const status = document.getElementById("socialFeedStatus");
+  const list = document.getElementById("socialFeedList");
+  const form = document.getElementById("socialComposer");
+  const body = document.getElementById("socialPostBody");
+  const submit = document.getElementById("socialPostSubmit");
+  const headers = () => ({ "Content-Type":"application/json", "Authorization":"Bearer "+token() });
+  function say(message){ status.textContent=message; }
+  function node(tag, cls, text){ const el=document.createElement(tag); if(cls) el.className=cls; if(text!==undefined) el.textContent=text; return el; }
+  function render(posts){
+    list.replaceChildren();
+    if(!posts.length){list.append(node("p","feed-empty","No posts yet. Be the first to share something."));return;}
+    posts.forEach(post=>{
+      const card=node("article","post");
+      const head=node("div","post-head");
+      head.append(node("span","",post.author_name || "IRHCF member"));
+      head.append(node("time","",post.created_at ? new Date(post.created_at).toLocaleString() : ""));
+      card.append(head,node("p","post-body",post.body || (Array.isArray(post.media)&&post.media.length ? "Media post" : "")));
+      const actions=node("div","post-actions");
+      const like=node("button","feed-action","👍 "+(post.reaction_count||0));
+      like.type="button";like.addEventListener("click",()=>react(post.id,"like",like));actions.append(like);
+      const love=node("button","feed-action","❤️ Love");
+      love.type="button";love.addEventListener("click",()=>react(post.id,"love",love));actions.append(love);
+      if(post.is_mine){
+        const del=node("button","feed-action","Delete");
+        del.type="button";del.addEventListener("click",()=>removePost(post.id));actions.append(del);
+      }
+      card.append(actions);
+      const comments=node("div","post-comments");
+      (Array.isArray(post.comments)?post.comments:[]).forEach(comment=>{
+        const item=node("p","feed-subtitle");
+        const who=node("strong","",comment.author_name || "Member");
+        item.append(who,document.createTextNode(": "+(comment.body||"")));
+        comments.append(item);
+      });
+      const commentForm=node("form","composer");
+      const input=node("input","");
+      input.type="text";input.maxLength=2000;input.placeholder="Write a comment…";input.setAttribute("aria-label","Write a comment");
+      input.style.cssText="width:100%;padding:10px;border:1px solid var(--line);border-radius:9px;font:inherit";
+      const send=node("button","feed-action","Comment");send.type="submit";
+      commentForm.append(input,send);
+      commentForm.addEventListener("submit",async event=>{
+        event.preventDefault();if(!input.value.trim())return;send.disabled=true;
+        try{await request("/api/social/posts/"+encodeURIComponent(post.id)+"/comments",{method:"POST",body:JSON.stringify({body:input.value.trim()})});say("Comment added.");await load();}
+        catch(e){say(e.message);}finally{send.disabled=false;}
+      });
+      card.append(comments,commentForm);list.append(card);
+    });
+  }
+  async function request(path, options={}){
+    const t=token(); if(!t) throw new Error("Sign in to Nkwasibwe IRHCF to use the community feed.");
+    const response=await fetch(API_BASE+path,{...options,headers:{...headers(),...(options.headers||{})}});
+    let data={};try{data=await response.json();}catch(_){}
+    if(!response.ok) throw new Error(data.error || "Request failed (HTTP "+response.status+").");
+    return data;
+  }
+  async function load(){
+    try { const data=await request("/api/social/feed?limit=20");render(data.posts||[]);say("Feed loaded."); }
+    catch(e){render([]);say(e.message+" If you just signed in, reload this page.");}
+  }
+  async function react(id,reaction,button){
+    button.disabled=true;try{await request("/api/social/posts/"+encodeURIComponent(id)+"/reaction",{method:"PUT",body:JSON.stringify({reaction})});await load();}
+    catch(e){say(e.message);}finally{button.disabled=false;}
+  }
+  async function removePost(id){
+    if(!confirm("Delete this post? This cannot be undone."))return;
+    try{await request("/api/social/posts/"+encodeURIComponent(id),{method:"DELETE"});say("Post deleted.");await load();}
+    catch(e){say(e.message);}
+  }
+  form.addEventListener("submit",async event=>{
+    event.preventDefault();const text=body.value.trim();if(!text){say("Write a message before publishing.");return;}
+    submit.disabled=true;say("Publishing…");
+    try{await request("/api/social/posts",{method:"POST",body:JSON.stringify({body:text,visibility:document.getElementById("socialVisibility").value})});body.value="";say("Post published.");await load();}
+    catch(e){say(e.message);}
+    finally{submit.disabled=false;}
+  });
+  const peopleSearch=document.getElementById("peopleSearch");
+  const peopleResults=document.getElementById("peopleResults");
+  const conversationList=document.getElementById("conversationList");
+  const messageList=document.getElementById("messageList");
+  const messageTitle=document.getElementById("activeConversationTitle");
+  const messageBody=document.getElementById("messageBody");
+  const sendMessage=document.getElementById("sendMessage");
+  let activeConversation=null, searchTimer=null, currentUserId=null;
+  async function loadConversations(){
+    try{
+      const profile=await request("/api/social/profile");currentUserId=Number(profile.profile.id);
+      const data=await request("/api/social/conversations");
+      conversationList.replaceChildren();
+      if(!data.conversations.length){conversationList.append(node("p","feed-empty","No conversations yet. Search for someone above to start one."));return;}
+      data.conversations.forEach(c=>{
+        const btn=node("button","conversation-option",(c.title||("Conversation #"+c.id))+(c.member_count>2?" · "+c.member_count+" members":""));
+        btn.type="button";if(String(c.id)===String(activeConversation))btn.classList.add("active");
+        btn.addEventListener("click",()=>openConversation(c));conversationList.append(btn);
+      });
+    }catch(e){conversationList.replaceChildren(node("p","feed-empty",e.message));}
+  }
+  async function openConversation(c){
+    activeConversation=String(c.id);messageTitle.textContent=c.title||("Conversation #"+c.id);
+    messageBody.disabled=false;sendMessage.disabled=false;await loadConversations();await loadMessages();
+  }
+  async function loadMessages(){
+    if(!activeConversation)return;
+    try{
+      const data=await request("/api/social/conversations/"+encodeURIComponent(activeConversation)+"/messages?limit=50");
+      messageList.replaceChildren();
+      (data.messages||[]).forEach(m=>{const bubble=node("div","message-bubble"+(Number(m.sender_id)===currentUserId?" mine":""),m.body);bubble.title=m.created_at?new Date(m.created_at).toLocaleString():"";messageList.append(bubble);});
+      if(!data.messages||!data.messages.length)messageList.append(node("p","feed-empty","No messages yet. Say hello."));
+      messageList.scrollTop=messageList.scrollHeight;
+    }catch(e){messageList.replaceChildren(node("p","feed-empty",e.message));}
+  }
+  async function searchPeople(){
+    const q=peopleSearch.value.trim();peopleResults.replaceChildren();
+    if(q.length<2)return;
+    try{
+      const data=await request("/api/social/people?q="+encodeURIComponent(q));
+      if(!data.people.length){peopleResults.append(node("p","feed-empty","No public profiles found."));return;}
+      data.people.forEach(person=>{
+        const btn=node("button","person-option",person.display_name+" · Start chat");
+        btn.type="button";btn.addEventListener("click",async()=>{
+          btn.disabled=true;
+          try{
+            const data=await request("/api/social/conversations",{method:"POST",body:JSON.stringify({participantIds:[person.id]})});
+            await openConversation(data.conversation);peopleResults.replaceChildren();say("Conversation ready.");
+          }catch(e){say(e.message);}finally{btn.disabled=false;}
+        });peopleResults.append(btn);
+      });
+    }catch(e){say(e.message);}
+  }
+  peopleSearch.addEventListener("input",()=>{clearTimeout(searchTimer);searchTimer=setTimeout(searchPeople,250);});
+  document.getElementById("messageComposer").addEventListener("submit",async event=>{
+    event.preventDefault();const text=messageBody.value.trim();if(!text||!activeConversation)return;
+    sendMessage.disabled=true;
+    try{await request("/api/social/conversations/"+encodeURIComponent(activeConversation)+"/messages",{method:"POST",body:JSON.stringify({body:text})});messageBody.value="";await loadMessages();await loadConversations();}
+    catch(e){say(e.message);}finally{sendMessage.disabled=false;}
+  });
+  load();
+  loadConversations();
+})();
+</script>
+</body>
+</html>
