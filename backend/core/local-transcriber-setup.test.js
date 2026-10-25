@@ -6,6 +6,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
+const crypto = require("node:crypto");
 
 test("local transcriber setup reuses a healthy cached binary and model", () => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "irhcf-whisper-cache-test-"));
@@ -27,6 +28,11 @@ test("local transcriber setup reuses a healthy cached binary and model", () => {
   fs.writeFileSync(model, "cached model");
   fs.writeFileSync(binary, "#!/bin/sh\nexit 0\n");
   fs.chmodSync(binary, 0o755);
+  const fingerprintInput = [binary, model].map(file =>
+    crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex") + "  " + file + "\\n"
+  ).join("");
+  const fingerprint = crypto.createHash("sha256").update(fingerprintInput).digest("hex");
+  fs.writeFileSync(path.join(modelDir, ".verified-ggml-tiny.sha256"), fingerprint + "\\n");
 
   for (const tool of ["git", "cmake", "c++", "curl"]) {
     const fake = path.join(fakeBinDir, tool);
@@ -50,7 +56,7 @@ test("local transcriber setup reuses a healthy cached binary and model", () => {
       }
     });
     assert.equal(result.status, 0, result.stderr || result.stdout);
-    assert.match(result.stdout, /Using cached self-hosted transcription engine/);
+    assert.match(result.stdout, /Using cached self-hosted transcription engine|Reusing previously inference-verified binary\/model cache/);
     assert.match(result.stdout, /WHISPER_MODEL_PATH=/);
       assert.equal(fs.existsSync(callLog), false, "cache hit must not invoke git/cmake/compiler/curl");
     }
