@@ -2826,3 +2826,9 @@ body { background: #fff; color: var(--text); }
   .task-agent-activity-step { grid-template-columns:1fr; gap:3px; }
   .task-agent-activity-step small { text-align:left; }
 }
+
+
+/* Respect the HTML hidden attribute even when component CSS sets display:flex/grid. */
+[hidden] {
+  display: none !important;
+}
