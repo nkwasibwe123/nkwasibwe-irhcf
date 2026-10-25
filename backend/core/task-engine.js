@@ -1527,23 +1527,24 @@ function createTaskRouter({
       });
     }
 
-    const task = await engine.getTask(
-      taskId,
-      req.user.id
-    );
-
-    if (!task) {
-      return res.status(404).json({
+    try {
+      const task = await engine.getTask(taskId, req.user.id);
+      if (!task) {
+        return res.status(404).json({
+          success: false,
+          error: "Task not found.",
+          code: "TASK_NOT_FOUND"
+        });
+      }
+      return res.json({ success: true, task });
+    } catch (error) {
+      console.error("[TASK ROUTE] Could not load account-scoped task:", error?.message || error);
+      return res.status(500).json({
         success: false,
-        error: "Task not found.",
-        code: "TASK_NOT_FOUND"
+        error: "Could not load task details.",
+        code: "TASK_LOOKUP_FAILED"
       });
     }
-
-    return res.json({
-      success: true,
-      task
-    });
   });
 
   router.post("/:id/revise", authenticateToken, async (req, res) => {
@@ -1633,41 +1634,38 @@ function createTaskRouter({
     }
   });
 
-  router.post("/:id/pause", authenticateToken, async (req, res) => {
-    const task = await engine.pauseTask(
-      Number(req.params.id),
-      req.user.id
-    );
+  const handleTaskTransition = (action, operation) => async (req, res) => {
+    const taskId = Number(req.params.id);
+    if (!Number.isSafeInteger(taskId) || taskId <= 0) {
+      return res.status(400).json({
+        success: false,
+        code: "TASK_ID_INVALID",
+        error: "Invalid task id."
+      });
+    }
+    try {
+      const task = await operation(taskId, req.user.id);
+      if (!task) {
+        return res.status(409).json({
+          success: false,
+          code: "TASK_TRANSITION_NOT_ALLOWED",
+          error: "Task was not found for this account or its current state does not allow this action."
+        });
+      }
+      return res.json({ success: true, task });
+    } catch (error) {
+      console.error("[TASK ROUTE] Could not " + action + " task:", error?.message || error);
+      return res.status(500).json({
+        success: false,
+        code: "TASK_TRANSITION_FAILED",
+        error: "Could not " + action + " this task. Please try again."
+      });
+    }
+  };
 
-    return res.json({
-      success: Boolean(task),
-      task: task || null
-    });
-  });
-
-  router.post("/:id/resume", authenticateToken, async (req, res) => {
-    const task = await engine.resumeTask(
-      Number(req.params.id),
-      req.user.id
-    );
-
-    return res.json({
-      success: Boolean(task),
-      task: task || null
-    });
-  });
-
-  router.post("/:id/cancel", authenticateToken, async (req, res) => {
-    const task = await engine.cancelTask(
-      Number(req.params.id),
-      req.user.id
-    );
-
-    return res.json({
-      success: Boolean(task),
-      task: task || null
-    });
-  });
+  router.post("/:id/pause", authenticateToken, handleTaskTransition("pause", (id, userId) => engine.pauseTask(id, userId)));
+  router.post("/:id/resume", authenticateToken, handleTaskTransition("resume", (id, userId) => engine.resumeTask(id, userId)));
+  router.post("/:id/cancel", authenticateToken, handleTaskTransition("cancel", (id, userId) => engine.cancelTask(id, userId)));
 
   return router;
 }
