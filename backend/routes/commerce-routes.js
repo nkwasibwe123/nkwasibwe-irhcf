@@ -17,7 +17,6 @@ async function ensureCommerceSchema(pool) {
       contact_phone TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected','suspended')),
       reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
-      provider_refund_reference TEXT,
       reviewed_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -64,7 +63,24 @@ async function ensureCommerceSchema(pool) {
     CREATE INDEX IF NOT EXISTS idx_commerce_reviews_product_created ON commerce_product_reviews(product_id, created_at DESC);
     CREATE TABLE IF NOT EXISTS commerce_coupons (
       id BIGSERIAL PRIMARY KEY,
-      code TEXT NOT NULL UNIQUE CHECK (code ~ '^[A-Z0-9_-]{3,40}
+      code TEXT NOT NULL UNIQUE CHECK (code ~ '^[A-Z0-9_-]{3,40}$'),
+      description TEXT NOT NULL DEFAULT '',
+      discount_type TEXT NOT NULL CHECK (discount_type IN ('percent','fixed')),
+      discount_value BIGINT NOT NULL CHECK (discount_value > 0),
+      currency TEXT NOT NULL CHECK (currency IN ('RWF','USD','EUR','GBP','UGX','KES','TZS','NGN','ZAR')),
+      min_subtotal_minor BIGINT NOT NULL DEFAULT 0 CHECK (min_subtotal_minor >= 0),
+      active BOOLEAN NOT NULL DEFAULT TRUE,
+      starts_at TIMESTAMPTZ,
+      expires_at TIMESTAMPTZ,
+      redeemed_count INTEGER NOT NULL DEFAULT 0 CHECK (redeemed_count >= 0),
+      created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CHECK (discount_type <> 'percent' OR discount_value <= 90),
+      CHECK (expires_at IS NULL OR starts_at IS NULL OR expires_at > starts_at)
+    );
+    CREATE INDEX IF NOT EXISTS idx_commerce_coupons_active ON commerce_coupons(active, code);
+    CREATE TABLE IF NOT EXISTS commerce_orders (
+      id BIGSERIAL PRIMARY KEY,
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
       tx_ref TEXT NOT NULL UNIQUE,
       status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','paid','failed','cancelled','refunded')),
@@ -94,6 +110,7 @@ async function ensureCommerceSchema(pool) {
       status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected','refunded')),
       admin_note TEXT NOT NULL DEFAULT '',
       reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      provider_refund_reference TEXT,
       reviewed_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
