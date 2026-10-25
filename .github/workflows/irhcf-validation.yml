@@ -116,7 +116,7 @@ jobs:
             echo "Marketplace CORS preflight attempt ${attempt}/18"
             status=$(curl --silent --show-error --max-time 10 -D /tmp/irhcf-cors-headers.txt -o /tmp/irhcf-cors-body.txt -w "%{http_code}" -X OPTIONS "$base_url/api/commerce/checkout" -H "Origin: $storefront_origin" -H "Access-Control-Request-Method: POST" -H "Access-Control-Request-Headers: authorization,content-type,idempotency-key" || true)
             echo "OPTIONS /api/commerce/checkout -> HTTP ${status:-no-response}"
-            if [[ ( "$status" == "204" || "$status" == "200" ) ]] && grep -Eiq '^access-control-allow-origin: *https://nkwasibwe-irhcf-web\\.onrender\\.com' /tmp/irhcf-cors-headers.txt && grep -Eiq '^access-control-allow-headers:.*idempotency-key' /tmp/irhcf-cors-headers.txt; then
+            if [[ ( "$status" == "204" || "$status" == "200" ) ]] && grep -Eiq '^access-control-allow-origin: *https://nkwasibwe-irhcf-web\.onrender\.com' /tmp/irhcf-cors-headers.txt && grep -Eiq '^access-control-allow-headers:.*idempotency-key' /tmp/irhcf-cors-headers.txt; then
               cat /tmp/irhcf-cors-headers.txt
               echo "Marketplace storefront origin and Idempotency-Key CORS header are allowed."
               exit 0
