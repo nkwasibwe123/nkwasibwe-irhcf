@@ -12,6 +12,7 @@ The commerce API is mounted at `/api/commerce`.
 - `GET /api/commerce/seller/orders` — paid orders containing items owned by the signed-in approved seller.
 - `PATCH /api/commerce/seller/order-items/:itemId/fulfillment` — update fulfillment for a seller-owned paid order item using allowed status transitions; marking an item shipped requires a carrier/delivery method and tracking/reference number, which the buyer can see in order details.
 - `GET /api/commerce/seller/payouts`, `POST /api/commerce/seller/payout-requests` — account-scoped seller earnings, available balance and payout requests.
+- `GET /api/commerce/seller/analytics?days=7|30|90` — approved-seller-only sales totals, daily sales, top products and fulfillment counts from provider-confirmed paid orders.
 - `GET /api/commerce/payout-requests`, `PATCH /api/commerce/payout-requests/:requestId` — administrator payout review.
 - `POST /api/commerce/products` — create a product; requires a configured administrator or an approved seller. Seller-created products are owned by that seller account.
 - `PATCH /api/commerce/products/:productId` — update a product; administrators can manage all products, while sellers can manage only products they own.
@@ -72,5 +73,5 @@ Product images are currently stored in PostgreSQL as `BYTEA` blobs, limited to 2
 
 - `COMMERCE_PLATFORM_FEE_BPS` is stored per order and applied to each seller's product revenue after proportional coupon discount allocation; default is 0 basis points.
 - Seller balances are derived from a payment-verified ledger created by the successful provider webhook. Seller IDs are taken from product ownership, not browser-supplied IDs.
-- Pending and approved payout requests reduce the available balance; rejected requests release it. A request must not exceed that seller account's available balance for the requested currency.
+- Pending and approved payout requests reduce the available balance; rejected requests release it. Completed refunds create auditable seller-ledger reversals, which reduce earned/available balance; payout completion is blocked if the resulting available balance is negative. A request must not exceed that seller account's available balance for the requested currency.
 - Payout requests store only a verified provider beneficiary/subaccount reference, not raw bank credentials. The current admin flow records a transfer reference after the transfer is performed externally; **it does not send money automatically**. Provider transfer API integration, seller KYC and settlement reconciliation are required before production payouts.

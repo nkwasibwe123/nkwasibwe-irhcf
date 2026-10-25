@@ -193,8 +193,14 @@ async function ensureCommerceSchema(pool) {
       gross_minor BIGINT NOT NULL CHECK (gross_minor >= 0),
       platform_fee_minor BIGINT NOT NULL CHECK (platform_fee_minor >= 0),
       net_minor BIGINT NOT NULL CHECK (net_minor >= 0),
+      reversed_net_minor BIGINT NOT NULL DEFAULT 0 CHECK (reversed_net_minor >= 0 AND reversed_net_minor <= net_minor),
+      refund_reference TEXT,
+      reversed_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
+    ALTER TABLE commerce_seller_ledger ADD COLUMN IF NOT EXISTS reversed_net_minor BIGINT NOT NULL DEFAULT 0;
+    ALTER TABLE commerce_seller_ledger ADD COLUMN IF NOT EXISTS refund_reference TEXT;
+    ALTER TABLE commerce_seller_ledger ADD COLUMN IF NOT EXISTS reversed_at TIMESTAMPTZ;
     CREATE INDEX IF NOT EXISTS idx_commerce_seller_ledger_balance ON commerce_seller_ledger(seller_user_id,currency,created_at DESC);
     CREATE TABLE IF NOT EXISTS commerce_payout_requests (
       id BIGSERIAL PRIMARY KEY,
@@ -500,7 +506,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
     SELECT currency FROM commerce_seller_ledger WHERE seller_user_id=$1
     UNION SELECT currency FROM commerce_payout_requests WHERE seller_user_id=$1
   ), earned AS (
-    SELECT currency,SUM(net_minor)::bigint AS total_earned FROM commerce_seller_ledger WHERE seller_user_id=$1 GROUP BY currency
+    SELECT currency,SUM(net_minor-reversed_net_minor)::bigint AS total_earned FROM commerce_seller_ledger WHERE seller_user_id=$1 GROUP BY currency
   ), payouts AS (
     SELECT currency,
       SUM(CASE WHEN status='paid' THEN amount_minor ELSE 0 END)::bigint AS total_paid,
@@ -511,6 +517,22 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
     COALESCE(p.reserved,0)::bigint AS reserved,
     (COALESCE(e.total_earned,0)-COALESCE(p.total_paid,0)-COALESCE(p.reserved,0))::bigint AS available
   FROM currencies c LEFT JOIN earned e USING(currency) LEFT JOIN payouts p USING(currency) ORDER BY c.currency`;
+
+  router.get("/seller/analytics", authenticateToken, async (req, res) => {
+    const requestedDays=Number(req.query?.days||30);
+    const days=[7,30,90].includes(requestedDays)?requestedDays:30;
+    try{
+      const seller=await pool.query("SELECT status FROM commerce_sellers WHERE user_id=$1 LIMIT 1",[req.user.id]);
+      if(seller.rows[0]?.status!=="approved")return res.status(403).json({success:false,error:"Only approved sellers can view marketplace analytics.",code:"APPROVED_SELLER_REQUIRED"});
+      const [summary,dailySales,topProducts,fulfillment]=await Promise.all([
+        pool.query("SELECT l.currency,COUNT(DISTINCT l.order_id)::int AS paid_orders,COALESCE(SUM(oi.quantity),0)::bigint AS units_sold,COALESCE(SUM(l.gross_minor),0)::bigint AS gross_sales_minor,COALESCE(SUM(l.net_minor-l.reversed_net_minor),0)::bigint AS seller_earnings_minor FROM commerce_seller_ledger l JOIN commerce_order_items oi ON oi.id=l.order_item_id JOIN commerce_orders o ON o.id=l.order_id WHERE l.seller_user_id=$1 AND o.status='paid' AND o.paid_at>=CURRENT_TIMESTAMP-($2::int*INTERVAL '1 day') GROUP BY l.currency ORDER BY l.currency",[req.user.id,days]),
+        pool.query("SELECT TO_CHAR(DATE_TRUNC('day',o.paid_at),'YYYY-MM-DD') AS day,l.currency,SUM(l.gross_minor)::bigint AS gross_sales_minor,COUNT(DISTINCT o.id)::int AS paid_orders FROM commerce_seller_ledger l JOIN commerce_orders o ON o.id=l.order_id WHERE l.seller_user_id=$1 AND o.status='paid' AND o.paid_at>=CURRENT_TIMESTAMP-($2::int*INTERVAL '1 day') GROUP BY DATE_TRUNC('day',o.paid_at),l.currency ORDER BY DATE_TRUNC('day',o.paid_at),l.currency",[req.user.id,days]),
+        pool.query("SELECT oi.product_id,oi.product_name,o.currency,SUM(oi.quantity)::bigint AS units_sold,SUM(l.gross_minor)::bigint AS gross_sales_minor,COUNT(DISTINCT o.id)::int AS paid_orders FROM commerce_seller_ledger l JOIN commerce_order_items oi ON oi.id=l.order_item_id JOIN commerce_orders o ON o.id=l.order_id WHERE l.seller_user_id=$1 AND o.status='paid' AND o.paid_at>=CURRENT_TIMESTAMP-($2::int*INTERVAL '1 day') GROUP BY oi.product_id,oi.product_name,o.currency ORDER BY SUM(l.gross_minor) DESC, SUM(oi.quantity) DESC LIMIT 10",[req.user.id,days]),
+        pool.query("SELECT oi.fulfillment_status,COUNT(*)::int AS item_count FROM commerce_order_items oi JOIN commerce_orders o ON o.id=oi.order_id WHERE oi.seller_user_id=$1 AND o.status='paid' AND o.paid_at>=CURRENT_TIMESTAMP-($2::int*INTERVAL '1 day') GROUP BY oi.fulfillment_status ORDER BY oi.fulfillment_status",[req.user.id,days])
+      ]);
+      return res.json({success:true,periodDays:days,summary:summary.rows,dailySales:dailySales.rows,topProducts:topProducts.rows,fulfillment:fulfillment.rows,accountingNote:"Sales include only provider-confirmed paid orders and exclude orders marked refunded. Available balances and payout eligibility are reported separately by the seller payouts endpoint."});
+    }catch(error){return res.status(500).json({success:false,error:"Could not load seller analytics.",code:"SELLER_ANALYTICS_FAILED"});}
+  });
 
   router.get("/seller/payouts", authenticateToken, async (req, res) => {
     try {
@@ -565,6 +587,12 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
       if(!current.rows.length){await client.query("ROLLBACK");return res.status(404).json({success:false,error:"Payout request not found.",code:"PAYOUT_REQUEST_NOT_FOUND"});}
       const allowed=current.rows[0].status==="pending"?["approved","rejected"]:current.rows[0].status==="approved"?["paid"]:[];
       if(!allowed.includes(status)){await client.query("ROLLBACK");return res.status(409).json({success:false,error:"That payout status transition is not allowed.",code:"PAYOUT_TRANSITION_INVALID"});}
+      if(status==="paid"){
+        await client.query("SELECT user_id FROM commerce_sellers WHERE user_id=$1 FOR UPDATE",[current.rows[0].seller_user_id]);
+        const balances=await client.query(sellerBalanceSql,[current.rows[0].seller_user_id]);
+        const balance=balances.rows.find(row=>row.currency===current.rows[0].currency);
+        if(!balance||Number(balance.available)<0){await client.query("ROLLBACK");return res.status(409).json({success:false,error:"Refund reversals have reduced this seller's available balance. Reconcile the negative balance before paying this request.",code:"PAYOUT_BALANCE_NEGATIVE"});}
+      }
       const updated=await client.query("UPDATE commerce_payout_requests SET status=$2,admin_note=$3,provider_transfer_reference=$4,reviewed_by=$5,reviewed_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=$1 RETURNING id,seller_user_id,amount_minor,currency,status,provider_transfer_reference,reviewed_at",[requestId,status,adminNote,transferReference||null,req.user.id]);
       await client.query("COMMIT");
       return res.json({success:true,payoutRequest:updated.rows[0]});
@@ -1014,16 +1042,29 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
     const status=String(req.body?.status||"");
     const adminNote=String(req.body?.adminNote||"").trim().slice(0,2000);
     const providerReference=String(req.body?.providerRefundReference||"").trim().slice(0,200);
-    if(!requestId||!["approved","rejected","refunded"].includes(status)||(status==="refunded"&&!providerReference))return res.status(400).json({success:false,error:"Provide a valid request status; refunded requires the external provider refund reference.",code:"REFUND_REVIEW_INVALID"});
+    if(!requestId||!["approved","rejected","refunded"].includes(status)||(status==="refunded"&&!/^[A-Za-z0-9_.:-]{3,200}$/.test(providerReference)))return res.status(400).json({success:false,error:"Provide a valid refund status; a completed external provider refund reference is required for refunded.",code:"REFUND_REVIEW_INVALID"});
+    const client=typeof pool.connect==="function"?await pool.connect():null;
+    if(!client)return res.status(503).json({success:false,error:"Refund review requires transactional database support.",code:"REFUND_TRANSACTION_UNAVAILABLE"});
     try{
-      const current=await pool.query("SELECT id,order_id,status FROM commerce_refund_requests WHERE id=$1 LIMIT 1",[requestId]);
-      if(!current.rows.length)return res.status(404).json({success:false,error:"Refund request not found.",code:"REFUND_REQUEST_NOT_FOUND"});
-      const allowed= current.rows[0].status==="pending"?["approved","rejected"]:current.rows[0].status==="approved"?["refunded"]:[];
-      if(!allowed.includes(status))return res.status(409).json({success:false,error:"That refund request status transition is not allowed.",code:"REFUND_TRANSITION_INVALID"});
-      const updated=await pool.query("UPDATE commerce_refund_requests SET status=$2,admin_note=$3,provider_refund_reference=$4,reviewed_by=$5,reviewed_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=$1 RETURNING id,order_id,status,admin_note,provider_refund_reference,reviewed_at",[requestId,status,adminNote,providerReference||null,req.user.id]);
-      if(status==="refunded")await pool.query("UPDATE commerce_orders SET status='refunded',updated_at=CURRENT_TIMESTAMP WHERE id=$1 AND status='paid'",[current.rows[0].order_id]);
+      await client.query("BEGIN");
+      const current=await client.query("SELECT id,order_id,status FROM commerce_refund_requests WHERE id=$1 FOR UPDATE",[requestId]);
+      if(!current.rows.length){await client.query("ROLLBACK");return res.status(404).json({success:false,error:"Refund request not found.",code:"REFUND_REQUEST_NOT_FOUND"});}
+      const allowed=current.rows[0].status==="pending"?["approved","rejected"]:current.rows[0].status==="approved"?["refunded"]:[];
+      if(!allowed.includes(status)){await client.query("ROLLBACK");return res.status(409).json({success:false,error:"That refund request status transition is not allowed.",code:"REFUND_TRANSITION_INVALID"});}
+      if(status==="refunded"){
+        const order=await client.query("SELECT id,status FROM commerce_orders WHERE id=$1 FOR UPDATE",[current.rows[0].order_id]);
+        if(!order.rows.length||order.rows[0].status!=="paid"){await client.query("ROLLBACK");return res.status(409).json({success:false,error:"Only a currently paid order can be marked refunded.",code:"ORDER_NOT_PAID"});}
+      }
+      const updated=await client.query("UPDATE commerce_refund_requests SET status=$2,admin_note=$3,provider_refund_reference=$4,reviewed_by=$5,reviewed_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=$1 RETURNING id,order_id,status,admin_note,provider_refund_reference,reviewed_at",[requestId,status,adminNote,providerReference||null,req.user.id]);
+      if(status==="refunded"){
+        const orderUpdate=await client.query("UPDATE commerce_orders SET status='refunded',updated_at=CURRENT_TIMESTAMP WHERE id=$1 AND status='paid' RETURNING id",[current.rows[0].order_id]);
+        if(!orderUpdate.rows.length){await client.query("ROLLBACK");return res.status(409).json({success:false,error:"Order state changed before the refund was recorded.",code:"ORDER_NOT_PAID"});}
+        await client.query("UPDATE commerce_seller_ledger SET reversed_net_minor=net_minor,refund_reference=$2,reversed_at=CURRENT_TIMESTAMP WHERE order_id=$1 AND reversed_net_minor=0",[current.rows[0].order_id,providerReference]);
+      }
+      await client.query("COMMIT");
       return res.json({success:true,refundRequest:updated.rows[0]});
-    }catch(error){return res.status(500).json({success:false,error:"Could not review refund request.",code:"REFUND_REVIEW_FAILED"});}
+    }catch(error){try{await client.query("ROLLBACK");}catch{}return res.status(500).json({success:false,error:"Could not review refund request.",code:"REFUND_REVIEW_FAILED"});}
+    finally{client.release();}
   });
 
   router.post("/checkout", authenticateToken, async (req, res) => {

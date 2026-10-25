@@ -820,3 +820,30 @@ test("Chat with Friends has a sticky dashboard bar and focused full-page module 
   assert.match(html, /<footer data-dashboard="overview">/);
   assert.doesNotMatch(html, /\n  loadProfileDocuments\(\);\n  load\(\);/);
 });
+
+
+test("marketplace seller analytics dashboard is connected to approved-account analytics and period controls", () => {
+  const root=path.join(__dirname,"..","..");
+  const html=fs.readFileSync(path.join(root,"market.html"),"utf8");
+  const js=fs.readFileSync(path.join(root,"market.js"),"utf8");
+  const routes=fs.readFileSync(path.join(root,"backend","routes","commerce-routes.js"),"utf8");
+  for(const id of ["sellerAnalyticsDays","sellerAnalyticsRefresh","sellerAnalyticsSummary","sellerSalesChart","sellerTopProducts","sellerFulfillmentSummary"]) assert.ok(html.includes('id="'+id+'"'),"missing analytics UI: "+id);
+  assert.match(js,/async function loadSellerAnalytics\(\)/);
+  assert.match(js,/\/seller\/analytics\?days=/);
+  assert.match(js,/sellerAnalyticsDays.*addEventListener\("change",loadSellerAnalytics\)/);
+  assert.match(routes,/router\.get\("\/seller\/analytics"/);
+  assert.match(routes,/status!=="approved"/);
+  assert.match(routes,/COUNT\(DISTINCT l\.order_id\)/);
+  assert.match(routes,/DATE_TRUNC\('day',o\.paid_at\)/);
+  assert.match(routes,/SUM\(l\.net_minor-l\.reversed_net_minor\)/);
+});
+
+test("confirmed refunds reverse seller ledger earnings and prevent invalid payout balance calculations", () => {
+  const root=path.join(__dirname,"..","..");
+  const routes=fs.readFileSync(path.join(root,"backend","routes","commerce-routes.js"),"utf8");
+  assert.match(routes,/reversed_net_minor BIGINT NOT NULL DEFAULT 0/);
+  assert.match(routes,/SUM\(net_minor-reversed_net_minor\)::bigint AS total_earned/);
+  assert.match(routes,/UPDATE commerce_seller_ledger SET reversed_net_minor=net_minor,refund_reference=\$2,reversed_at=CURRENT_TIMESTAMP WHERE order_id=\$1 AND reversed_net_minor=0/);
+  assert.match(routes,/PAYOUT_BALANCE_NEGATIVE/);
+  assert.match(routes,/REFUND_TRANSACTION_UNAVAILABLE/);
+});
