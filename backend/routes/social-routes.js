@@ -160,6 +160,27 @@ function createSocialRouter({ pool, authenticateToken } = {}) {
       return res.status(200).set("Content-Type",a.mime_type).set("Content-Disposition",disposition+"; filename=\""+name+"\"").set("X-Content-Type-Options","nosniff").set("Cache-Control","private, max-age=300").send(a.content);
     } catch(error) { return next(error); }
   });
+  router.get("/profile/completion", async (req,res,next) => {
+    try{
+      const result=await pool.query(
+        `SELECT u.name,u.email,COALESCE(p.display_name,'') AS display_name,
+                COALESCE(p.bio,'') AS bio,COALESCE(p.avatar_url,'') AS avatar_url
+         FROM users u LEFT JOIN social_profiles p ON p.user_id=u.id WHERE u.id=$1`,
+        [userId(req)]
+      );
+      if(!result.rows[0]) return fail(res,404,"Profile not found.");
+      const profile=result.rows[0];
+      const checks=[
+        {key:"displayName",label:"Choose a display name",complete:Boolean(profile.display_name.trim()),href:"#socialProfileForm"},
+        {key:"bio",label:"Add a short bio",complete:Boolean(profile.bio.trim()),href:"#socialProfileForm"},
+        {key:"avatar",label:"Add a profile photo",complete:Boolean(profile.avatar_url.trim()),href:"#socialProfileForm"},
+        {key:"email",label:"Confirm your account email",complete:Boolean(profile.email),href:"#account"}
+      ];
+      const completed=checks.filter(item=>item.complete).length;
+      return res.json({success:true,completion:{percent:Math.round(completed/checks.length*100),completed,total:checks.length,checks,profile:{name:profile.name,displayName:profile.display_name}}});
+    }catch(error){return next(error);}
+  });
+
   router.get("/profile", async (req, res, next) => {
     try {
       const result = await pool.query(
