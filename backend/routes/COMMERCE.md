@@ -10,6 +10,8 @@ The commerce API is mounted at `/api/commerce`.
 - `GET /api/commerce/seller/products` — list products belonging to the signed-in approved seller.
 - `GET /api/commerce/seller/orders` — paid orders containing items owned by the signed-in approved seller.
 - `PATCH /api/commerce/seller/order-items/:itemId/fulfillment` — update fulfillment for a seller-owned paid order item using allowed status transitions.
+- `GET /api/commerce/seller/payouts`, `POST /api/commerce/seller/payout-requests` — account-scoped seller earnings, available balance and payout requests.
+- `GET /api/commerce/payout-requests`, `PATCH /api/commerce/payout-requests/:requestId` — administrator payout review.
 - `POST /api/commerce/products` — create a product; requires a configured administrator or an approved seller. Seller-created products are owned by that seller account.
 - `PATCH /api/commerce/products/:productId` — update a product; administrators can manage all products, while sellers can manage only products they own.
 - `PUT /api/commerce/products/:productId/image` — upload a JPEG, PNG or WebP product image (max 2 MiB), with byte-signature verification and product ownership enforcement.
@@ -60,3 +62,11 @@ Set the Flutterwave webhook destination to `https://nkwasibwe-irhcf.onrender.com
 ## Product image storage
 
 Product images are currently stored in PostgreSQL as `BYTEA` blobs, limited to 2 MiB each and JPEG/PNG/WebP only. This keeps the first version self-contained without a paid image host, but increases database size and backup time; for a high-volume marketplace, migrate images to object storage with signed upload URLs and CDN delivery.
+
+
+## Seller earnings and payouts
+
+- `COMMERCE_PLATFORM_FEE_BPS` is stored per order and applied to each seller's product revenue after proportional coupon discount allocation; default is 0 basis points.
+- Seller balances are derived from a payment-verified ledger created by the successful provider webhook. Seller IDs are taken from product ownership, not browser-supplied IDs.
+- Pending and approved payout requests reduce the available balance; rejected requests release it. A request must not exceed that seller account's available balance for the requested currency.
+- Payout requests store only a verified provider beneficiary/subaccount reference, not raw bank credentials. The current admin flow records a transfer reference after the transfer is performed externally; **it does not send money automatically**. Provider transfer API integration, seller KYC and settlement reconciliation are required before production payouts.

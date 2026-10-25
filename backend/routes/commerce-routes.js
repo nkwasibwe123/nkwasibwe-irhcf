@@ -97,6 +97,7 @@ async function ensureCommerceSchema(pool) {
       shipping_minor BIGINT NOT NULL DEFAULT 0 CHECK (shipping_minor >= 0),
       tax_minor BIGINT NOT NULL DEFAULT 0 CHECK (tax_minor >= 0),
       tax_rate_bps INTEGER NOT NULL DEFAULT 0 CHECK (tax_rate_bps BETWEEN 0 AND 3000),
+      platform_fee_bps INTEGER NOT NULL DEFAULT 0 CHECK (platform_fee_bps BETWEEN 0 AND 3000),
       coupon_code TEXT,
       expires_at TIMESTAMPTZ,
       stock_released_at TIMESTAMPTZ,
@@ -114,6 +115,7 @@ async function ensureCommerceSchema(pool) {
     ALTER TABLE commerce_orders ADD COLUMN IF NOT EXISTS shipping_minor BIGINT NOT NULL DEFAULT 0;
     ALTER TABLE commerce_orders ADD COLUMN IF NOT EXISTS tax_minor BIGINT NOT NULL DEFAULT 0;
     ALTER TABLE commerce_orders ADD COLUMN IF NOT EXISTS tax_rate_bps INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE commerce_orders ADD COLUMN IF NOT EXISTS platform_fee_bps INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE commerce_orders ADD COLUMN IF NOT EXISTS coupon_code TEXT;
     ALTER TABLE commerce_orders ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
     ALTER TABLE commerce_orders ADD COLUMN IF NOT EXISTS stock_released_at TIMESTAMPTZ;
@@ -174,6 +176,34 @@ async function ensureCommerceSchema(pool) {
       PRIMARY KEY (order_id, product_id)
     );
     CREATE INDEX IF NOT EXISTS idx_commerce_stock_reservations_expiry ON commerce_stock_reservations(expires_at);
+    CREATE TABLE IF NOT EXISTS commerce_seller_ledger (
+      id BIGSERIAL PRIMARY KEY,
+      seller_user_id INTEGER NOT NULL REFERENCES commerce_sellers(user_id) ON DELETE RESTRICT,
+      order_id BIGINT NOT NULL REFERENCES commerce_orders(id) ON DELETE RESTRICT,
+      order_item_id BIGINT NOT NULL UNIQUE REFERENCES commerce_order_items(id) ON DELETE RESTRICT,
+      currency TEXT NOT NULL,
+      gross_minor BIGINT NOT NULL CHECK (gross_minor >= 0),
+      platform_fee_minor BIGINT NOT NULL CHECK (platform_fee_minor >= 0),
+      net_minor BIGINT NOT NULL CHECK (net_minor >= 0),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_commerce_seller_ledger_balance ON commerce_seller_ledger(seller_user_id,currency,created_at DESC);
+    CREATE TABLE IF NOT EXISTS commerce_payout_requests (
+      id BIGSERIAL PRIMARY KEY,
+      seller_user_id INTEGER NOT NULL REFERENCES commerce_sellers(user_id) ON DELETE RESTRICT,
+      amount_minor BIGINT NOT NULL CHECK (amount_minor > 0),
+      currency TEXT NOT NULL,
+      destination_reference TEXT NOT NULL CHECK (length(trim(destination_reference)) BETWEEN 3 AND 200),
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected','paid')),
+      admin_note TEXT NOT NULL DEFAULT '',
+      provider_transfer_reference TEXT,
+      reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      reviewed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_commerce_payouts_seller ON commerce_payout_requests(seller_user_id,currency,status,created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_commerce_payouts_status ON commerce_payout_requests(status,created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_commerce_order_items_order ON commerce_order_items(order_id);
     CREATE TABLE IF NOT EXISTS commerce_cart_items (
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -220,6 +250,17 @@ function getTaxRateBps(env = process.env) {
   const raw = env.COMMERCE_TAX_BPS == null || env.COMMERCE_TAX_BPS === "" ? "0" : String(env.COMMERCE_TAX_BPS);
   const value = Number(raw);
   return Number.isSafeInteger(value) && value >= 0 && value <= 3000 ? value : null;
+}
+function getPlatformFeeBps(env = process.env) {
+  const raw = env.COMMERCE_PLATFORM_FEE_BPS == null || env.COMMERCE_PLATFORM_FEE_BPS === "" ? "0" : String(env.COMMERCE_PLATFORM_FEE_BPS);
+  const value = Number(raw);
+  return Number.isSafeInteger(value) && value >= 0 && value <= 3000 ? value : null;
+}
+function calculateSellerNetMinor(grossMinor, platformFeeBps) {
+  if (!Number.isSafeInteger(grossMinor) || grossMinor < 0 || !Number.isSafeInteger(platformFeeBps) || platformFeeBps < 0 || platformFeeBps > 3000) return null;
+  const feeMinor=Number((BigInt(grossMinor)*BigInt(platformFeeBps))/10000n);
+  const netMinor=grossMinor-feeMinor;
+  return Number.isSafeInteger(feeMinor)&&Number.isSafeInteger(netMinor)&&netMinor>=0?{feeMinor,netMinor}:null;
 }
 function calculateTaxMinor(subtotalMinor, discountMinor, shippingMinor, taxRateBps) {
   const taxableMinor = subtotalMinor - discountMinor + shippingMinor;
@@ -436,6 +477,82 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
     } catch (error) {
       return res.status(500).json({ success: false, error: "Could not load seller orders.", code: "SELLER_ORDERS_LOAD_FAILED" });
     }
+  });
+
+  const sellerBalanceSql = `WITH currencies AS (
+    SELECT currency FROM commerce_seller_ledger WHERE seller_user_id=$1
+    UNION SELECT currency FROM commerce_payout_requests WHERE seller_user_id=$1
+  ), earned AS (
+    SELECT currency,SUM(net_minor)::bigint AS total_earned FROM commerce_seller_ledger WHERE seller_user_id=$1 GROUP BY currency
+  ), payouts AS (
+    SELECT currency,
+      SUM(CASE WHEN status='paid' THEN amount_minor ELSE 0 END)::bigint AS total_paid,
+      SUM(CASE WHEN status IN ('pending','approved') THEN amount_minor ELSE 0 END)::bigint AS reserved
+    FROM commerce_payout_requests WHERE seller_user_id=$1 GROUP BY currency
+  )
+  SELECT c.currency,COALESCE(e.total_earned,0)::bigint AS total_earned,COALESCE(p.total_paid,0)::bigint AS total_paid,
+    COALESCE(p.reserved,0)::bigint AS reserved,
+    (COALESCE(e.total_earned,0)-COALESCE(p.total_paid,0)-COALESCE(p.reserved,0))::bigint AS available
+  FROM currencies c LEFT JOIN earned e USING(currency) LEFT JOIN payouts p USING(currency) ORDER BY c.currency`;
+
+  router.get("/seller/payouts", authenticateToken, async (req, res) => {
+    try {
+      const seller=await pool.query("SELECT status FROM commerce_sellers WHERE user_id=$1 LIMIT 1",[req.user.id]);
+      if(seller.rows[0]?.status!=="approved")return res.status(403).json({success:false,error:"Only approved sellers can view earnings and payout balances.",code:"APPROVED_SELLER_REQUIRED"});
+      const balances=await pool.query(sellerBalanceSql,[req.user.id]);
+      const requests=await pool.query("SELECT id,amount_minor,currency,destination_reference,status,admin_note,provider_transfer_reference,created_at,updated_at,reviewed_at FROM commerce_payout_requests WHERE seller_user_id=$1 ORDER BY created_at DESC LIMIT 100",[req.user.id]);
+      return res.json({success:true,balances:balances.rows,payoutRequests:requests.rows});
+    }catch(error){return res.status(500).json({success:false,error:"Could not load seller payouts.",code:"SELLER_PAYOUTS_LOAD_FAILED"});}
+  });
+
+  router.post("/seller/payout-requests", authenticateToken, async (req, res) => {
+    const amountMinor=safeInteger(req.body?.amountMinor,1,Number.MAX_SAFE_INTEGER);
+    const currency=String(req.body?.currency||"").toUpperCase();
+    const destinationReference=String(req.body?.destinationReference||"").trim().slice(0,200);
+    if(!amountMinor||!CURRENCIES.has(currency)||!/^[A-Za-z0-9_.:-]{3,200}$/.test(destinationReference))return res.status(400).json({success:false,error:"Provide a valid amount, supported currency and verified provider beneficiary/subaccount reference (not raw bank credentials).",code:"PAYOUT_REQUEST_INVALID"});
+    const client=typeof pool.connect==="function"?await pool.connect():null;
+    if(!client)return res.status(503).json({success:false,error:"Payout requests require transactional database support.",code:"PAYOUT_TRANSACTION_UNAVAILABLE"});
+    try{
+      await client.query("BEGIN");
+      const seller=await client.query("SELECT user_id FROM commerce_sellers WHERE user_id=$1 AND status='approved' FOR UPDATE",[req.user.id]);
+      if(!seller.rows.length){await client.query("ROLLBACK");return res.status(403).json({success:false,error:"Only approved sellers can request payouts.",code:"APPROVED_SELLER_REQUIRED"});}
+      const balanceResult=await client.query(sellerBalanceSql,[req.user.id]);
+      const balance=balanceResult.rows.find(row=>row.currency===currency);
+      const available=Number(balance?.available||0);
+      if(!Number.isSafeInteger(available)||amountMinor>available){await client.query("ROLLBACK");return res.status(409).json({success:false,error:"Requested payout exceeds the available balance for this currency.",code:"PAYOUT_BALANCE_INSUFFICIENT",availableMinor:Math.max(0,available)});}
+      const result=await client.query("INSERT INTO commerce_payout_requests (seller_user_id,amount_minor,currency,destination_reference) VALUES ($1,$2,$3,$4) RETURNING id,amount_minor,currency,destination_reference,status,created_at",[req.user.id,amountMinor,currency,destinationReference]);
+      await client.query("COMMIT");
+      return res.status(201).json({success:true,payoutRequest:result.rows[0]});
+    }catch(error){try{await client.query("ROLLBACK");}catch{}return res.status(500).json({success:false,error:"Could not submit payout request.",code:"PAYOUT_REQUEST_FAILED"});}
+    finally{client.release();}
+  });
+
+  router.get("/payout-requests", authenticateToken, requireCommerceAdmin, async (req, res) => {
+    try{
+      const result=await pool.query("SELECT p.id,p.seller_user_id,s.shop_name,p.amount_minor,p.currency,p.destination_reference,p.status,p.admin_note,p.provider_transfer_reference,p.created_at,p.updated_at,p.reviewed_at FROM commerce_payout_requests p JOIN commerce_sellers s ON s.user_id=p.seller_user_id ORDER BY CASE p.status WHEN 'pending' THEN 0 WHEN 'approved' THEN 1 ELSE 2 END,p.created_at DESC LIMIT 200");
+      return res.json({success:true,payoutRequests:result.rows});
+    }catch(error){return res.status(500).json({success:false,error:"Could not load payout requests.",code:"PAYOUT_REQUESTS_LOAD_FAILED"});}
+  });
+
+  router.patch("/payout-requests/:requestId", authenticateToken, requireCommerceAdmin, async (req, res) => {
+    const requestId=safeInteger(req.params.requestId,1,Number.MAX_SAFE_INTEGER);
+    const status=String(req.body?.status||"");
+    const adminNote=String(req.body?.adminNote||"").trim().slice(0,2000);
+    const transferReference=String(req.body?.providerTransferReference||"").trim().slice(0,200);
+    if(!requestId||!["approved","rejected","paid"].includes(status)||(status==="paid"&&!/^[A-Za-z0-9_.:-]{3,200}$/.test(transferReference)))return res.status(400).json({success:false,error:"Valid payout status required; marking paid requires an external provider transfer reference.",code:"PAYOUT_REVIEW_INVALID"});
+    const client=typeof pool.connect==="function"?await pool.connect():null;
+    if(!client)return res.status(503).json({success:false,error:"Payout review requires transaction support.",code:"PAYOUT_TRANSACTION_UNAVAILABLE"});
+    try{
+      await client.query("BEGIN");
+      const current=await client.query("SELECT id,seller_user_id,status FROM commerce_payout_requests WHERE id=$1 FOR UPDATE",[requestId]);
+      if(!current.rows.length){await client.query("ROLLBACK");return res.status(404).json({success:false,error:"Payout request not found.",code:"PAYOUT_REQUEST_NOT_FOUND"});}
+      const allowed=current.rows[0].status==="pending"?["approved","rejected"]:current.rows[0].status==="approved"?["paid"]:[];
+      if(!allowed.includes(status)){await client.query("ROLLBACK");return res.status(409).json({success:false,error:"That payout status transition is not allowed.",code:"PAYOUT_TRANSITION_INVALID"});}
+      const updated=await client.query("UPDATE commerce_payout_requests SET status=$2,admin_note=$3,provider_transfer_reference=$4,reviewed_by=$5,reviewed_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=$1 RETURNING id,seller_user_id,amount_minor,currency,status,provider_transfer_reference,reviewed_at",[requestId,status,adminNote,transferReference||null,req.user.id]);
+      await client.query("COMMIT");
+      return res.json({success:true,payoutRequest:updated.rows[0]});
+    }catch(error){try{await client.query("ROLLBACK");}catch{}return res.status(500).json({success:false,error:"Could not review payout request.",code:"PAYOUT_REVIEW_FAILED"});}
+    finally{client.release();}
   });
 
   router.patch("/seller/order-items/:itemId/fulfillment", authenticateToken, async (req, res) => {
@@ -853,6 +970,8 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
     if (typeof fetchImpl !== "function") {
       return res.status(503).json({ success: false, code: "PAYMENT_FETCH_UNAVAILABLE", error: "Payment gateway request support is unavailable." });
     }
+    const platformFeeBps = getPlatformFeeBps(env);
+    if (platformFeeBps === null) return res.status(503).json({ success: false, code: "PLATFORM_FEE_CONFIGURATION_INVALID", error: "Platform fee must be an integer between 0 and 3000 basis points." });
     const input = req.body?.items;
     if (!Array.isArray(input) || input.length < 1 || input.length > MAX_ITEMS) {
       return res.status(400).json({ success: false, code: "CART_INVALID", error: "Provide between 1 and 50 cart items." });
@@ -977,8 +1096,8 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
       }
       txRef = "irhcf_" + crypto.randomUUID();
       const order = await client.query(
-        "INSERT INTO commerce_orders (user_id, tx_ref, status, currency, total_minor, subtotal_minor, discount_minor, shipping_minor, tax_minor, tax_rate_bps, coupon_code, provider, shipping_address, expires_at) VALUES ($1,$2,'pending',$3,$4,$5,$6,$7,$8,$9,$10,'flutterwave',$11::jsonb,CURRENT_TIMESTAMP + INTERVAL '30 minutes') RETURNING id,expires_at",
-        [req.user.id, txRef, currency, totalMinor, subtotalMinor, discountMinor, shippingMinor, taxMinor, taxRateBps, couponCode, shippingAddress ? JSON.stringify(shippingAddress) : null]
+        "INSERT INTO commerce_orders (user_id, tx_ref, status, currency, total_minor, subtotal_minor, discount_minor, shipping_minor, tax_minor, tax_rate_bps, platform_fee_bps, coupon_code, provider, shipping_address, expires_at) VALUES ($1,$2,'pending',$3,$4,$5,$6,$7,$8,$9,$10,$11,'flutterwave',$12::jsonb,CURRENT_TIMESTAMP + INTERVAL '30 minutes') RETURNING id,expires_at",
+        [req.user.id, txRef, currency, totalMinor, subtotalMinor, discountMinor, shippingMinor, taxMinor, taxRateBps, platformFeeBps, couponCode, shippingAddress ? JSON.stringify(shippingAddress) : null]
       );
       orderId = order.rows[0].id;
       orderExpiresAt = order.rows[0].expires_at;
@@ -1033,7 +1152,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
         return res.status(502).json({ success: false, code: "CHECKOUT_PROVIDER_FAILED", error: "Payment provider did not create a valid hosted checkout." });
       }
       await pool.query("UPDATE commerce_orders SET checkout_url=$2, updated_at=CURRENT_TIMESTAMP WHERE id=$1 AND status='pending'", [orderId, checkoutUrl]);
-      return res.status(201).json({ success: true, orderId, txRef, currency, subtotalMinor, discountMinor, shippingMinor, taxMinor, taxRateBps, totalMinor, couponCode, checkoutUrl, paymentStatus: "pending" });
+      return res.status(201).json({ success: true, orderId, txRef, currency, subtotalMinor, discountMinor, shippingMinor, taxMinor, taxRateBps, platformFeeBps, totalMinor, couponCode, checkoutUrl, paymentStatus: "pending" });
     } catch (error) {
       await releaseOrderReservations(pool, orderId, "failed");
       return res.status(502).json({ success: false, code: "CHECKOUT_PROVIDER_UNAVAILABLE", error: "Payment provider could not be reached. No payment has been confirmed." });
@@ -1060,7 +1179,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
       if (!verifiedResponse.ok || verified?.status !== "success" || !data || String(data?.tx_ref) !== txRef) {
         return res.status(400).json({ success: false, error: "Payment could not be verified with the provider.", code: "PAYMENT_NOT_VERIFIED" });
       }
-      const orderResult = await pool.query("SELECT id, status, currency, total_minor, coupon_code, expires_at FROM commerce_orders WHERE tx_ref=$1", [txRef]);
+      const orderResult = await pool.query("SELECT id, status, currency, total_minor, coupon_code, expires_at, subtotal_minor, discount_minor, platform_fee_bps FROM commerce_orders WHERE tx_ref=$1", [txRef]);
       const order = orderResult.rows[0];
       if (!order) return res.status(404).json({ success: false, error: "Order not found.", code: "ORDER_NOT_FOUND" });
       if (order.status === "paid") return res.json({ success: true, duplicate: true });
@@ -1074,7 +1193,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
         return res.status(400).json({ success: false, error: "Payment amount or currency does not match the order.", code: "PAYMENT_MISMATCH" });
       }
       const updated = await pool.query(
-        "WITH paid_order AS (UPDATE commerce_orders SET status='paid', provider_transaction_id=$2, paid_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=$1 AND status='pending' RETURNING id,coupon_code), coupon_update AS (UPDATE commerce_coupons c SET redeemed_count=c.redeemed_count+1 FROM paid_order p WHERE c.code=p.coupon_code AND p.coupon_code IS NOT NULL RETURNING c.id), reservation_release AS (DELETE FROM commerce_stock_reservations r USING paid_order p WHERE r.order_id=p.id RETURNING r.order_id) SELECT id FROM paid_order",
+        "WITH paid_order AS (UPDATE commerce_orders SET status='paid', provider_transaction_id=$2, paid_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=$1 AND status='pending' RETURNING id,coupon_code,discount_minor,subtotal_minor,currency,platform_fee_bps), coupon_update AS (UPDATE commerce_coupons c SET redeemed_count=c.redeemed_count+1 FROM paid_order p WHERE c.code=p.coupon_code AND p.coupon_code IS NOT NULL RETURNING c.id), reservation_release AS (DELETE FROM commerce_stock_reservations r USING paid_order p WHERE r.order_id=p.id RETURNING r.order_id), item_amounts AS (SELECT oi.id AS order_item_id,oi.order_id,oi.seller_user_id,oi.line_total_minor,p.currency,p.discount_minor,p.subtotal_minor,p.platform_fee_bps,FLOOR(p.discount_minor::numeric*oi.line_total_minor::numeric/NULLIF(p.subtotal_minor,0))::bigint AS discount_share,ROW_NUMBER() OVER (ORDER BY oi.line_total_minor DESC,oi.id) AS row_num,COUNT(*) OVER () AS item_count,SUM(FLOOR(p.discount_minor::numeric*oi.line_total_minor::numeric/NULLIF(p.subtotal_minor,0))::bigint) OVER () AS discount_allocated FROM commerce_order_items oi JOIN paid_order p ON p.id=oi.order_id), allocated_items AS (SELECT order_item_id,order_id,seller_user_id,currency,platform_fee_bps,GREATEST(0,line_total_minor-discount_share-CASE WHEN row_num=1 THEN GREATEST(0,discount_minor-discount_allocated) ELSE 0 END)::bigint AS gross_minor FROM item_amounts), seller_ledger AS (INSERT INTO commerce_seller_ledger (seller_user_id,order_id,order_item_id,currency,gross_minor,platform_fee_minor,net_minor) SELECT seller_user_id,order_id,order_item_id,currency,gross_minor,FLOOR(gross_minor::numeric*platform_fee_bps/10000)::bigint,gross_minor-FLOOR(gross_minor::numeric*platform_fee_bps/10000)::bigint FROM allocated_items WHERE seller_user_id IS NOT NULL ON CONFLICT (order_item_id) DO NOTHING RETURNING id) SELECT id FROM paid_order",
         [order.id, String(transactionId)]
       );
       if (!updated.rows.length) return res.status(409).json({ success: false, error: "Order is no longer pending.", code: "ORDER_STATE_CONFLICT" });
@@ -1087,4 +1206,4 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
   return router;
 }
 
-module.exports = { MAX_ITEMS, MAX_QUANTITY, CURRENCIES, ensureCommerceSchema, createCommerceRouter, toProviderAmount, fromProviderAmount, calculateCouponDiscount, getShippingRateMinor, getTaxRateBps, calculateTaxMinor, releaseOrderReservations, releaseExpiredReservations };
+module.exports = { MAX_ITEMS, MAX_QUANTITY, CURRENCIES, ensureCommerceSchema, createCommerceRouter, toProviderAmount, fromProviderAmount, calculateCouponDiscount, getShippingRateMinor, getTaxRateBps, calculateTaxMinor, getPlatformFeeBps, calculateSellerNetMinor, releaseOrderReservations, releaseExpiredReservations };
