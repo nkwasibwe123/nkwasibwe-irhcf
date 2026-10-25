@@ -21,6 +21,7 @@ test("a full rate-limit store rejects new keys rather than deleting active bucke
   const result = checkRateLimitEntry(store, "u3", 10, 1100, { windowMs: 1000, maxEntries: 2 });
   assert.equal(result.allowed, false);
   assert.equal(result.code, "RATE_LIMIT_STORE_FULL");
+  assert.equal(result.retryAfter, 2);
   assert.equal(store.has("u1"), true);
   assert.equal(store.has("u2"), true);
   assert.equal(store.has("u3"), false);
