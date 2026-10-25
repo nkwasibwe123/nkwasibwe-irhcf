@@ -705,3 +705,74 @@ test("Flutterwave webhook rejects a verified transaction ID mismatch before quer
     assert.equal(orderQueries, 0);
   });
 });
+
+
+async function postVerifiedWebhook({ amount, currency }) {
+  const app = express();
+  const orderQueries = [];
+  const pool = {
+    async query(sql, params) {
+      orderQueries.push({ sql, params });
+      if (sql.includes("SELECT id, status, currency, total_minor, coupon_code")) {
+        return { rows: [{
+          id: "order-1",
+          status: "pending",
+          currency: "RWF",
+          total_minor: 1000,
+          coupon_code: null,
+          expires_at: new Date(Date.now() + 60_000).toISOString(),
+          subtotal_minor: 1000,
+          discount_minor: 0,
+          platform_fee_bps: 500
+        }] };
+      }
+      throw new Error("No database mutation is expected for a mismatched payment.");
+    }
+  };
+  app.use(express.json());
+  app.use("/api/commerce", createCommerceRouter({
+    pool,
+    authenticateToken: (req, res, next) => { req.user = { id: 7, email: "buyer@example.com" }; next(); },
+    env: { FLW_SECRET_HASH: "test-webhook-secret", FLW_SECRET_KEY: "test-provider-key" },
+    fetchImpl: async () => ({
+      ok: true,
+      async json() {
+        return { status: "success", data: {
+          id: 111,
+          tx_ref: "irhcf_ref_1",
+          status: "successful",
+          amount,
+          currency
+        } };
+      }
+    })
+  }));
+  let responsePayload;
+  let status;
+  await withServer(app, async base => {
+    const response = await fetch(base + "/api/commerce/webhook/flutterwave", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "verif-hash": "test-webhook-secret" },
+      body: JSON.stringify({ data: { id: 111, tx_ref: "irhcf_ref_1" } })
+    });
+    status = response.status;
+    responsePayload = await response.json();
+  });
+  return { status, responsePayload, orderQueries };
+}
+
+test("Flutterwave webhook refuses successful provider transactions with a short amount", async () => {
+  const result = await postVerifiedWebhook({ amount: 999, currency: "RWF" });
+  assert.equal(result.status, 400);
+  assert.equal(result.responsePayload.code, "PAYMENT_MISMATCH");
+  assert.equal(result.orderQueries.length, 1);
+  assert.match(result.orderQueries[0].sql, /SELECT id, status, currency, total_minor/);
+});
+
+test("Flutterwave webhook refuses successful provider transactions in the wrong currency", async () => {
+  const result = await postVerifiedWebhook({ amount: 10, currency: "USD" });
+  assert.equal(result.status, 400);
+  assert.equal(result.responsePayload.code, "PAYMENT_MISMATCH");
+  assert.equal(result.orderQueries.length, 1);
+  assert.match(result.orderQueries[0].sql, /SELECT id, status, currency, total_minor/);
+});
