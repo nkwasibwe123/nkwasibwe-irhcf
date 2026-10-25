@@ -49,6 +49,13 @@
 <h2 id="chatTitle">Private messages</h2>
 <p class="feed-subtitle">Search for a public profile to start a private or group conversation. Messages are stored by IRHCF and only conversation members can read them.</p>
 <div class="composer"><input id="peopleSearch" type="search" placeholder="Find people by display name…" aria-label="Search people" style="width:100%;padding:11px;border:1px solid var(--line);border-radius:9px;font:inherit"><div id="peopleResults" class="people-results"></div></div>
+<form id="groupChatForm" class="composer" style="margin-top:12px">
+  <h3>Create a group chat</h3>
+  <input id="groupChatTitle" maxlength="100" placeholder="Group name (optional)" aria-label="Group name" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:9px;font:inherit;margin-bottom:8px">
+  <p class="feed-subtitle">Search people above and select at least two other members to create a group.</p>
+  <div id="groupSelectionStatus" class="feed-subtitle" aria-live="polite">No members selected.</div>
+  <button id="createGroupChat" class="feed-action" type="submit">Create group chat</button>
+</form>
 <div class="chat-layout" style="margin-top:16px"><div><h3>Conversations</h3><div id="conversationList" class="conversation-list"><p class="feed-empty">Sign in to load conversations.</p></div></div>
 <div><h3 id="activeConversationTitle">Choose a conversation</h3><div class="chat-messages"><div id="messageList" class="message-list"><p class="feed-empty">Select a conversation to view messages.</p></div><form id="messageComposer" class="chat-send"><input id="messageBody" maxlength="5000" placeholder="Write a message…" aria-label="Message text" disabled><button id="sendMessage" type="submit" disabled>Send</button></form></div></div></div>
 </section>
@@ -270,6 +277,20 @@
       document.getElementById("socialProfileVisibility").value=data.profile.visibility||"public";
     }catch(e){say(e.message);}
   }
+  const selectedGroupMembers=new Map();
+  const groupSelectionStatus=document.getElementById("groupSelectionStatus");
+  function updateGroupSelectionStatus(){groupSelectionStatus.textContent=selectedGroupMembers.size+" member(s) selected.";}
+  document.getElementById("groupChatForm").addEventListener("submit",async event=>{
+    event.preventDefault();
+    const participantIds=Array.from(selectedGroupMembers.keys()).map(Number);
+    if(participantIds.length<2){say("Select at least two other people to create a group chat.");return;}
+    const button=document.getElementById("createGroupChat");button.disabled=true;
+    try{
+      const result=await request("/api/social/conversations",{method:"POST",body:JSON.stringify({participantIds,title:document.getElementById("groupChatTitle").value.trim()})});
+      selectedGroupMembers.clear();updateGroupSelectionStatus();document.getElementById("groupChatTitle").value="";
+      await openConversation(result.conversation);say("Group chat created.");
+    }catch(e){say(e.message);}finally{button.disabled=false;}
+  });
   async function searchPeople(){
     const q=peopleSearch.value.trim();peopleResults.replaceChildren();
     if(q.length<2)return;
@@ -279,6 +300,11 @@
       data.people.forEach(person=>{
         const row=node("div","person-option");
         row.append(node("span","",person.display_name));
+        const selectLabel=node("label","feed-subtitle");
+        const select=node("input","");select.type="checkbox";select.checked=selectedGroupMembers.has(String(person.id));select.setAttribute("aria-label","Select "+person.display_name+" for group chat");
+        select.addEventListener("change",()=>{if(select.checked)selectedGroupMembers.set(String(person.id),person.display_name);else selectedGroupMembers.delete(String(person.id));updateGroupSelectionStatus();});
+        selectLabel.append(select,document.createTextNode(" Select for group"));
+        row.append(selectLabel);
         const add=node("button","feed-action","Add friend");add.type="button";
         add.addEventListener("click",async()=>{add.disabled=true;try{await request("/api/social/friend-requests",{method:"POST",body:JSON.stringify({recipientId:person.id})});say("Friend request sent.");}catch(e){say(e.message);}finally{add.disabled=false;}});
         const chat=node("button","feed-action","Message");chat.type="button";
@@ -299,6 +325,13 @@
   loadFriendRequests();
   loadFriends();
   loadProfile();
+  let pollingBusy=false;
+  window.setInterval(async()=>{
+    if(pollingBusy||document.visibilityState!=="visible"||!token())return;
+    pollingBusy=true;
+    try{await loadConversations();if(activeConversation)await loadMessages();}
+    finally{pollingBusy=false;}
+  },5000);
 })();
 </script>
 </body>
