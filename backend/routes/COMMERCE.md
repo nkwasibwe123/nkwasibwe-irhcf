@@ -4,9 +4,14 @@ The commerce API is mounted at `/api/commerce`.
 
 ## Catalogue and cart
 
-- `GET /api/commerce/products?q=&category=&sort=&limit=` — list active products with server-side search/category filtering and allowlisted sorting (`newest`, `price_asc`, `price_desc`, `name_asc`, `rating`); returns categories and rating aggregates.
-- `POST /api/commerce/products` — create a product; requires an authenticated user whose numeric ID is listed in `COMMERCE_ADMIN_USER_IDS` (comma-separated).
-- `PATCH /api/commerce/products/:productId` — update an existing product; same administrator allowlist.
+- `GET /api/commerce/products?q=&category=&sort=&limit=` — list active products with server-side search/category filtering and allowlisted sorting (`newest`, `price_asc`, `price_desc`, `name_asc`, `rating`); returns categories, seller shop names and rating aggregates.
+- `POST /api/commerce/seller/apply`, `GET /api/commerce/seller/profile` — submit/read the authenticated account's seller application.
+- `GET /api/commerce/seller/applications`, `PATCH /api/commerce/seller/applications/:userId` — administrator-only seller approval/rejection/suspension.
+- `GET /api/commerce/seller/products` — list products belonging to the signed-in approved seller.
+- `GET /api/commerce/seller/orders` — paid orders containing items owned by the signed-in approved seller.
+- `PATCH /api/commerce/seller/order-items/:itemId/fulfillment` — update fulfillment for a seller-owned paid order item using allowed status transitions.
+- `POST /api/commerce/products` — create a product; requires a configured administrator or an approved seller. Seller-created products are owned by that seller account.
+- `PATCH /api/commerce/products/:productId` — update a product; administrators can manage all products, while sellers can manage only products they own.
 - `GET /api/commerce/cart` — read the signed-in user's persisted cart.
 - `GET /api/commerce/addresses`, `POST /api/commerce/addresses`, `PUT /api/commerce/addresses/:addressId/default`, `DELETE /api/commerce/addresses/:addressId` — private account-owned delivery address book.
 - `GET /api/commerce/orders/:orderId` — order details and line items; the order must belong to the signed-in account.
@@ -34,5 +39,5 @@ Set the Flutterwave webhook destination to `https://nkwasibwe-irhcf.onrender.com
 ## Not yet production complete
 
 - Do not accept real payments until a Flutterwave sandbox checkout and webhook have been verified end-to-end with test credentials.
-- Product admin UI, shipping/tax calculation, refunds, order expiry/stock reservation, and production operational monitoring need further work.
+- Shipping carrier/rate integration, tax calculation, coupons/discounts, refunds/returns/disputes, seller payouts and settlement reconciliation, product image uploads, order expiry/stock reservation, and production operational monitoring need further work.
 - Add and test any required environment values without committing credentials to Git.
