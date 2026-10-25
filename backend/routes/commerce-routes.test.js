@@ -43,6 +43,10 @@ test("commerce schema initializer creates indexed products and user-owned orders
   assert.match(calls[0], /tax_rate_bps INTEGER/);
   assert.match(calls[0], /CREATE TABLE IF NOT EXISTS commerce_stock_reservations/);
   assert.match(calls[0], /CREATE TABLE IF NOT EXISTS commerce_seller_ledger/);
+  assert.match(calls[0], /tracking_carrier TEXT/);
+  assert.match(calls[0], /tracking_number TEXT/);
+  assert.match(calls[0], /shipped_at TIMESTAMPTZ/);
+  assert.match(calls[0], /delivered_at TIMESTAMPTZ/);
   assert.match(calls[0], /CREATE TABLE IF NOT EXISTS commerce_payout_requests/);
   assert.match(calls[0], /platform_fee_bps INTEGER/);
   assert.match(calls[0], /image_data BYTEA/);
@@ -511,5 +515,27 @@ test("seller payout request rejects amounts above account-specific available bal
   await withServer(app,async base=>{
     const response=await fetch(base+"/api/commerce/seller/payout-requests",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({amountMinor:2000,currency:"RWF",destinationReference:"subacct_123"})});
     assert.equal(response.status,409);assert.equal((await response.json()).code,"PAYOUT_BALANCE_INSUFFICIENT");assert.equal(inserted,false);
+  });
+});
+
+
+test("seller cannot mark an order shipped without carrier and tracking details", async () => {
+  const app=express();app.use(express.json());let dbQueries=0;
+  app.use("/api/commerce",createCommerceRouter({pool:{async query(){dbQueries++;return{rows:[]};}},authenticateToken:(req,res,next)=>{req.user={id:33,email:"seller@example.com"};next();},env:{}}));
+  await withServer(app,async base=>{
+    const response=await fetch(base+"/api/commerce/seller/order-items/9/fulfillment",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({status:"shipped"})});
+    assert.equal(response.status,400);assert.equal((await response.json()).code,"TRACKING_DETAILS_REQUIRED");assert.equal(dbQueries,0);
+  });
+});
+
+test("approved seller can ship only an owned paid order item with tracking details", async () => {
+  const app=express();app.use(express.json());let updateParams,updateSql;
+  app.use("/api/commerce",createCommerceRouter({
+    pool:{async query(sql,params){if(sql.includes("SELECT status FROM commerce_sellers"))return{rows:[{status:"approved"}]};if(sql.includes("SELECT oi.fulfillment_status"))return{rows:[{fulfillment_status:"processing",payment_status:"paid"}]};if(sql.includes("UPDATE commerce_order_items SET fulfillment_status")){updateSql=sql;updateParams=params;return{rows:[{id:"9",fulfillment_status:"shipped",tracking_carrier:"DHL",tracking_number:"DHL123"}]};}return{rows:[]};}},
+    authenticateToken:(req,res,next)=>{req.user={id:33,email:"seller@example.com"};next();},env:{}
+  }));
+  await withServer(app,async base=>{
+    const response=await fetch(base+"/api/commerce/seller/order-items/9/fulfillment",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({status:"shipped",trackingCarrier:"DHL",trackingNumber:"DHL123"})});
+    assert.equal(response.status,200);assert.match(updateSql,/seller_user_id=\$5/);assert.equal(updateParams[2],"DHL");assert.equal(updateParams[3],"DHL123");assert.equal((await response.json()).item.tracking_number,"DHL123");
   });
 });
