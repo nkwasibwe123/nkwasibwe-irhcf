@@ -396,6 +396,13 @@
   async function loadProfileDocuments(){
     try{
       const data=await request("/api/social/profile/documents");profileDocumentList.replaceChildren();
+      const now=new Date();now.setHours(0,0,0,0);
+      const reminders=(data.documents||[]).filter(doc=>doc.expires_on).map(doc=>({...doc,daysLeft:Math.ceil((new Date(String(doc.expires_on).slice(0,10)+"T00:00:00").getTime()-now.getTime())/86400000)})).filter(doc=>doc.daysLeft<=30).sort((a,b)=>a.daysLeft-b.daysLeft);
+      let reminderBox=document.getElementById("profileDocumentExpiryReminders");
+      if(!reminderBox){reminderBox=node("section","feed-panel");reminderBox.id="profileDocumentExpiryReminders";profileDocumentList.before(reminderBox);}
+      reminderBox.replaceChildren(node("h3","","Expiry reminders"));
+      if(!reminders.length){reminderBox.append(node("p","feed-empty","No documents expiring in the next 30 days."));}
+      else reminders.forEach(doc=>{const label=doc.daysLeft<0?"Expired "+Math.abs(doc.daysLeft)+" day(s) ago":doc.daysLeft===0?"Expires today":"Expires in "+doc.daysLeft+" day(s)";const row=node("p","post-body");row.append(node("strong","",doc.title+" — "+label),document.createTextNode(" · "+String(doc.expires_on).slice(0,10)));reminderBox.append(row);});
       if(!data.documents?.length){profileDocumentList.append(node("p","feed-empty","No documents saved yet."));return;}
       data.documents.forEach(doc=>{
         const card=node("article","post"),head=node("div","post-head");head.append(node("strong","",doc.title),node("span","",String(doc.category||"other").replace(/-/g," ")));card.append(head);
