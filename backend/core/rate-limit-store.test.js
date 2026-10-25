@@ -47,3 +47,11 @@ test("a previously seen key can still use its existing bucket at capacity", () =
   assert.equal(result.allowed, true);
   assert.equal(result.remaining, 8);
 });
+
+test("server delegates request accounting to the bounded store", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const server = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+  assert.match(server, /checkRateLimitEntry\(/);
+  assert.match(server, /MAX_RATE_LIMIT_ENTRIES:\s*100000/);
+});
