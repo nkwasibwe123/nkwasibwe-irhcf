@@ -59,6 +59,20 @@ function ensureSocialSchema(pool) {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       PRIMARY KEY(post_id,user_id)
     );
+    CREATE TABLE IF NOT EXISTS social_post_polls (
+      post_id BIGINT PRIMARY KEY REFERENCES social_posts(id) ON DELETE CASCADE,
+      question TEXT NOT NULL CHECK(length(question) BETWEEN 1 AND 240),
+      options JSONB NOT NULL CHECK(jsonb_typeof(options)='array'),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS social_poll_votes (
+      post_id BIGINT NOT NULL REFERENCES social_post_polls(post_id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      option_index INTEGER NOT NULL CHECK(option_index BETWEEN 0 AND 5),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY(post_id,user_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_social_poll_votes_post ON social_poll_votes(post_id,option_index);
     CREATE TABLE IF NOT EXISTS social_blocks (
       blocker_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       blocked_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -205,7 +219,14 @@ function createSocialRouter({ pool, authenticateToken } = {}) {
                 (SELECT COUNT(*)::int FROM social_post_reactions r WHERE r.post_id=p.id) AS reaction_count,
                 COALESCE((SELECT json_agg(json_build_object('id',c.id,'author_name',COALESCE(csp.display_name,cu.name),'body',c.body,'created_at',c.created_at) ORDER BY c.created_at ASC) FROM social_post_comments c JOIN users cu ON cu.id=c.author_id LEFT JOIN social_profiles csp ON csp.user_id=cu.id WHERE c.post_id=p.id),'[]'::json) AS comments,
                 EXISTS(SELECT 1 FROM social_post_reactions r WHERE r.post_id=p.id AND r.user_id=$1) AS reacted_by_me,
-                (SELECT r.reaction FROM social_post_reactions r WHERE r.post_id=p.id AND r.user_id=$1) AS my_reaction
+                (SELECT r.reaction FROM social_post_reactions r WHERE r.post_id=p.id AND r.user_id=$1) AS my_reaction,
+                (SELECT json_build_object(
+                  'question',pl.question,
+                  'options',pl.options,
+                  'votes',(SELECT COALESCE(json_agg(json_build_object('option_index',v.option_index,'count',v.vote_count) ORDER BY v.option_index),'[]'::json)
+                           FROM (SELECT option_index,COUNT(*)::int AS vote_count FROM social_poll_votes WHERE post_id=pl.post_id GROUP BY option_index) v),
+                  'my_vote',(SELECT pv.option_index FROM social_poll_votes pv WHERE pv.post_id=pl.post_id AND pv.user_id=$1)
+                ) FROM social_post_polls pl WHERE pl.post_id=p.id) AS poll
          FROM social_posts p JOIN users u ON u.id=p.author_id
          LEFT JOIN social_profiles sp ON sp.user_id=u.id
          WHERE (p.visibility='public' OR p.author_id=$1 OR (p.visibility='friends' AND EXISTS(SELECT 1 FROM social_follows f WHERE f.follower_id=$1 AND f.followed_id=p.author_id)))
@@ -224,17 +245,58 @@ function createSocialRouter({ pool, authenticateToken } = {}) {
       const body = String(req.body?.body || "").trim();
       const media = Array.isArray(req.body?.media) ? req.body.media.slice(0,10) : [];
       const visibility = ["public","friends","private"].includes(req.body?.visibility) ? req.body.visibility : "public";
-      if (!body && media.length===0) return fail(res,400,"A post needs text or media.");
+      let poll=null;
+      if(req.body?.poll!==undefined && req.body?.poll!==null){
+        const question=String(req.body.poll.question||"").trim();
+        const options=Array.isArray(req.body.poll.options)?req.body.poll.options.map(x=>String(x||"").trim()).filter(Boolean):[];
+        if(question.length<1||question.length>240||options.length<2||options.length>6||options.some(x=>x.length>120)||new Set(options.map(x=>x.toLocaleLowerCase())).size!==options.length)
+          return fail(res,400,"A poll needs a 1–240 character question and 2–6 unique options of at most 120 characters each.");
+        poll={question,options};
+      }
+      if (!body && media.length===0 && !poll) return fail(res,400,"A post needs text, media, or a poll.");
       if (body.length>5000) return fail(res,400,"Post text cannot exceed 5000 characters.");
       if (media.some(item => !item || typeof item!=="object" || typeof item.url!=="string" || !((/^https:\/\//i.test(item.url)) || (/^\/api\/social\/media\/\d+\/content$/.test(item.url))) || item.url.length>2000)) {
         return fail(res,400,"Each media item must use HTTPS or a first-party uploaded media URL.");
       }
-      const result = await pool.query(
-        "INSERT INTO social_posts(author_id,body,media,visibility) VALUES($1,$2,$3::jsonb,$4) RETURNING id,author_id,body,media,visibility,created_at,updated_at",
-        [userId(req),body,JSON.stringify(media),visibility]
-      );
-      return res.status(201).json({success:true,post:result.rows[0]});
+      const client=typeof pool.connect==="function"?await pool.connect():null;
+      const db=client||pool;
+      try{
+        if(client) await db.query("BEGIN");
+        const result = await db.query(
+          "INSERT INTO social_posts(author_id,body,media,visibility) VALUES($1,$2,$3::jsonb,$4) RETURNING id,author_id,body,media,visibility,created_at,updated_at",
+          [userId(req),body,JSON.stringify(media),visibility]
+        );
+        if(poll) await db.query("INSERT INTO social_post_polls(post_id,question,options) VALUES($1,$2,$3::jsonb)",[result.rows[0].id,poll.question,JSON.stringify(poll.options)]);
+        if(client) await db.query("COMMIT");
+        return res.status(201).json({success:true,post:{...result.rows[0],poll}});
+      }catch(error){if(client) await db.query("ROLLBACK");throw error;}
+      finally{if(client) client.release();}
     } catch (error) { return next(error); }
+  });
+
+  router.post("/posts/:postId/vote", async (req,res,next) => {
+    if(!validId(req.params.postId)) return fail(res,400,"Invalid post ID.");
+    const optionIndex=Number(req.body?.optionIndex);
+    if(!Number.isInteger(optionIndex)||optionIndex<0||optionIndex>5) return fail(res,400,"Choose a valid poll option.");
+    try{
+      const pollResult=await pool.query("SELECT question,options FROM social_post_polls WHERE post_id=$1",[req.params.postId]);
+      if(!pollResult.rows.length) return fail(res,404,"Poll not found.");
+      const poll=pollResult.rows[0];
+      if(optionIndex>=poll.options.length) return fail(res,400,"Choose an option that exists in this poll.");
+      const visible=await pool.query(
+        `SELECT 1 FROM social_posts p WHERE p.id=$1 AND
+          (p.visibility='public' OR p.author_id=$2 OR (p.visibility='friends' AND EXISTS(SELECT 1 FROM social_follows f WHERE f.follower_id=$2 AND f.followed_id=p.author_id))
+           OR p.visibility='private' AND p.author_id=$2)
+          AND NOT EXISTS(SELECT 1 FROM social_blocks b WHERE (b.blocker_id=$2 AND b.blocked_id=p.author_id) OR (b.blocker_id=p.author_id AND b.blocked_id=$2))`,
+        [req.params.postId,userId(req)]
+      );
+      if(!visible.rows.length) return fail(res,404,"Poll not found.");
+      await pool.query(
+        "INSERT INTO social_poll_votes(post_id,user_id,option_index) VALUES($1,$2,$3) ON CONFLICT(post_id,user_id) DO UPDATE SET option_index=EXCLUDED.option_index,created_at=NOW()",
+        [req.params.postId,userId(req),optionIndex]
+      );
+      return res.json({success:true,voted:optionIndex});
+    }catch(error){return next(error);}
   });
 
   router.delete("/posts/:postId", async (req, res, next) => {
