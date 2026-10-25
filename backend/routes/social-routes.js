@@ -275,6 +275,24 @@ function createSocialRouter({ pool, authenticateToken } = {}) {
     } catch (error) { return next(error); }
   });
 
+  router.get("/people", async (req,res,next) => {
+    const query=String(req.query.q||"").trim().slice(0,80);
+    if(query.length<2) return res.json({success:true,people:[]});
+    try {
+      const result=await pool.query(
+        `SELECT u.id,COALESCE(p.display_name,u.name) AS display_name,COALESCE(p.bio,'') AS bio
+         FROM users u LEFT JOIN social_profiles p ON p.user_id=u.id
+         WHERE u.id<>$1 AND COALESCE(p.visibility,'public')='public'
+           AND (COALESCE(p.display_name,u.name) ILIKE $2)
+           AND NOT EXISTS(SELECT 1 FROM social_blocks b WHERE
+             (b.blocker_id=$1 AND b.blocked_id=u.id) OR (b.blocker_id=u.id AND b.blocked_id=$1))
+         ORDER BY COALESCE(p.display_name,u.name) LIMIT 20`,
+        [userId(req),"%"+query.replace(/[\\%_]/g,"\\  router.get("/conversations", async (req,res,next) => {")+"%"]
+      );
+      return res.json({success:true,people:result.rows});
+    } catch(error){return next(error);}
+  });
+
   router.get("/conversations", async (req,res,next) => {
     try {
       const result=await pool.query(
