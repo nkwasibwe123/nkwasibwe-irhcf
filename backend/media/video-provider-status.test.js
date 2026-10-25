@@ -10,6 +10,6 @@ test("retired Sora Videos API is reported unavailable instead of appearing ready
   assert.equal(status.available, false);
   assert.equal(status.provider, "openai_sora");
   assert.equal(status.code, "VIDEO_PROVIDER_RETIRED");
-  assert.match(status.message, /retirement date/);
-  assert.match(status.message, /replacement provider/);
+  assert.match(status.message, /2026-09-24/);
+  assert.match(status.message, /serivisi ya video yemejwe/);
 });
