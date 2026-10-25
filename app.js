@@ -5783,7 +5783,7 @@ function getRequestedOutputLength(text) {
 function buildLengthAwarePrompt(text) {
   const target = getRequestedOutputLength(text);
   if (!target) return String(text || "");
-  const exact = /\\b(?:exactly|precisely|neza neza)\\b/i.test(text);
+  const exact = /\b(?:exactly|precisely|neza neza)\b/i.test(text);
   const rules = [
     "OUTPUT LENGTH REQUIREMENT (explicit user requirement):",
     target.words ? "- Produce " + (exact ? "exactly " : "approximately ") + target.words + " words. Count/estimate and expand or trim before finalizing." : null,
