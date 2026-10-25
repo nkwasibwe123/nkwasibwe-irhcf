@@ -765,3 +765,19 @@ test("seller product management includes inline editing for price, stock and ful
   assert.match(js,/shipping\.name="requiresShipping"/);
   assert.match(js,/request\("\/products\/"\+encodeURIComponent\(product\.id\),\{method:"PATCH"/);
 });
+
+
+test("public seller storefront is reachable from seller names and only renders approved shop data", () => {
+  const root=path.join(__dirname,"..","..");
+  const html=fs.readFileSync(path.join(root,"market.html"),"utf8");
+  const js=fs.readFileSync(path.join(root,"market.js"),"utf8");
+  const routes=fs.readFileSync(path.join(root,"backend","routes","commerce-routes.js"),"utf8");
+  for(const id of ["storefrontPanel","storefrontName","storefrontDescription","storefrontStats","storefrontProducts","closeStorefrontButton"])assert.ok(html.includes('id="'+id+'"'),"missing storefront UI: "+id);
+  assert.match(js,/async function loadStorefront\(sellerUserId\)/);
+  assert.match(js,/seller-storefront-link/);
+  assert.match(js,/\/sellers\/\+encodeURIComponent\(sellerUserId\)\+"\/storefront/);
+  assert.match(routes,/router\.get\("\/sellers\/:sellerUserId\/storefront"/);
+  assert.match(routes,/s\.status='approved'/);
+  assert.match(routes,/p\.seller_user_id=\$1 AND p\.active=TRUE/);
+  assert.doesNotMatch(routes.slice(routes.indexOf('router.get("/sellers/:sellerUserId/storefront"'),routes.indexOf('router.get("/products"',routes.indexOf('router.get("/sellers/:sellerUserId/storefront"'))),/contact_email|contact_phone/);
+});
