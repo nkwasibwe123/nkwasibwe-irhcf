@@ -1284,7 +1284,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
       });
       const verified = await verifiedResponse.json();
       const data = verified?.data;
-      if (!verifiedResponse.ok || verified?.status !== "success" || !data || String(data?.tx_ref) !== txRef) {
+      if (!verifiedResponse.ok || verified?.status !== "success" || !data || String(data?.id) !== String(transactionId) || String(data?.tx_ref) !== txRef) {
         return res.status(400).json({ success: false, error: "Payment could not be verified with the provider.", code: "PAYMENT_NOT_VERIFIED" });
       }
       const orderResult = await pool.query("SELECT id, status, currency, total_minor, coupon_code, expires_at, subtotal_minor, discount_minor, platform_fee_bps FROM commerce_orders WHERE tx_ref=$1", [txRef]);
