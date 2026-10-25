@@ -19,7 +19,7 @@
     });
     let data = {};
     try { data = await response.json(); } catch {}
-    if (!response.ok) throw new Error(data.error || ("Request failed (" + response.status + ")"));
+    if (!response.ok) { const error = new Error(data.error || ("Request failed (" + response.status + ")")); error.code = data.code || ""; throw error; }
     return data;
   }
   function getCheckoutIdempotencyKey(payload) {
