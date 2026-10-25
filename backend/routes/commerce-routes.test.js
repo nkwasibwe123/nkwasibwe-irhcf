@@ -230,7 +230,7 @@ test("hosted checkout uses the authenticated account email, never a browser-supp
   }));
   await withServer(app,async base=>{
     const response=await fetch(base+"/api/commerce/checkout",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:"attacker@example.com",items:[{productId:5,quantity:1}]})});
-    assert.equal(response.status,201);assert.equal(providerPayload.customer.email,"account@example.com");assert.equal(providerPayload.meta.user_id,"8");
+    assert.equal(response.status,201);assert.equal(providerPayload.customer.email,"account@example.com");assert.equal(providerPayload.meta.user_id,"8");assert.equal(providerPayload.configuration.session_duration,30);assert.equal(providerPayload.configuration.max_retry_attempt,3);assert.ok(providerPayload.link_expiration);
   });
 });
 
