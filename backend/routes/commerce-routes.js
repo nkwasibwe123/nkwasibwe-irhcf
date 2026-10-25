@@ -894,6 +894,8 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
     if (typeof fetchImpl !== "function") {
       return res.status(503).json({ success: false, code: "PAYMENT_FETCH_UNAVAILABLE", error: "Payment gateway request support is unavailable." });
     }
+    const platformFeeBps = getPlatformFeeBps(env);
+    if (platformFeeBps === null) return res.status(503).json({ success: false, code: "PLATFORM_FEE_CONFIGURATION_INVALID", error: "Platform fee must be an integer between 0 and 3000 basis points." });
     const input = req.body?.items;
     if (!Array.isArray(input) || input.length < 1 || input.length > MAX_ITEMS) {
       return res.status(400).json({ success: false, code: "CART_INVALID", error: "Provide between 1 and 50 cart items." });
@@ -1018,8 +1020,8 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
       }
       txRef = "irhcf_" + crypto.randomUUID();
       const order = await client.query(
-        "INSERT INTO commerce_orders (user_id, tx_ref, status, currency, total_minor, subtotal_minor, discount_minor, shipping_minor, tax_minor, tax_rate_bps, coupon_code, provider, shipping_address, expires_at) VALUES ($1,$2,'pending',$3,$4,$5,$6,$7,$8,$9,$10,'flutterwave',$11::jsonb,CURRENT_TIMESTAMP + INTERVAL '30 minutes') RETURNING id,expires_at",
-        [req.user.id, txRef, currency, totalMinor, subtotalMinor, discountMinor, shippingMinor, taxMinor, taxRateBps, couponCode, shippingAddress ? JSON.stringify(shippingAddress) : null]
+        "INSERT INTO commerce_orders (user_id, tx_ref, status, currency, total_minor, subtotal_minor, discount_minor, shipping_minor, tax_minor, tax_rate_bps, platform_fee_bps, coupon_code, provider, shipping_address, expires_at) VALUES ($1,$2,'pending',$3,$4,$5,$6,$7,$8,$9,$10,$11,'flutterwave',$12::jsonb,CURRENT_TIMESTAMP + INTERVAL '30 minutes') RETURNING id,expires_at",
+        [req.user.id, txRef, currency, totalMinor, subtotalMinor, discountMinor, shippingMinor, taxMinor, taxRateBps, platformFeeBps, couponCode, shippingAddress ? JSON.stringify(shippingAddress) : null]
       );
       orderId = order.rows[0].id;
       orderExpiresAt = order.rows[0].expires_at;
@@ -1074,7 +1076,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
         return res.status(502).json({ success: false, code: "CHECKOUT_PROVIDER_FAILED", error: "Payment provider did not create a valid hosted checkout." });
       }
       await pool.query("UPDATE commerce_orders SET checkout_url=$2, updated_at=CURRENT_TIMESTAMP WHERE id=$1 AND status='pending'", [orderId, checkoutUrl]);
-      return res.status(201).json({ success: true, orderId, txRef, currency, subtotalMinor, discountMinor, shippingMinor, taxMinor, taxRateBps, totalMinor, couponCode, checkoutUrl, paymentStatus: "pending" });
+      return res.status(201).json({ success: true, orderId, txRef, currency, subtotalMinor, discountMinor, shippingMinor, taxMinor, taxRateBps, platformFeeBps, totalMinor, couponCode, checkoutUrl, paymentStatus: "pending" });
     } catch (error) {
       await releaseOrderReservations(pool, orderId, "failed");
       return res.status(502).json({ success: false, code: "CHECKOUT_PROVIDER_UNAVAILABLE", error: "Payment provider could not be reached. No payment has been confirmed." });
@@ -1101,7 +1103,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
       if (!verifiedResponse.ok || verified?.status !== "success" || !data || String(data?.tx_ref) !== txRef) {
         return res.status(400).json({ success: false, error: "Payment could not be verified with the provider.", code: "PAYMENT_NOT_VERIFIED" });
       }
-      const orderResult = await pool.query("SELECT id, status, currency, total_minor, coupon_code, expires_at FROM commerce_orders WHERE tx_ref=$1", [txRef]);
+      const orderResult = await pool.query("SELECT id, status, currency, total_minor, coupon_code, expires_at, subtotal_minor, discount_minor, platform_fee_bps FROM commerce_orders WHERE tx_ref=$1", [txRef]);
       const order = orderResult.rows[0];
       if (!order) return res.status(404).json({ success: false, error: "Order not found.", code: "ORDER_NOT_FOUND" });
       if (order.status === "paid") return res.json({ success: true, duplicate: true });
