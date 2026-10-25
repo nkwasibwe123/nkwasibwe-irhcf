@@ -584,3 +584,38 @@ test("marketplace status explains missing payment and shipping configuration wit
     const response=await fetch(base+"/api/commerce/status");const body=await response.json();assert.equal(body.payments.checkoutReady,false);assert.equal(body.payments.webhookReady,false);assert.deepEqual(body.payments.missingCheckoutSettings,["FLW_SECRET_KEY","FLW_REDIRECT_URL"]);assert.deepEqual(body.shipping.configuredCountries,[]);assert.equal(body.tax.explicitlyConfigured,false);
   });
 });
+
+
+test("public storefront exposes approved shop and active products but never seller contact details", async () => {
+  const express=require("express");
+  const {createCommerceRouter}=require("./commerce-routes");
+  const app=express();
+  app.use("/api/commerce",createCommerceRouter({
+    pool:{async query(sql,params){
+      if(sql.includes("FROM commerce_sellers s LEFT JOIN commerce_products"))return{rows:[{user_id:31,shop_name:"Kigali Books",description:"Independent book shop",created_at:"2026-01-01T00:00:00Z",product_count:1,rating_average:"4.8",review_count:2}]};
+      if(sql.includes("FROM commerce_products p LEFT JOIN (SELECT product_id"))return{rows:[{id:"9",name:"Kinyarwanda Reader",description:"Learning book",price_minor:"5000",currency:"RWF",stock_quantity:4,category:"Books",rating_average:"4.8",review_count:2}]};
+      throw new Error("Unexpected query: "+sql);
+    }},authenticateToken:(req,res,next)=>next(),env:{}
+  }));
+  await withServer(app,async base=>{
+    const response=await fetch(base+"/api/commerce/sellers/31/storefront");
+    assert.equal(response.status,200);
+    const body=await response.json();
+    assert.equal(body.storefront.shop_name,"Kigali Books");
+    assert.equal(body.storefront.product_count,1);
+    assert.equal(body.products[0].name,"Kinyarwanda Reader");
+    assert.doesNotMatch(JSON.stringify(body),/contact_email|contact_phone|seller@example\.com/);
+  });
+});
+
+test("public storefront returns not found for unapproved or missing sellers", async () => {
+  const express=require("express");
+  const {createCommerceRouter}=require("./commerce-routes");
+  const app=express();
+  app.use("/api/commerce",createCommerceRouter({pool:{async query(){return{rows:[]};}},authenticateToken:(req,res,next)=>next(),env:{}}));
+  await withServer(app,async base=>{
+    const response=await fetch(base+"/api/commerce/sellers/31/storefront");
+    assert.equal(response.status,404);
+    assert.equal((await response.json()).code,"STOREFRONT_NOT_FOUND");
+  });
+});
