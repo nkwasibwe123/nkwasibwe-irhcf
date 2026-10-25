@@ -9,8 +9,9 @@ Build a first-party social and communication workspace inside Nkwasibwe IRHCF. I
 - **Short video and creator studio (TikTok / Reels / YouTube Shorts-inspired):** upload pipeline, captions, vertical playback, creator profiles, likes/comments, watch history, subscriptions/follows and recommendations with user controls.
 - **Video platform (YouTube-inspired):** channels, video upload/transcoding, thumbnails, captions, playlists, search, subscriptions, watch-later, view analytics, rights/report workflow.
 - **Professional network (LinkedIn-inspired):** professional profiles, skills, experience, connections, company pages, job listings, applications, posts and messaging.
+- **Telegram-inspired messaging:** cloud-synced conversations, group chats, channels, replies, forwards, pinned messages, polls, bot integrations, file sharing, voice notes, search and notification controls. Full Telegram network interoperability requires Telegram's official APIs and user-authorized linking; a first-party IRHCF chat cannot impersonate Telegram or silently access Telegram accounts.
 - **Communities and events:** groups, channels, community roles, moderation, events and announcements.
-- **Phoenix features:** pending requirements discovery. “Phoenix” is ambiguous and may refer to multiple products; no exact feature parity will be claimed until the intended product/URL or a feature checklist is identified.
+- **Phoenix-inspired browser and downloads:** multi-tab browser, bookmarks/history, private browsing controls, data-saving mode, downloads queue with progress/pause/resume where supported, file manager and previews, video/audio/document downloads from sources that permit them, media player, and a WhatsApp-status saver for status files the user is authorized to access. Respect platform terms, copyright, privacy and DRM; never bypass access controls or scrape private content. YouTube downloads will use permitted official mechanisms only.
 - **Notifications and account controls:** in-app notifications, email/push adapters where configured, sessions, export/delete controls, block/report, privacy, age-appropriate safety and abuse rate limits.
 
 ## Engineering sequence (deliver and verify one layer at a time)
@@ -19,11 +20,12 @@ Build a first-party social and communication workspace inside Nkwasibwe IRHCF. I
 3. **Posts and feed:** create/read/edit/delete owned posts, media metadata, comments/reactions, pagination and reports.
 4. **Direct and group messaging:** durable conversations/messages, unread counts, attachment metadata and delivery semantics.
 5. **Realtime:** WebSocket/SSE transport, presence/typing, reconnection and durable catch-up. Do not fake realtime with static labels.
-6. **Media pipeline:** upload validation, object storage, thumbnails/transcoding, quotas and cleanup. Free Render ephemeral disk is not durable media storage.
-7. **Video and creator features:** channels, subscriptions, playlists, history, short-video feed and captions.
-8. **Professional network:** work profiles, jobs and applications.
-9. **Safety and operations:** moderation queue, abuse controls, audit events, backup/restore, observability, accessibility and mobile testing.
-10. **Release gates:** automated unit/integration tests, migration checks, authorization tests, dependency/security scan, deployment health, and real Android browser end-to-end checks before describing each feature as live.
+6. **Browser + download manager:** browser shell, permission-safe status import, supported-media detection, resumable downloads where servers support range requests, progress/error states, file management and offline playback. Do not bypass DRM, login walls or site restrictions.
+7. **Media pipeline:** upload validation, object storage, thumbnails/transcoding, quotas and cleanup. Free Render ephemeral disk is not durable media storage.
+8. **Video and creator features:** channels, subscriptions, playlists, history, short-video feed and captions.
+9. **Professional network:** work profiles, jobs and applications.
+10. **Safety and operations:** moderation queue, abuse controls, audit events, backup/restore, observability, accessibility and mobile testing.
+11. **Release gates:** automated unit/integration tests, migration checks, authorization tests, dependency/security scan, deployment health, and real Android browser end-to-end checks before describing each feature as live.
 
 ## Non-negotiable constraints
 - Prefer open-source and self-hosted components; no paid media/API provider should be called without explicit configuration and clear cost disclosure.
