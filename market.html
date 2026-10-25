@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Nkwasibwe Market — browse products, manage your cart and securely check out.">
   <title>Nkwasibwe Market</title>
-  <link rel="stylesheet" href="market.css?v=6">
-  <script defer src="market.js?v=6"></script>
+  <link rel="stylesheet" href="market.css?v=7">
+  <script defer src="market.js?v=7"></script>
 </head>
 <body>
   <header class="market-header">
@@ -34,7 +34,7 @@
     <section class="cart-section">
       <div class="section-heading"><div><h2>Your cart</h2><p>Saved to your account when signed in.</p></div><span id="cartCount" class="count">0 items</span></div>
       <div id="cartItems" class="cart-items"><p class="muted">Sign in to load your saved cart.</p></div>
-      <div class="cart-footer"><div><span>Subtotal</span><strong id="cartSubtotal">—</strong></div><div class="discount-row"><span>Coupon discount</span><strong id="cartDiscount">—</strong></div><div><span>Shipping</span><strong id="cartShipping">—</strong></div><div><span>Estimated tax</span><strong id="cartTax">—</strong></div><div><span>Total</span><strong id="cartTotal">—</strong></div><div class="coupon-entry"><label for="couponCodeInput">Coupon code</label><div><input id="couponCodeInput" maxlength="40" placeholder="Enter code"><button id="applyCouponButton" type="button">Apply</button></div><p id="couponMessage" class="muted" role="status"></p></div><label id="shippingAddressWrap" class="shipping-address-wrap" hidden>Ship to<select id="shippingAddressSelect"><option value="">Select a saved address</option></select></label><p id="shippingAddressHint" class="muted" role="status"></p><button id="checkoutButton" class="primary-button" type="button" disabled>Continue to secure checkout</button><p id="checkoutMessage" class="muted" role="status"></p></div>
+      <div class="cart-footer"><div><span>Subtotal</span><strong id="cartSubtotal">—</strong></div><div class="discount-row"><span>Coupon discount</span><strong id="cartDiscount">—</strong></div><div><span>Shipping</span><strong id="cartShipping">—</strong></div><div><span>Estimated tax</span><strong id="cartTax">—</strong></div><div><span>Total</span><strong id="cartTotal">—</strong></div><div class="coupon-entry"><label for="couponCodeInput">Coupon code</label><div><input id="couponCodeInput" maxlength="40" placeholder="Enter code"><button id="applyCouponButton" type="button">Apply</button></div><p id="couponMessage" class="muted" role="status"></p></div><label id="shippingAddressWrap" class="shipping-address-wrap" hidden>Ship to<select id="shippingAddressSelect"><option value="">Select a saved address</option></select></label><p id="shippingAddressHint" class="muted" role="status"></p><button id="checkoutButton" class="primary-button" type="button" disabled>Continue to secure checkout (30-minute link)</button><p id="checkoutMessage" class="muted" role="status"></p></div>
     </section>
     <section class="orders-section">
       <div class="section-heading"><div><h2>My orders & payments</h2><p>Orders and payment status are visible only to the signed-in account. Nkwasibwe does not store card numbers.</p></div><button id="ordersButton" type="button">Load orders</button></div>
