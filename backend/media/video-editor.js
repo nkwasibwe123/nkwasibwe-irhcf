@@ -77,7 +77,7 @@ function buildFfmpegArgs(inputPath, outputPath, request, subtitlePath = null) {
     filters.push("fade=t=out:st=" + Math.max(0, duration - fadeDuration) + ":d=" + fadeDuration);
   }
   if (normalized.subtitles && subtitlePath) {
-    filters.push("subtitles=" + escapeSubtitleFilterPath(subtitlePath) + ":force_style=FontSize=24");
+    filters.push("subtitles=filename=" + escapeSubtitleFilterPath(subtitlePath) + ":force_style=FontSize=24");
   }
   if (filters.length) args.push("-vf", filters.join(","));
   args.push(...OUTPUT_OPTIONS[normalized.outputFormat], "-shortest", outputPath);
@@ -105,6 +105,9 @@ function editVideoFile({ inputPath, outputPath, request, spawn = defaultSpawn, t
     }
     args = buildFfmpegArgs(inputPath, outputPath, normalized, subtitlePath);
   } catch (error) {
+    if (subtitleDirectory) {
+      try { fs.rmSync(subtitleDirectory, { recursive: true, force: true }); } catch {}
+    }
     return Promise.reject(error);
   }
 
