@@ -2,7 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { CURRENCIES, toProviderAmount, fromProviderAmount, ensureCommerceSchema, calculateCouponDiscount, getShippingRateMinor, getTaxRateBps, calculateTaxMinor } = require("./commerce-routes");
+const { CURRENCIES, toProviderAmount, fromProviderAmount, ensureCommerceSchema, calculateCouponDiscount, getShippingRateMinor, getTaxRateBps, calculateTaxMinor, releaseOrderReservations, releaseExpiredReservations } = require("./commerce-routes");
 
 test("commerce money conversion preserves integer and minor-unit currencies", () => {
   assert.equal(toProviderAmount(2500, "RWF"), 2500);
@@ -41,6 +41,8 @@ test("commerce schema initializer creates indexed products and user-owned orders
   assert.match(calls[0], /shipping_minor BIGINT/);
   assert.match(calls[0], /tax_minor BIGINT/);
   assert.match(calls[0], /tax_rate_bps INTEGER/);
+  assert.match(calls[0], /CREATE TABLE IF NOT EXISTS commerce_stock_reservations/);
+  assert.match(calls[0], /expires_at TIMESTAMPTZ/);
   assert.match(calls[0], /CREATE TABLE IF NOT EXISTS commerce_addresses/);
   assert.match(calls[0], /CREATE TABLE IF NOT EXISTS commerce_order_items/);
   assert.match(calls[0], /fulfillment_status TEXT NOT NULL DEFAULT 'pending'/);
@@ -215,7 +217,8 @@ test("hosted checkout uses the authenticated account email, never a browser-supp
     async query(sql){
       if(sql==="BEGIN"||sql==="COMMIT"||sql==="ROLLBACK")return{rows:[]};
       if(sql.includes("FROM commerce_products"))return{rows:[{id:"5",name:"Book",price_minor:"1200",currency:"RWF",stock_quantity:3,requires_shipping:false}]};
-      if(sql.includes("INSERT INTO commerce_orders"))return{rows:[{id:"71"}]};
+      if(sql.includes("UPDATE commerce_products SET stock_quantity=stock_quantity-"))return{rows:[{id:"5"}]};
+      if(sql.includes("INSERT INTO commerce_orders"))return{rows:[{id:"71",expires_at:new Date(Date.now()+30*60*1000).toISOString()}]};
       return{rows:[]};
     },release(){}
   };
@@ -397,7 +400,8 @@ test("checkout charges the exact quoted coupon, shipping and tax total", async (
     if(sql.includes("FROM commerce_products p"))return{rows:[{id:"4",name:"Physical item",price_minor:"10000",currency:"RWF",stock_quantity:3,requires_shipping:true,seller_user_id:null}]};
     if(sql.includes("FROM commerce_addresses"))return{rows:[{country:"Rwanda",recipient_name:"Buyer",phone:"+250780000000",address_line1:"Kigali"}]};
     if(sql.includes("FROM commerce_coupons"))return{rows:[{id:"2",code:"SAVE20",discount_type:"percent",discount_value:20,currency:"RWF",min_subtotal_minor:"5000"}]};
-    if(sql.includes("INSERT INTO commerce_orders")){orderParams=params;return{rows:[{id:"71"}]};}
+    if(sql.includes("UPDATE commerce_products SET stock_quantity=stock_quantity-"))return{rows:[{id:"4"}]};
+    if(sql.includes("INSERT INTO commerce_orders")){orderParams=params;return{rows:[{id:"71",expires_at:new Date(Date.now()+30*60*1000).toISOString()}]};}
     return{rows:[]};
   },release(){}};
   app.use("/api/commerce",createCommerceRouter({
@@ -410,4 +414,22 @@ test("checkout charges the exact quoted coupon, shipping and tax total", async (
     const response=await fetch(base+"/api/commerce/checkout",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({addressId:21,couponCode:"SAVE20",items:[{productId:4,quantity:1}]})});
     assert.equal(response.status,201);const body=await response.json();assert.equal(body.totalMinor,9900);assert.equal(body.shippingMinor,1000);assert.equal(body.taxMinor,900);assert.equal(providerPayload.amount,9900);assert.equal(orderParams[3],9900);assert.equal(orderParams[4],10000);assert.equal(orderParams[5],2000);assert.equal(orderParams[6],1000);assert.equal(orderParams[7],900);assert.equal(orderParams[8],1000);assert.equal(orderParams[9],"SAVE20");
   });
+});
+
+
+test("expired pending orders release reserved stock and become cancelled atomically", async () => {
+  const calls=[];
+  const client={
+    async query(sql,params){calls.push({sql,params});if(sql.includes("SELECT id,status,expires_at FROM commerce_orders"))return{rows:[{id:"81",status:"pending",expires_at:new Date(Date.now()-1000).toISOString()}]};if(sql.includes("SELECT product_id,quantity FROM commerce_stock_reservations"))return{rows:[{product_id:"9",quantity:2}]};return{rows:[]};},
+    release(){calls.push({sql:"RELEASE"});}
+  };
+  const pool={async connect(){return client;},async query(){return{rows:[{id:"81"}]};}};
+  assert.equal(await releaseOrderReservations(pool,81,"cancelled",true),true);
+  assert.ok(calls.some(call=>call.sql.includes("UPDATE commerce_products SET stock_quantity=stock_quantity+$2")&&call.params[0]==="9"&&call.params[1]===2));
+  assert.ok(calls.some(call=>call.sql.includes("DELETE FROM commerce_stock_reservations")));
+  assert.ok(calls.some(call=>call.sql.includes("status=$2")&&call.params[1]==="cancelled"));
+});
+
+test("reservation expiry cleanup is safe when transaction support is unavailable", async () => {
+  assert.equal(await releaseExpiredReservations({async query(){throw new Error("should not query without connect");}}),0);
 });
