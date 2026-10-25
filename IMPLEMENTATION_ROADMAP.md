@@ -47,3 +47,11 @@ A milestone is complete only when its code is committed, relevant automated test
 - [ ] Keep the main dashboard limited to major workspaces, recent/pinned work, global search and genuine attention items; expose deeper controls only inside their relevant workspace/feature page.
 - [ ] Keep task activity in its relevant feature dashboard (Recent / Running / Succeeded / Failed), not as a wall of status cards in general chat.
 - [ ] Test the information architecture on mobile and verify all navigation destinations and controls actually work.
+
+## Cross-cutting milestone — researched feature hierarchy and dashboard architecture
+- [ ] Before implementing or marking any feature complete, inspect at least five distinct relevant product/web sources and record a comparison matrix, limitations, evidence URLs and acceptance criteria in FEATURE_ARCHITECTURE.md or a linked feature-specific research record.
+- [ ] Maintain stable hierarchy: platform → main domain → feature → sub-feature → action; every node has owner, permissions, route, dependencies, tests and evidence-backed status.
+- [ ] Keep Main Dashboard focused on global search, major workspaces, recent/pinned work and genuine attention items; show detailed controls only in their relevant workspace.
+- [ ] Keep each service's activity in its own feature dashboard (Recent / Running / Succeeded / Failed), not as status-card clutter in general chat.
+- [ ] Verify responsive/mobile behavior and ensure every navigation item/action points to a working destination.
+- [ ] Treat payment/social/media integrations as blocked until real provider permissions, security checks, failure states and end-to-end tests are verified.
