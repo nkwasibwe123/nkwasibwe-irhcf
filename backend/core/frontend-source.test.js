@@ -775,7 +775,7 @@ test("public seller storefront is reachable from seller names and only renders a
   for(const id of ["storefrontPanel","storefrontName","storefrontDescription","storefrontStats","storefrontProducts","closeStorefrontButton"])assert.ok(html.includes('id="'+id+'"'),"missing storefront UI: "+id);
   assert.match(js,/async function loadStorefront\(sellerUserId\)/);
   assert.match(js,/seller-storefront-link/);
-  assert.match(js,/\/sellers\/\+encodeURIComponent\(sellerUserId\)\+"\/storefront/);
+  assert.ok(js.includes('"/sellers/"+encodeURIComponent(sellerUserId)+"/storefront'));
   assert.match(routes,/router\.get\("\/sellers\/:sellerUserId\/storefront"/);
   assert.match(routes,/s\.status='approved'/);
   assert.match(routes,/p\.seller_user_id=\$1 AND p\.active=TRUE/);
