@@ -2,7 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { CURRENCIES, toProviderAmount, fromProviderAmount, ensureCommerceSchema, calculateCouponDiscount, getShippingRateMinor, getTaxRateBps, calculateTaxMinor, releaseOrderReservations, releaseExpiredReservations } = require("./commerce-routes");
+const { CURRENCIES, toProviderAmount, fromProviderAmount, ensureCommerceSchema, calculateCouponDiscount, getShippingRateMinor, getTaxRateBps, calculateTaxMinor, releaseOrderReservations, releaseExpiredReservations, getPlatformFeeBps, calculateSellerNetMinor } = require("./commerce-routes");
 
 test("commerce money conversion preserves integer and minor-unit currencies", () => {
   assert.equal(toProviderAmount(2500, "RWF"), 2500);
@@ -42,6 +42,9 @@ test("commerce schema initializer creates indexed products and user-owned orders
   assert.match(calls[0], /tax_minor BIGINT/);
   assert.match(calls[0], /tax_rate_bps INTEGER/);
   assert.match(calls[0], /CREATE TABLE IF NOT EXISTS commerce_stock_reservations/);
+  assert.match(calls[0], /CREATE TABLE IF NOT EXISTS commerce_seller_ledger/);
+  assert.match(calls[0], /CREATE TABLE IF NOT EXISTS commerce_payout_requests/);
+  assert.match(calls[0], /platform_fee_bps INTEGER/);
   assert.match(calls[0], /image_data BYTEA/);
   assert.match(calls[0], /image_mime_type TEXT/);
   assert.match(calls[0], /image_byte_size INTEGER/);
@@ -415,7 +418,7 @@ test("checkout charges the exact quoted coupon, shipping and tax total", async (
   }));
   await withServer(app,async base=>{
     const response=await fetch(base+"/api/commerce/checkout",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({addressId:21,couponCode:"SAVE20",items:[{productId:4,quantity:1}]})});
-    assert.equal(response.status,201);const body=await response.json();assert.equal(body.totalMinor,9900);assert.equal(body.shippingMinor,1000);assert.equal(body.taxMinor,900);assert.equal(providerPayload.amount,9900);assert.equal(orderParams[3],9900);assert.equal(orderParams[4],10000);assert.equal(orderParams[5],2000);assert.equal(orderParams[6],1000);assert.equal(orderParams[7],900);assert.equal(orderParams[8],1000);assert.equal(orderParams[9],"SAVE20");
+    assert.equal(response.status,201);const body=await response.json();assert.equal(body.totalMinor,9900);assert.equal(body.shippingMinor,1000);assert.equal(body.taxMinor,900);assert.equal(providerPayload.amount,9900);assert.equal(orderParams[3],9900);assert.equal(orderParams[4],10000);assert.equal(orderParams[5],2000);assert.equal(orderParams[6],1000);assert.equal(orderParams[7],900);assert.equal(orderParams[8],1000);assert.equal(orderParams[9],0);assert.equal(orderParams[10],"SAVE20");
   });
 });
 
@@ -473,5 +476,40 @@ test("public product image delivery sets the stored MIME type and nosniff header
   await withServer(app,async base=>{
     const response=await fetch(base+"/api/commerce/products/5/image");
     assert.equal(response.status,200);assert.equal(response.headers.get("content-type"),"image/png");assert.equal(response.headers.get("x-content-type-options"),"nosniff");assert.deepEqual(Buffer.from(await response.arrayBuffer()),png);
+  });
+});
+
+
+test("seller platform fee helper calculates net earnings in integer minor units", () => {
+  assert.equal(getPlatformFeeBps({COMMERCE_PLATFORM_FEE_BPS:"500"}),500);
+  assert.equal(getPlatformFeeBps({COMMERCE_PLATFORM_FEE_BPS:"9000"}),null);
+  assert.deepEqual(calculateSellerNetMinor(10000,500),{feeMinor:500,netMinor:9500});
+  assert.deepEqual(calculateSellerNetMinor(99,500),{feeMinor:4,netMinor:95});
+  assert.equal(calculateSellerNetMinor(Number.MAX_SAFE_INTEGER,500),null);
+});
+
+test("seller payout requests are scoped to the approved seller and limited to available balance", async () => {
+  const app=express();app.use(express.json());let insertParams;
+  const client={async query(sql,params){
+    if(sql==="BEGIN"||sql==="COMMIT"||sql==="ROLLBACK")return{rows:[]};
+    if(sql.includes("SELECT user_id FROM commerce_sellers"))return{rows:[{user_id:33}]};
+    if(sql.includes("WITH currencies AS"))return{rows:[{currency:"RWF",total_earned:"10000",total_paid:"0",reserved:"1000",available:"9000"}]};
+    if(sql.includes("INSERT INTO commerce_payout_requests")){insertParams=params;return{rows:[{id:"12",seller_user_id:params[0],amount_minor:params[1],currency:params[2],destination_reference:params[3],status:"pending"}]};}
+    return{rows:[]};
+  },release(){}};
+  app.use("/api/commerce",createCommerceRouter({pool:{async connect(){return client;}},authenticateToken:(req,res,next)=>{req.user={id:33,email:"seller@example.com"};next();},env:{}}));
+  await withServer(app,async base=>{
+    const response=await fetch(base+"/api/commerce/seller/payout-requests",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({amountMinor:4000,currency:"RWF",destinationReference:"subacct_123"})});
+    assert.equal(response.status,201);assert.equal(insertParams[0],33);assert.equal(insertParams[1],4000);assert.equal((await response.json()).payoutRequest.status,"pending");
+  });
+});
+
+test("seller payout request rejects amounts above account-specific available balance", async () => {
+  const app=express();app.use(express.json());let inserted=false;
+  const client={async query(sql){if(sql==="BEGIN"||sql==="ROLLBACK")return{rows:[]};if(sql.includes("SELECT user_id FROM commerce_sellers"))return{rows:[{user_id:33}]};if(sql.includes("WITH currencies AS"))return{rows:[{currency:"RWF",available:"1000"}]};if(sql.includes("INSERT INTO commerce_payout_requests"))inserted=true;return{rows:[]};},release(){}};
+  app.use("/api/commerce",createCommerceRouter({pool:{async connect(){return client;}},authenticateToken:(req,res,next)=>{req.user={id:33,email:"seller@example.com"};next();},env:{}}));
+  await withServer(app,async base=>{
+    const response=await fetch(base+"/api/commerce/seller/payout-requests",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({amountMinor:2000,currency:"RWF",destinationReference:"subacct_123"})});
+    assert.equal(response.status,409);assert.equal((await response.json()).code,"PAYOUT_BALANCE_INSUFFICIENT");assert.equal(inserted,false);
   });
 });
