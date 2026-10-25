@@ -1268,9 +1268,10 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
   });
 
   router.post("/webhook/flutterwave", async (req, res) => {
-    const receivedHash = req.get("verif-hash");
-    if (!env.FLW_SECRET_HASH || !receivedHash || receivedHash.length !== env.FLW_SECRET_HASH.length ||
-        !crypto.timingSafeEqual(Buffer.from(receivedHash), Buffer.from(env.FLW_SECRET_HASH))) {
+    const receivedHash = Buffer.from(String(req.get("verif-hash") || ""), "utf8");
+    const expectedHash = Buffer.from(String(env.FLW_SECRET_HASH || ""), "utf8");
+    if (!env.FLW_SECRET_HASH || receivedHash.length === 0 || receivedHash.length !== expectedHash.length ||
+        !crypto.timingSafeEqual(receivedHash, expectedHash)) {
       return res.status(401).json({ success: false, error: "Invalid webhook signature.", code: "WEBHOOK_SIGNATURE_INVALID" });
     }
     const transactionId = req.body?.data?.id;
