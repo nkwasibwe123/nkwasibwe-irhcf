@@ -8,6 +8,15 @@ const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 const crypto = require("node:crypto");
 
+test("backend setup writes the cache fingerprint as one newline-terminated SHA", () => {
+  const setup = fs.readFileSync(path.join(__dirname, "..", "scripts", "setup-local-transcriber.sh"), "utf8");
+  assert.ok(
+    setup.includes("printf '%s\\n' \"$FINGERPRINT\" > \"$VERIFIED_MARKER.tmp\""),
+    "cache fingerprint must be written with a real newline so the next deploy can compare it"
+  );
+  assert.ok(!setup.includes('printf "%s\\\\n" "$FINGERPRINT"'), "do not write a literal backslash-n into the fingerprint marker");
+});
+
 test("local transcriber setup reuses a healthy cached binary and model", () => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "irhcf-whisper-cache-test-"));
   const whisperRoot = path.join(temp, "whisper.cpp");
