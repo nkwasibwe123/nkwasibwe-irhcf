@@ -961,7 +961,7 @@ test("checkout idempotency returns the existing hosted checkout instead of creat
   const client = {
     async query(sql) {
       transactionCommands.push(sql);
-      if (sql === "BEGIN" || sql === "ROLLBACK") return {rows:[]};
+      if (sql === "BEGIN" || sql === "ROLLBACK" || sql.includes("pg_advisory_xact_lock")) return {rows:[]};
       if (sql.includes("FROM commerce_orders WHERE user_id=$1 AND idempotency_key=$2 FOR UPDATE")) return {rows:[existingOrder]};
       throw new Error("Existing idempotency key must short-circuit before product locks or new order inserts.");
     },
@@ -1005,7 +1005,7 @@ test("checkout idempotency rejects reusing a key for different cart details", as
   })).digest("hex");
   const client = {
     async query(sql) {
-      if (sql === "BEGIN" || sql === "ROLLBACK") return {rows:[]};
+      if (sql === "BEGIN" || sql === "ROLLBACK" || sql.includes("pg_advisory_xact_lock")) return {rows:[]};
       if (sql.includes("FROM commerce_orders WHERE user_id=$1 AND idempotency_key=$2 FOR UPDATE")) return {rows:[{
         id:"order-7",tx_ref:"irhcf_existing_ref",status:"pending",currency:"RWF",
         total_minor:1000,subtotal_minor:1000,discount_minor:0,shipping_minor:0,tax_minor:0,
