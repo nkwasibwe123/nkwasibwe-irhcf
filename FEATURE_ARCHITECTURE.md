@@ -30,6 +30,7 @@ Use these feature-specific records as the starting point for the five-source res
 - Chat & Personal Assistant: research/CHAT_ASSISTANT_RESEARCH.md
 - Files & Knowledge: research/FILES_KNOWLEDGE_WORKSPACE.md
 - Download Manager / Media Saver: research/DOWNLOAD_MANAGER_RESEARCH.md
+- Account, Settings & Platform Operations: research/ACCOUNT_SETTINGS_OPERATIONS_RESEARCH.md
 
 Before implementation, refresh sources for current product/API availability and record the retrieval date, especially for provider-backed features. If a provider or endpoint has been retired, the feature must be gated or migrated rather than advertised as available.
 
