@@ -204,6 +204,9 @@ const API_ENDPOINTS = Object.freeze({
   videoGeneration:
     "/api/media/video",
 
+  videoGenerationStatus:
+    "/api/media/video/status",
+
   videoEditing:
     "/api/media/video/edit",
 
@@ -8525,6 +8528,29 @@ async function generateMusicFromPrompt(prompt) {
   }
 }
 
+async function checkVideoProviderAvailability() {
+  if (!authToken) {
+    setDashboardStatus("Banza winjire muri konti kugira ngo urebe uko serivisi ya video ihagaze.");
+    showAuthenticationDialog();
+    return false;
+  }
+  try {
+    const status = await apiRequest(API_ENDPOINTS.videoGenerationStatus);
+    if (status?.available === true) return true;
+    const message = String(status?.message || "Gukora video ya HD ntibishoboka kugeza serivisi ya video yemejwe ihujwe.").slice(0, 600);
+    setDashboardStatus(message);
+    setStatus(message, "normal");
+    addMessage(message, "ai");
+    return false;
+  } catch {
+    const message = "Ntibyashobotse kugenzura uko serivisi ya video ihagaze. Kugira ngo tutohereza ubusabe kuri serivisi idakora cyangwa ishobora gukoresha amafaranga, guhimba video byahagaritswe.";
+    setDashboardStatus(message);
+    setStatus(message, "normal");
+    addMessage(message, "ai");
+    return false;
+  }
+}
+
 async function generateVideoFromPrompt(prompt, referenceImageFile = null) {
   const cleanPrompt = String(prompt || "").trim().slice(0, 4000);
   if (!cleanPrompt) return;
@@ -8535,8 +8561,10 @@ async function generateVideoFromPrompt(prompt, referenceImageFile = null) {
     return;
   }
 
+  if (!(await checkVideoProviderAvailability())) return;
+
   const confirmed = window.confirm(
-    "IRHCF izakora video ya HD (720p) y'amasegonda 8. Ibi bishobora gukoresha API credits. Urashaka gukomeza?"
+    "IRHCF izakora video ya HD. Ibi bishobora gukoresha API credits. Urashaka gukomeza?"
   );
   if (!confirmed) return;
 
@@ -10044,22 +10072,28 @@ async function dashboardAction(action) {
 
   if (action === "video-from-photo") {
     if (!fileInput) return;
-    fileInput.dataset.transcribeAudio = "false";
-    fileInput.dataset.videoReference = "true";
-    fileInput.setAttribute("accept", "image/jpeg,image/png,image/webp");
-    setDashboardOpen(false);
-    fileInput.click();
+    void checkVideoProviderAvailability().then(available => {
+      if (!available) return;
+      fileInput.dataset.transcribeAudio = "false";
+      fileInput.dataset.videoReference = "true";
+      fileInput.setAttribute("accept", "image/jpeg,image/png,image/webp");
+      setDashboardOpen(false);
+      fileInput.click();
+    });
     return;
   }
 
   if (action === "video-create") {
-    const videoPrompt = window.prompt(
-      "Sobanura video ya HD ushaka gukora: amashusho, abantu, ahantu, ibikorwa, camera, style n'ibindi (mu magambo agera kuri 4000)."
-    );
-    if (videoPrompt && videoPrompt.trim()) {
-      setDashboardOpen(false);
-      void generateVideoFromPrompt(videoPrompt);
-    }
+    void checkVideoProviderAvailability().then(available => {
+      if (!available) return;
+      const videoPrompt = window.prompt(
+        "Sobanura video ya HD ushaka gukora: amashusho, abantu, ahantu, ibikorwa, camera, style n'ibindi (mu magambo agera kuri 4000)."
+      );
+      if (videoPrompt && videoPrompt.trim()) {
+        setDashboardOpen(false);
+        void generateVideoFromPrompt(videoPrompt);
+      }
+    });
     return;
   }
 

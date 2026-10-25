@@ -124,7 +124,7 @@ test("attached-photo background editing calls the authenticated real image-edit 
 
   assert.ok(app.includes('"/api/media/image/edit"'));
   const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
-  assert.match(html, /src="app\.js\?v=2\.0\.41"/, "Deploying a new frontend version must bypass stale cached app.js.");
+  assert.match(html, /src="app\.js\?v=2\.0\.42"/, "Deploying a new frontend version must bypass stale cached app.js.");
   assert.match(html, /href="style\.css\?v=2\.0\.33"/, "Deploying a new frontend version must refresh the related stylesheet.");
   assert.ok(app.includes("async function editAttachedImage(prompt, file)"));
   assert.ok(app.includes('[IRHCF IMAGE EDIT ROUTING v2.0.5]'), "The deployed frontend must expose a routing diagnostic so stale frontend code can be distinguished from a failed image-edit API.");
@@ -207,7 +207,7 @@ test("selected image attachments show thumbnails in the composer and refresh fro
   assert.match(app, /attachment-thumbnail/);
   assert.match(app, /Photo preview: /);
   assert.match(app, /URL\.createObjectURL\(file\)/);
-  assert.match(html, /src="app\.js\?v=2\.0\.41"/);
+  assert.match(html, /src="app\.js\?v=2\.0\.42"/);
   assert.match(html, /href="style\.css\?v=2\.0\.33"/);
 });
 
@@ -228,7 +228,7 @@ test("live camera capture provides preview, still photo, and bounded video recor
   assert.match(camera, /irhcf-photo-/);
   assert.match(camera, /irhcf-video-/);
   assert.match(css, /irhcf-camera-modal/);
-  assert.match(html, /src="app\.js\?v=2\.0\.41"/);
+  assert.match(html, /src="app\.js\?v=2\.0\.42"/);
   assert.match(html, /href="style\.css\?v=2\.0\.33"/);
 });
 
@@ -264,7 +264,7 @@ test("chat routes explicit build requests to the persistent task executor and an
   assert.match(app, /API_ENDPOINTS\.tasks/);
   assert.match(app, /deliverableRequired: true/);
   assert.match(app, /Build and generate the actual requested deliverable/);
-  assert.match(html, /src="app\.js\?v=2\.0\.41"/);
+  assert.match(html, /src="app\.js\?v=2\.0\.42"/);
   assert.match(html, /href="style\.css\?v=2\.0\.33"/);
 });
 
@@ -415,7 +415,7 @@ test("dashboard opens as a full-screen app workspace instead of a floating overl
   assert.match(css, /\.capability-dashboard \.dashboard-backdrop\s*\{\s*display:\s*none !important/);
   assert.match(css, /\.capability-dashboard \.dashboard-panel\s*\{[\s\S]*?width:\s*100%/);
   assert.ok(html.includes("style.css?v=2.0.33"));
-  assert.ok(html.includes("app.js?v=2.0.41"));
+  assert.ok(html.includes("app.js?v=2.0.42"));
 });
 
 
@@ -850,4 +850,22 @@ test("confirmed refunds reverse seller ledger earnings and prevent invalid payou
   assert.match(routes,/UPDATE commerce_seller_ledger SET reversed_net_minor=net_minor,refund_reference=\$2,reversed_at=CURRENT_TIMESTAMP WHERE order_id=\$1 AND reversed_net_minor=0/);
   assert.match(routes,/PAYOUT_BALANCE_NEGATIVE/);
   assert.match(routes,/REFUND_TRANSACTION_UNAVAILABLE/);
+});
+
+test("retired Sora video provider is blocked and the UI checks provider readiness", () => {
+  const root = path.join(__dirname, "..", "..");
+  const server = fs.readFileSync(path.join(root, "backend", "server.js"), "utf8");
+  const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
+  const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  const provider = fs.readFileSync(path.join(root, "backend", "media", "video-provider-status.js"), "utf8");
+
+  assert.match(provider, /available: false/);
+  assert.match(provider, /VIDEO_PROVIDER_RETIRED/);
+  assert.match(server, /if \(!videoProviderStatus\.available\)/);
+  assert.match(server, /app\.get\("\/api\/media\/video\/status",\s*authenticateToken/);
+  assert.match(app, /videoGenerationStatus:\s*"\/api\/media\/video\/status"/);
+  assert.match(app, /checkVideoProviderAvailability/);
+  assert.match(app, /async function checkVideoProviderAvailability\(\)\s*\{\s*if \(!authToken\)/, "Video status checks must preserve the sign-in flow.");
+  assert.match(html, /Gukora video ya HD byahagaritswe kugeza serivisi ya video yemejwe ihujwe/);
+  assert.doesNotMatch(html, /Generate 720p video clips with Sora/);
 });
