@@ -207,7 +207,7 @@ test("selected image attachments show thumbnails in the composer and refresh fro
   assert.match(app, /attachment-thumbnail/);
   assert.match(app, /Photo preview: /);
   assert.match(app, /URL\.createObjectURL\(file\)/);
-  assert.match(html, /src="app\.js\?v=2\.0\.44"/);
+  assert.match(html, /src="app\.js\?v=2\.0\.45"/);
   assert.match(html, /href="style\.css\?v=2\.0\.34"/);
 });
 
@@ -228,7 +228,7 @@ test("live camera capture provides preview, still photo, and bounded video recor
   assert.match(camera, /irhcf-photo-/);
   assert.match(camera, /irhcf-video-/);
   assert.match(css, /irhcf-camera-modal/);
-  assert.match(html, /src="app\.js\?v=2\.0\.44"/);
+  assert.match(html, /src="app\.js\?v=2\.0\.45"/);
   assert.match(html, /href="style\.css\?v=2\.0\.34"/);
 });
 
@@ -264,7 +264,7 @@ test("chat routes explicit build requests to the persistent task executor and an
   assert.match(app, /API_ENDPOINTS\.tasks/);
   assert.match(app, /deliverableRequired: true/);
   assert.match(app, /Build and generate the actual requested deliverable/);
-  assert.match(html, /src="app\.js\?v=2\.0\.44"/);
+  assert.match(html, /src="app\.js\?v=2\.0\.45"/);
   assert.match(html, /href="style\.css\?v=2\.0\.34"/);
 });
 
