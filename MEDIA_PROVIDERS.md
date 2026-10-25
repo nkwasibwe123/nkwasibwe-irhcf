@@ -7,6 +7,8 @@ This document describes the real media endpoints currently wired into the backen
 - `DATABASE_URL` — PostgreSQL connection string. Required for authentication, conversations, and ownership-safe video job tracking.
 - `JWT_SECRET` — a long, random secret used to verify user sessions.
 - `OPENAI_API_KEY` — used for image generation, text-to-speech, audio transcription, and Sora video generation. The OpenAI project must have access to the relevant endpoints/models and sufficient billing/credits.
+- `IRHCF_IMAGE_SERVICE_URL` — base URL of the self-hosted image service (for example, the deployed service's HTTPS URL); used for supported local photo edits.
+- `IRHCF_IMAGE_SERVICE_TOKEN` — shared secret that must match the image service's `IRHCF_IMAGE_SERVICE_TOKEN`; configure the same value on backend and image service, and never commit it.
 - `GEMINI_API_KEY` — used for Gemini Google Search grounding when IRHCF detects a request that needs current or externally changing information.
 - `ELEVENLABS_API_KEY` — used for Music v2.5 song generation. The ElevenLabs account must have access to the Music API and sufficient credits.
 
@@ -18,6 +20,8 @@ Configure these in the backend host's environment/secrets settings, then restart
 - The backend keeps grounded source titles and HTTP(S) URLs with the research context; duplicate URLs and non-web URLs are discarded.
 - Research is only marked as performed when the provider returns answer text and at least one grounded source URL.
 - A configured key does not guarantee provider availability, quota, model access, or search grounding support. Check `GET /api/health` → `researchProviders.googleSearchGrounding` for configuration presence, then test a real current-information request to verify operation.
+
+The `/api/health` response reports `mediaProviderConfiguration.localImageService.urlConfigured`, `tokenConfigured`, and `enabled` as booleans only. These are configuration checks, not proof that the remote image service is reachable or that a specific edit will succeed.
 
 ## Connected capabilities
 
