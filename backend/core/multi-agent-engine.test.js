@@ -123,6 +123,36 @@ test("empty or explicitly unverified specialist output is not counted as complet
   assert.match(result.results[1].error, /did not pass verification/);
 });
 
+test("provider failure envelopes are not misclassified as completed specialist briefs", async () => {
+  let index = 0;
+  const result = await runSpecialistTeam({
+    task: "review",
+    team: { specialists: [
+      { id: "requirements", description: "Requirements" },
+      { id: "testing", description: "Testing" }
+    ] },
+    maxSpecialists: 2,
+    executionEngine: { async execute() {
+      index++;
+      if (index === 1) {
+        return {
+          success: false,
+          error: { code: "RATE_LIMITED", message: "Provider quota exceeded." },
+          result: { output_text: "The task is complete." }
+        };
+      }
+      return {
+        provider: "test-provider",
+        result: { success: false, error: { message: "Upstream request failed." } }
+      };
+    } }
+  });
+  assert.equal(result.completed, 0);
+  assert.equal(result.failed, 2);
+  assert.match(result.results[0].error, /Provider quota exceeded/);
+  assert.match(result.results[1].error, /Upstream request failed/);
+});
+
 test("missing specialist execution adapter fails clearly", async () => {
   await assert.rejects(runSpecialistTeam({ task: "test", team: {}, executionEngine: null }),
     /central execution engine/);
