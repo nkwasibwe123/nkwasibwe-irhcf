@@ -319,6 +319,19 @@ function createSocialRouter({ pool, authenticateToken } = {}) {
       if(people.rows.length!==ids.length) return fail(res,404,"One or more participants were not found.");
       const blocked=await pool.query("SELECT 1 FROM social_blocks WHERE (blocker_id=$1 AND blocked_id=ANY($2::int[])) OR (blocked_id=$1 AND blocker_id=ANY($2::int[])) LIMIT 1",[me,ids]);
       if(blocked.rows.length) return fail(res,403,"A conversation cannot be created with a blocked user.");
+      if(ids.length===1) {
+        const existing=await pool.query(
+          `SELECT c.id,c.title,c.is_group,c.created_by,c.created_at,c.updated_at,2 AS member_count
+           FROM social_conversations c
+           JOIN social_conversation_members mine ON mine.conversation_id=c.id AND mine.user_id=$1
+           JOIN social_conversation_members other ON other.conversation_id=c.id AND other.user_id=$2
+           WHERE c.is_group=FALSE
+             AND (SELECT COUNT(*) FROM social_conversation_members m WHERE m.conversation_id=c.id)=2
+           ORDER BY c.updated_at DESC LIMIT 1`,
+          [me,ids[0]]
+        );
+        if(existing.rows.length) return res.json({success:true,conversation:existing.rows[0],existing:true});
+      }
       const client=typeof pool.connect==="function"?await pool.connect():null;
       const db=client||pool;
       try {
