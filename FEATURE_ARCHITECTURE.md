@@ -46,7 +46,7 @@ The hierarchy can grow deeper when justified, but every level needs a clear pare
 
 Every node should have a stable ID, label, parent ID, owner/module, permissions, route, dependencies, research record, test suite, status and analytics/error events. Use consistent labels in navigation, page title, activity history, help and permissions.
 
-## 3. Main feature map (initial taxonomy, not a completion claim)
+## 4. Main feature map (initial taxonomy, not a completion claim)
 
 ### A. Chat & Personal Assistant
 - Conversations: new, history, rename, search, archive/delete.
@@ -121,7 +121,7 @@ Every node should have a stable ID, label, parent ID, owner/module, permissions,
 - Feature flags, rollout status, backups, migration and incident recovery.
 - Never expose secrets or another user's private information.
 
-## 4. Dashboard structure — order without clutter
+## 5. Dashboard structure — order without clutter
 
 ### Main Dashboard (Level 0)
 Show only global search/command entry, main workspaces, recent and pinned workspaces, a compact attention area for genuine blocked/failed tasks, plus account/notifications/settings access. Do not place every sub-feature, agent card, activity stream, media tool or configuration panel on the main dashboard.
@@ -141,11 +141,11 @@ Show only controls and activity relevant to the selected feature. Task-based fea
 - Empty/loading/error/blocked states explain what is happening and what action is available.
 - Use actual API/events for status; never fabricate percentages, agents, ETAs, success or provider availability.
 
-## 5. Shared feature contract
+## 6. Shared feature contract
 
 Every feature defines its inputs and validation; execution API/service, task ID, provider/local engine, timeout and cancellation; output artifacts, preview, download/export and retention; timestamped progress events distinguishing active/waiting/retrying/blocked; stable error codes and safe next steps; authentication/authorization/account ownership/rate limits/audit; automated and end-to-end tests; provider cost/quota and fallback behavior; five-source research; and a release/rollback plan.
 
-## 6. Research baseline for dashboard and product architecture
+## 7. Research baseline for dashboard and product architecture
 
 These sources informed the initial baseline. They do not replace per-feature research before implementation.
 
@@ -160,7 +160,7 @@ These sources informed the initial baseline. They do not replace per-feature res
 9. WebMash Labs dashboard guidance — role-based visibility and progressive disclosure: https://www.webmashlabs.com/blog/saas-dashboard-ux-design-best-practices
 10. Cluma information architecture — navigation trees, feature states, permissions and depth: https://www.cluma.design/blog-posts/information-architecture-for-saas-products
 
-## 7. Feature research record — Software & Website Factory (initial research)
+## 8. Feature research record — Software & Website Factory (initial research)
 
 **Status: researched baseline; implementation still requires code-level and deployed verification.**
 
@@ -199,6 +199,6 @@ These sources informed the initial baseline. They do not replace per-feature res
 7. Preview/deploy occurs only after verification and required user approval.
 8. Tests cover invalid project input, runner unavailable, timeout, dependency failure, missing env vars, cross-account access, retry/cancel and mobile status visibility.
 
-## 8. Definition of done
+## 9. Definition of done
 
 A feature is verified only when its five-source research record is complete, code is merged through review, automated tests pass, the real deployed end-to-end workflow succeeds where applicable, security/account isolation/mobile/failure paths are checked, promised outputs are real and downloadable, UI status matches backend state, and limitations/provider requirements/costs are visible.
