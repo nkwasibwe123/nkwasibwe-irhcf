@@ -32,12 +32,18 @@ async function ensureCommerceSchema(pool) {
       stock_quantity INTEGER NOT NULL DEFAULT 0 CHECK (stock_quantity >= 0),
       active BOOLEAN NOT NULL DEFAULT TRUE,
       image_url TEXT,
+      image_data BYTEA,
+      image_mime_type TEXT,
+      image_byte_size INTEGER,
       category TEXT NOT NULL DEFAULT 'General' CHECK (length(trim(category)) BETWEEN 1 AND 80),
       requires_shipping BOOLEAN NOT NULL DEFAULT TRUE,
       seller_user_id INTEGER REFERENCES commerce_sellers(user_id) ON DELETE SET NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
+    ALTER TABLE commerce_products ADD COLUMN IF NOT EXISTS image_data BYTEA;
+    ALTER TABLE commerce_products ADD COLUMN IF NOT EXISTS image_mime_type TEXT;
+    ALTER TABLE commerce_products ADD COLUMN IF NOT EXISTS image_byte_size INTEGER;
     ALTER TABLE commerce_products ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'General';
     ALTER TABLE commerce_products ADD COLUMN IF NOT EXISTS requires_shipping BOOLEAN NOT NULL DEFAULT TRUE;
     ALTER TABLE commerce_products ADD COLUMN IF NOT EXISTS seller_user_id INTEGER REFERENCES commerce_sellers(user_id) ON DELETE SET NULL;
@@ -414,7 +420,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
     try {
       const seller = await pool.query("SELECT status FROM commerce_sellers WHERE user_id=$1 LIMIT 1", [req.user.id]);
       if (seller.rows[0]?.status !== "approved" && !isCommerceAdmin(req)) return res.status(403).json({ success: false, error: "Only approved sellers can manage seller products.", code: "APPROVED_SELLER_REQUIRED" });
-      const result = await pool.query("SELECT id,name,description,sku,price_minor,currency,stock_quantity,image_url,category,requires_shipping,active,created_at,updated_at FROM commerce_products WHERE seller_user_id=$1 ORDER BY created_at DESC LIMIT 200", [req.user.id]);
+      const result = await pool.query("SELECT id,name,description,sku,price_minor,currency,stock_quantity,image_url,(image_data IS NOT NULL) AS has_image_upload,category,requires_shipping,active,created_at,updated_at FROM commerce_products WHERE seller_user_id=$1 ORDER BY created_at DESC LIMIT 200", [req.user.id]);
       return res.json({ success: true, products: result.rows });
     } catch (error) {
       return res.status(500).json({ success: false, error: "Could not load seller products.", code: "SELLER_PRODUCTS_LOAD_FAILED" });
@@ -551,6 +557,28 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
     }
   });
 
+  router.put("/products/:productId/image", authenticateToken, requireProductManager, async (req, res) => {
+    const productId=safeInteger(req.params.productId,1,Number.MAX_SAFE_INTEGER);
+    const mimeType=String(req.body?.mimeType||"").toLowerCase();
+    const encoded=String(req.body?.dataBase64||"");
+    const allowed=new Set(["image/jpeg","image/png","image/webp"]);
+    const maxBytes=2*1024*1024;
+    if(!productId)return res.status(400).json({success:false,error:"Invalid product ID.",code:"PRODUCT_ID_INVALID"});
+    if(!allowed.has(mimeType))return res.status(400).json({success:false,error:"Only JPEG, PNG and WebP product images are supported.",code:"PRODUCT_IMAGE_TYPE_INVALID"});
+    if(!encoded||encoded.length>Math.ceil(maxBytes*4/3)+8||!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded))return res.status(400).json({success:false,error:"Product image must be valid base64 and no larger than 2 MiB.",code:"PRODUCT_IMAGE_INVALID"});
+    const image=Buffer.from(encoded,"base64");
+    if(!image.length||image.length>maxBytes||image.toString("base64")!==encoded)return res.status(413).json({success:false,error:"Product image must be valid base64 and no larger than 2 MiB.",code:"PRODUCT_IMAGE_SIZE_INVALID"});
+    const isJpeg=mimeType==="image/jpeg"&&image.length>=3&&image[0]===0xff&&image[1]===0xd8&&image[2]===0xff;
+    const isPng=mimeType==="image/png"&&image.length>=8&&image.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]));
+    const isWebp=mimeType==="image/webp"&&image.length>=12&&image.toString("ascii",0,4)==="RIFF"&&image.toString("ascii",8,12)==="WEBP";
+    if(!isJpeg&&!isPng&&!isWebp)return res.status(400).json({success:false,error:"Image bytes do not match the declared image type.",code:"PRODUCT_IMAGE_SIGNATURE_INVALID"});
+    try{
+      const result=await pool.query("UPDATE commerce_products SET image_data=$3,image_mime_type=$4,image_byte_size=$5,updated_at=CURRENT_TIMESTAMP WHERE id=$1 AND ($2::boolean OR seller_user_id=$6) RETURNING id,image_byte_size", [productId,isCommerceAdmin(req),image,mimeType,image.length,req.user.id]);
+      if(!result.rows.length)return res.status(404).json({success:false,error:"Product not found or not owned by this account.",code:"PRODUCT_NOT_FOUND"});
+      return res.json({success:true,productId:Number(result.rows[0].id),imageByteSize:result.rows[0].image_byte_size,imageUrl:"/api/commerce/products/"+productId+"/image"});
+    }catch(error){return res.status(500).json({success:false,error:"Could not save product image.",code:"PRODUCT_IMAGE_SAVE_FAILED"});}
+  });
+
   router.get("/products", async (req, res) => {
     try {
       await releaseExpiredReservations(pool);
@@ -560,7 +588,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
       const sort = String(req.query.sort || "newest");
       const orderBy = ({ newest: "p.id DESC", price_asc: "p.price_minor ASC, p.id DESC", price_desc: "p.price_minor DESC, p.id DESC", name_asc: "p.name ASC, p.id DESC", rating: "rating_average DESC, p.id DESC" })[sort] || "p.id DESC";
       const result = await pool.query(
-        "SELECT p.id, p.name, p.description, p.sku, p.price_minor, p.currency, p.stock_quantity, p.image_url, p.category, p.requires_shipping, COALESCE(s.shop_name, 'Nkwasibwe Market') AS seller_name, COALESCE(rv.rating_average, 0) AS rating_average, COALESCE(rv.review_count, 0) AS review_count FROM commerce_products p LEFT JOIN commerce_sellers s ON s.user_id=p.seller_user_id AND s.status='approved' LEFT JOIN (SELECT product_id, ROUND(AVG(rating)::numeric, 1) AS rating_average, COUNT(*)::int AS review_count FROM commerce_product_reviews GROUP BY product_id) rv ON rv.product_id=p.id WHERE p.active=TRUE AND (p.seller_user_id IS NULL OR s.user_id IS NOT NULL) AND ($1='' OR p.name ILIKE '%' || $1 || '%' OR p.description ILIKE '%' || $1 || '%' OR p.sku ILIKE '%' || $1 || '%') AND ($2='' OR p.category=$2) ORDER BY " + orderBy + " LIMIT $3",
+        "SELECT p.id, p.name, p.description, p.sku, p.price_minor, p.currency, p.stock_quantity, p.image_url, (p.image_data IS NOT NULL) AS has_image_upload, p.category, p.requires_shipping, COALESCE(s.shop_name, 'Nkwasibwe Market') AS seller_name, COALESCE(rv.rating_average, 0) AS rating_average, COALESCE(rv.review_count, 0) AS review_count FROM commerce_products p LEFT JOIN commerce_sellers s ON s.user_id=p.seller_user_id AND s.status='approved' LEFT JOIN (SELECT product_id, ROUND(AVG(rating)::numeric, 1) AS rating_average, COUNT(*)::int AS review_count FROM commerce_product_reviews GROUP BY product_id) rv ON rv.product_id=p.id WHERE p.active=TRUE AND (p.seller_user_id IS NULL OR s.user_id IS NOT NULL) AND ($1='' OR p.name ILIKE '%' || $1 || '%' OR p.description ILIKE '%' || $1 || '%' OR p.sku ILIKE '%' || $1 || '%') AND ($2='' OR p.category=$2) ORDER BY " + orderBy + " LIMIT $3",
         [search, category, limit]
       );
       const categories = await pool.query("SELECT DISTINCT category FROM commerce_products WHERE active=TRUE ORDER BY category LIMIT 100");
@@ -568,6 +596,18 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
     } catch (error) {
       return res.status(500).json({ success: false, error: "Could not load products.", code: "PRODUCTS_LOAD_FAILED" });
     }
+  });
+
+  router.get("/products/:productId/image", async (req, res) => {
+    const productId=safeInteger(req.params.productId,1,Number.MAX_SAFE_INTEGER);
+    if(!productId)return res.status(400).json({success:false,error:"Invalid product ID.",code:"PRODUCT_ID_INVALID"});
+    try{
+      const result=await pool.query("SELECT p.image_data,p.image_mime_type FROM commerce_products p LEFT JOIN commerce_sellers s ON s.user_id=p.seller_user_id AND s.status='approved' WHERE p.id=$1 AND p.active=TRUE AND p.image_data IS NOT NULL AND (p.seller_user_id IS NULL OR s.user_id IS NOT NULL) LIMIT 1",[productId]);
+      if(!result.rows.length)return res.status(404).json({success:false,error:"Product image not found.",code:"PRODUCT_IMAGE_NOT_FOUND"});
+      const row=result.rows[0];const image=Buffer.isBuffer(row.image_data)?row.image_data:Buffer.from(row.image_data);
+      res.set("Content-Type",row.image_mime_type).set("Content-Length",String(image.length)).set("X-Content-Type-Options","nosniff").set("Cache-Control","public, max-age=3600, stale-while-revalidate=300");
+      return res.status(200).send(image);
+    }catch(error){return res.status(500).json({success:false,error:"Could not load product image.",code:"PRODUCT_IMAGE_LOAD_FAILED"});}
   });
 
   router.get("/products/:productId/reviews", async (req, res) => {
