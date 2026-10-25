@@ -798,3 +798,23 @@ test("marketplace product comparison supports three items and compares price, se
   assert.match(js,/\["Delivery",p=>p\.requires_shipping/);
   assert.match(js,/clearComparisonButton/);
 });
+
+
+test("Chat with Friends has a sticky dashboard bar and focused full-page module navigation", () => {
+  const root = path.join(__dirname, "..", "..");
+  const html = fs.readFileSync(path.join(root, "friends.html"), "utf8");
+  for (const name of ["overview","messages","friends","feed","profile","communication","discover","downloads","work"]) {
+    assert.ok(html.includes('data-dashboard-target="'+name+'"'), "missing dashboard tab/shortcut: "+name);
+    assert.ok(html.includes('data-dashboard="'+name+'"'), "missing dashboard content: "+name);
+  }
+  assert.match(html, /class="friends-dashboard-nav" id="friendsDashboardNav"/);
+  assert.match(html, /position:sticky/);
+  assert.match(html, /dashboard-focused \[data-dashboard\]\{display:none!important\}/);
+  assert.match(html, /function activateDashboard\(name, updateUrl=true\)/);
+  assert.match(html, /history\.replaceState/);
+  assert.match(html, /aria-current/);
+  assert.match(html, /dashboard-launch-grid/);
+  assert.match(html, /socialProfileForm/);
+  assert.match(html, /profileDocumentForm/);
+  assert.match(html, /messageComposer/);
+});
