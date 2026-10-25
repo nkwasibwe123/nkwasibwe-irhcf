@@ -539,3 +539,12 @@ test("first-party social media previews and downloads send bearer authentication
   assert.match(html,/URL\.createObjectURL\(blob\)/);
   assert.match(html,/mime\.startsWith\("video\/"\)/);
 });
+
+
+test("Chat with Friends shows a non-blocking profile completion checklist",()=>{
+  const html=fs.readFileSync(path.join(__dirname,"..","..","friends.html"),"utf8");
+  assert.match(html,/id="profileCompletionPanel"/);
+  assert.match(html,/loadProfileCompletion/);
+  assert.match(html,/\/profile\/completion/);
+  assert.match(html,/You can use Chat with Friends before reaching 100%/);
+});
