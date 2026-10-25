@@ -90,6 +90,16 @@ function ensureSocialSchema(pool) {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     CREATE INDEX IF NOT EXISTS idx_social_messages_conversation ON social_messages(conversation_id,id DESC);
+    CREATE TABLE IF NOT EXISTS social_media_assets (
+      id BIGSERIAL PRIMARY KEY,
+      owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      file_name TEXT NOT NULL,
+      mime_type TEXT NOT NULL,
+      byte_size INTEGER NOT NULL CHECK(byte_size BETWEEN 1 AND 4194304),
+      content BYTEA NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_social_media_owner_created ON social_media_assets(owner_id,created_at DESC);
   `);
 }
 
@@ -102,7 +112,54 @@ function createSocialRouter({ pool, authenticateToken } = {}) {
   const userId = req => Number(req.user?.id);
   const validId = value => /^\d+$/.test(String(value || "")) && Number(value) > 0;
   const fail = (res, status, error) => res.status(status).json({ success: false, error });
+  const allowedMediaTypes = new Set(["image/jpeg","image/png","image/gif","image/webp","video/mp4","video/webm","audio/mpeg","audio/wav","audio/ogg","application/pdf"]);
+  function matchesMediaSignature(type, bytes) {
+    if(type==="image/jpeg") return bytes.length>=3 && bytes[0]===255 && bytes[1]===216 && bytes[2]===255;
+    if(type==="image/png") return bytes.length>=8 && bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]));
+    if(type==="image/gif") return bytes.length>=6 && ["GIF87a","GIF89a"].includes(bytes.subarray(0,6).toString("ascii"));
+    if(type==="image/webp") return bytes.length>=12 && bytes.subarray(0,4).toString("ascii")==="RIFF" && bytes.subarray(8,12).toString("ascii")==="WEBP";
+    if(type==="video/mp4") return bytes.length>=12 && bytes.subarray(4,8).toString("ascii")==="ftyp";
+    if(type==="video/webm") return bytes.length>=4 && bytes.subarray(0,4).equals(Buffer.from([26,69,223,163]));
+    if(type==="audio/mpeg") return bytes.length>=3 && (bytes.subarray(0,3).toString("ascii")==="ID3" || (bytes[0]===255 && (bytes[1]&224)===224));
+    if(type==="audio/wav") return bytes.length>=12 && bytes.subarray(0,4).toString("ascii")==="RIFF" && bytes.subarray(8,12).toString("ascii")==="WAVE";
+    if(type==="audio/ogg") return bytes.length>=4 && bytes.subarray(0,4).toString("ascii")==="OggS";
+    if(type==="application/pdf") return bytes.length>=5 && bytes.subarray(0,5).toString("ascii")==="%PDF-";
+    return false;
+  }
 
+
+  router.post("/media", async (req,res,next) => {
+    const fileName=String(req.body?.fileName||"upload").replace(/[\\/\\r\\n\\0]/g,"_").replace(/[^a-zA-Z0-9._ -]/g,"_").trim().slice(0,120)||"upload";
+    const mimeType=String(req.body?.mimeType||"").toLowerCase().trim();
+    const encoded=String(req.body?.dataBase64||"");
+    if(!allowedMediaTypes.has(mimeType)) return fail(res,415,"Unsupported media type.");
+    if(!encoded || encoded.length>Math.ceil(4194304*4/3)+8 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded)) return fail(res,400,"Invalid base64 media data.");
+    const bytes=Buffer.from(encoded,"base64");
+    if(!bytes.length || bytes.length>4194304) return fail(res,413,"Media must be between 1 byte and 4 MiB.");
+    if(bytes.toString("base64")!==encoded) return fail(res,400,"Media base64 encoding is not canonical.");
+    if(!matchesMediaSignature(mimeType,bytes)) return fail(res,415,"File content does not match the declared media type.");
+    try {
+      const result=await pool.query("INSERT INTO social_media_assets(owner_id,file_name,mime_type,byte_size,content) VALUES($1,$2,$3,$4,$5) RETURNING id,file_name,mime_type,byte_size,created_at",[userId(req),fileName,mimeType,bytes.length,bytes]);
+      const a=result.rows[0];
+      return res.status(201).json({success:true,media:{id:a.id,fileName:a.file_name,mimeType:a.mime_type,size:a.byte_size,createdAt:a.created_at,url:"/api/social/media/"+a.id+"/content"}});
+    } catch(error) { return next(error); }
+  });
+  router.get("/media/:mediaId/content", async (req,res,next) => {
+    if(!validId(req.params.mediaId)) return fail(res,400,"Invalid media ID.");
+    try {
+      const result=await pool.query(`SELECT a.id,a.file_name,a.mime_type,a.content FROM social_media_assets a
+       WHERE a.id=$1 AND (a.owner_id=$2 OR EXISTS(
+        SELECT 1 FROM social_posts p
+        WHERE p.media @> jsonb_build_array(jsonb_build_object('url','/api/social/media/'||a.id||'/content'))
+          AND (p.visibility='public' OR p.author_id=$2 OR (p.visibility='friends' AND EXISTS(SELECT 1 FROM social_follows f WHERE f.follower_id=$2 AND f.followed_id=p.author_id)))
+          AND NOT EXISTS(SELECT 1 FROM social_blocks b WHERE (b.blocker_id=$2 AND b.blocked_id=p.author_id) OR (b.blocker_id=p.author_id AND b.blocked_id=$2))
+       ))`,[req.params.mediaId,userId(req)]);
+      if(!result.rows.length) return fail(res,404,"Media not found.");
+      const a=result.rows[0], disposition=req.query.download==="1"?"attachment":"inline";
+      const name=String(a.file_name||"media").replace(/[^a-zA-Z0-9._ -]/g,"_").slice(0,120);
+      return res.status(200).set("Content-Type",a.mime_type).set("Content-Disposition",disposition+"; filename=\""+name+"\"").set("X-Content-Type-Options","nosniff").set("Cache-Control","private, max-age=300").send(a.content);
+    } catch(error) { return next(error); }
+  });
   router.get("/profile", async (req, res, next) => {
     try {
       const result = await pool.query(
@@ -169,8 +226,8 @@ function createSocialRouter({ pool, authenticateToken } = {}) {
       const visibility = ["public","friends","private"].includes(req.body?.visibility) ? req.body.visibility : "public";
       if (!body && media.length===0) return fail(res,400,"A post needs text or media.");
       if (body.length>5000) return fail(res,400,"Post text cannot exceed 5000 characters.");
-      if (media.some(item => !item || typeof item!=="object" || typeof item.url!=="string" || !/^https:\/\//i.test(item.url) || item.url.length>2000)) {
-        return fail(res,400,"Each media item must have a valid HTTPS URL.");
+      if (media.some(item => !item || typeof item!=="object" || typeof item.url!=="string" || !((/^https:\/\//i.test(item.url)) || (/^\/api\/social\/media\/\d+\/content$/.test(item.url))) || item.url.length>2000)) {
+        return fail(res,400,"Each media item must use HTTPS or a first-party uploaded media URL.");
       }
       const result = await pool.query(
         "INSERT INTO social_posts(author_id,body,media,visibility) VALUES($1,$2,$3::jsonb,$4) RETURNING id,author_id,body,media,visibility,created_at,updated_at",

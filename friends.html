@@ -20,6 +20,8 @@
 <p class="feed-subtitle">This connected feature supports authenticated text posts, audience settings, feed loading, six reaction types, comments and deleting your own posts. Sign in to IRHCF first.</p>
 <form id="socialComposer" class="composer">
 <textarea id="socialPostBody" maxlength="5000" placeholder="Share something with your community…" aria-label="Post text"></textarea>
+<label class="media-upload-label">Attach photo, video, audio or PDF (max 4 MiB) <input id="socialPostMedia" type="file" accept="image/jpeg,image/png,image/gif,image/webp,video/mp4,video/webm,audio/mpeg,audio/wav,audio/ogg,application/pdf"></label>
+<div id="socialMediaPreview" class="feed-subtitle" aria-live="polite"></div>
 <div class="composer-row"><label>Audience <select id="socialVisibility"><option value="public">Public</option><option value="friends">Friends</option><option value="private">Only me</option></select></label><button id="socialPostSubmit" type="submit">Publish post</button></div>
 <div id="socialFeedStatus" class="feed-status" role="status" aria-live="polite">Checking sign-in…</div>
 </form>
@@ -98,6 +100,12 @@
       head.append(node("span","",post.author_name || "IRHCF member"));
       head.append(node("time","",post.created_at ? new Date(post.created_at).toLocaleString() : ""));
       card.append(head,node("p","post-body",post.body || (Array.isArray(post.media)&&post.media.length ? "Media post" : "")));
+      (Array.isArray(post.media)?post.media:[]).forEach(item=>{
+        if(!item||typeof item.url!=="string")return;
+        const url=item.url.startsWith("/api/social/media/")?API_BASE+item.url:item.url;
+        if(String(item.mimeType||"").startsWith("image/")){const img=node("img","post-media");img.src=url;img.alt=item.fileName||"Post image";img.loading="lazy";card.append(img);}
+        else {const link=node("a","feed-action","Open "+(item.fileName||"attached media"));link.href=url;link.target="_blank";link.rel="noopener noreferrer";card.append(link);}
+      });
       const actions=node("div","post-actions");
       const reactionChoices=[["like","👍 Like"],["love","❤️ Love"],["laugh","😂 Haha"],["wow","😮 Wow"],["sad","😢 Sad"],["angry","😠 Angry"]];
       reactionChoices.forEach(([value,label])=>{
@@ -151,10 +159,24 @@
     try{await request("/api/social/posts/"+encodeURIComponent(id),{method:"DELETE"});say("Post deleted.");await load();}
     catch(e){say(e.message);}
   }
+  const mediaInput=document.getElementById("socialPostMedia");
+  const mediaPreview=document.getElementById("socialMediaPreview");
+  let uploadedMedia=null;
+  mediaInput.addEventListener("change",async()=>{
+    uploadedMedia=null;mediaPreview.textContent="";
+    const file=mediaInput.files&&mediaInput.files[0];if(!file)return;
+    if(file.size<1||file.size>4194304){mediaPreview.textContent="Choose a file no larger than 4 MiB.";mediaInput.value="";return;}
+    mediaPreview.textContent="Uploading "+file.name+"…";
+    try{
+      const dataBase64=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onerror=()=>reject(new Error("Could not read selected file."));reader.onload=()=>resolve(String(reader.result||"").split(",")[1]||"");reader.readAsDataURL(file);});
+      const result=await request("/api/social/media",{method:"POST",body:JSON.stringify({fileName:file.name,mimeType:file.type,dataBase64})});
+      uploadedMedia=result.media;mediaPreview.textContent="Attached: "+uploadedMedia.fileName+" ("+Math.ceil(uploadedMedia.size/1024)+" KiB)";
+    }catch(e){mediaPreview.textContent=e.message;mediaInput.value="";}
+  });
   form.addEventListener("submit",async event=>{
     event.preventDefault();const text=body.value.trim();if(!text){say("Write a message before publishing.");return;}
     submit.disabled=true;say("Publishing…");
-    try{await request("/api/social/posts",{method:"POST",body:JSON.stringify({body:text,visibility:document.getElementById("socialVisibility").value})});body.value="";say("Post published.");await load();}
+    try{const media=uploadedMedia?[{url:uploadedMedia.url,fileName:uploadedMedia.fileName,mimeType:uploadedMedia.mimeType,size:uploadedMedia.size}]:[];await request("/api/social/posts",{method:"POST",body:JSON.stringify({body:text,media,visibility:document.getElementById("socialVisibility").value})});body.value="";mediaInput.value="";uploadedMedia=null;mediaPreview.textContent="";say("Post published.");await load();}
     catch(e){say(e.message);}
     finally{submit.disabled=false;}
   });
