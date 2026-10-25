@@ -8,6 +8,13 @@ const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 const crypto = require("node:crypto");
 
+test("Render setup defaults to node_modules cache so artifacts survive code checkouts", () => {
+  const setup = fs.readFileSync(path.join(__dirname, "..", "scripts", "setup-local-transcriber.sh"), "utf8");
+  assert.ok(setup.includes('CACHE_ROOT="${WHISPER_CACHE_DIR:-$PWD/node_modules/.cache/irhcf-whisper}"'));
+  assert.ok(setup.includes('ROOT="${WHISPER_CPP_DIR:-$CACHE_ROOT/whisper.cpp}"'));
+  assert.ok(setup.includes('MODEL_DIR="${WHISPER_MODEL_DIR:-$CACHE_ROOT/models}"'));
+});
+
 test("local transcriber setup reuses a healthy cached binary and model", () => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "irhcf-whisper-cache-test-"));
   const whisperRoot = path.join(temp, "whisper.cpp");
