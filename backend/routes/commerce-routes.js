@@ -17,6 +17,7 @@ async function ensureCommerceSchema(pool) {
       contact_phone TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected','suspended')),
       reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      provider_refund_reference TEXT,
       reviewed_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -657,6 +658,54 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
     }
   });
 
+  router.post("/orders/:orderId/refund-request", authenticateToken, async (req, res) => {
+    const orderId=safeInteger(req.params.orderId,1,Number.MAX_SAFE_INTEGER);
+    const reason=String(req.body?.reason||"").trim().slice(0,2000);
+    if(!orderId||reason.length<5)return res.status(400).json({success:false,error:"Provide an order ID and a refund/return reason of at least 5 characters.",code:"REFUND_REQUEST_INVALID"});
+    try{
+      const order=await pool.query("SELECT id,status FROM commerce_orders WHERE id=$1 AND user_id=$2 LIMIT 1",[orderId,req.user.id]);
+      if(!order.rows.length)return res.status(404).json({success:false,error:"Order not found.",code:"ORDER_NOT_FOUND"});
+      if(order.rows[0].status!=="paid")return res.status(409).json({success:false,error:"Only paid orders can request a refund or return.",code:"ORDER_NOT_PAID"});
+      const result=await pool.query("INSERT INTO commerce_refund_requests (order_id,user_id,reason) VALUES ($1,$2,$3) RETURNING id,order_id,reason,status,created_at",[orderId,req.user.id,reason]);
+      return res.status(201).json({success:true,refundRequest:result.rows[0]});
+    }catch(error){if(error?.code==="23505")return res.status(409).json({success:false,error:"A refund/return request already exists for this order.",code:"REFUND_REQUEST_EXISTS"});return res.status(500).json({success:false,error:"Could not submit refund request.",code:"REFUND_REQUEST_FAILED"});}
+  });
+
+  router.get("/orders/:orderId/refund-request", authenticateToken, async (req, res) => {
+    const orderId=safeInteger(req.params.orderId,1,Number.MAX_SAFE_INTEGER);
+    if(!orderId)return res.status(400).json({success:false,error:"Invalid order ID.",code:"ORDER_ID_INVALID"});
+    try{
+      const owned=await pool.query("SELECT id FROM commerce_orders WHERE id=$1 AND user_id=$2 LIMIT 1",[orderId,req.user.id]);
+      if(!owned.rows.length)return res.status(404).json({success:false,error:"Order not found.",code:"ORDER_NOT_FOUND"});
+      const result=await pool.query("SELECT id,order_id,reason,status,admin_note,provider_refund_reference,created_at,updated_at,reviewed_at FROM commerce_refund_requests WHERE order_id=$1 AND user_id=$2 LIMIT 1",[orderId,req.user.id]);
+      return res.json({success:true,refundRequest:result.rows[0]||null});
+    }catch(error){return res.status(500).json({success:false,error:"Could not load refund request.",code:"REFUND_REQUEST_LOAD_FAILED"});}
+  });
+
+  router.get("/refund-requests", authenticateToken, requireCommerceAdmin, async (req, res) => {
+    try{
+      const result=await pool.query("SELECT r.id,r.order_id,r.user_id,r.reason,r.status,r.admin_note,r.provider_refund_reference,r.created_at,r.updated_at,r.reviewed_at,o.currency,o.total_minor FROM commerce_refund_requests r JOIN commerce_orders o ON o.id=r.order_id ORDER BY CASE r.status WHEN 'pending' THEN 0 WHEN 'approved' THEN 1 ELSE 2 END,r.created_at DESC LIMIT 200");
+      return res.json({success:true,refundRequests:result.rows});
+    }catch(error){return res.status(500).json({success:false,error:"Could not load refund requests.",code:"REFUND_REQUESTS_LOAD_FAILED"});}
+  });
+
+  router.patch("/refund-requests/:requestId", authenticateToken, requireCommerceAdmin, async (req, res) => {
+    const requestId=safeInteger(req.params.requestId,1,Number.MAX_SAFE_INTEGER);
+    const status=String(req.body?.status||"");
+    const adminNote=String(req.body?.adminNote||"").trim().slice(0,2000);
+    const providerReference=String(req.body?.providerRefundReference||"").trim().slice(0,200);
+    if(!requestId||!["approved","rejected","refunded"].includes(status)||(status==="refunded"&&!providerReference))return res.status(400).json({success:false,error:"Provide a valid request status; refunded requires the external provider refund reference.",code:"REFUND_REVIEW_INVALID"});
+    try{
+      const current=await pool.query("SELECT id,order_id,status FROM commerce_refund_requests WHERE id=$1 LIMIT 1",[requestId]);
+      if(!current.rows.length)return res.status(404).json({success:false,error:"Refund request not found.",code:"REFUND_REQUEST_NOT_FOUND"});
+      const allowed= current.rows[0].status==="pending"?["approved","rejected"]:current.rows[0].status==="approved"?["refunded"]:[];
+      if(!allowed.includes(status))return res.status(409).json({success:false,error:"That refund request status transition is not allowed.",code:"REFUND_TRANSITION_INVALID"});
+      const updated=await pool.query("UPDATE commerce_refund_requests SET status=$2,admin_note=$3,provider_refund_reference=$4,reviewed_by=$5,reviewed_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=$1 RETURNING id,order_id,status,admin_note,provider_refund_reference,reviewed_at",[requestId,status,adminNote,providerReference||null,req.user.id]);
+      if(status==="refunded")await pool.query("UPDATE commerce_orders SET status='refunded',updated_at=CURRENT_TIMESTAMP WHERE id=$1 AND status='paid'",[current.rows[0].order_id]);
+      return res.json({success:true,refundRequest:updated.rows[0]});
+    }catch(error){return res.status(500).json({success:false,error:"Could not review refund request.",code:"REFUND_REVIEW_FAILED"});}
+  });
+
   router.post("/checkout", authenticateToken, async (req, res) => {
     if (!env.FLW_SECRET_KEY || !env.FLW_SECRET_HASH) {
       return res.status(503).json({
@@ -842,7 +891,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
       if (!verifiedResponse.ok || verified?.status !== "success" || data?.status !== "successful" || String(data?.tx_ref) !== txRef) {
         return res.status(400).json({ success: false, error: "Payment could not be verified with the provider.", code: "PAYMENT_NOT_VERIFIED" });
       }
-      const orderResult = await pool.query("SELECT id, status, currency, total_minor FROM commerce_orders WHERE tx_ref=$1", [txRef]);
+      const orderResult = await pool.query("SELECT id, status, currency, total_minor, coupon_code FROM commerce_orders WHERE tx_ref=$1", [txRef]);
       const order = orderResult.rows[0];
       if (!order) return res.status(404).json({ success: false, error: "Order not found.", code: "ORDER_NOT_FOUND" });
       if (order.status === "paid") return res.json({ success: true, duplicate: true });
@@ -851,7 +900,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
         return res.status(400).json({ success: false, error: "Payment amount or currency does not match the order.", code: "PAYMENT_MISMATCH" });
       }
       const updated = await pool.query(
-        "UPDATE commerce_orders SET status='paid', provider_transaction_id=$2, paid_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=$1 AND status='pending' RETURNING id",
+        "WITH paid_order AS (UPDATE commerce_orders SET status='paid', provider_transaction_id=$2, paid_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=$1 AND status='pending' RETURNING id,coupon_code), coupon_update AS (UPDATE commerce_coupons c SET redeemed_count=c.redeemed_count+1 FROM paid_order p WHERE c.code=p.coupon_code AND p.coupon_code IS NOT NULL RETURNING c.id) SELECT id FROM paid_order",
         [order.id, String(transactionId)]
       );
       if (!updated.rows.length) return res.status(409).json({ success: false, error: "Order is no longer pending.", code: "ORDER_STATE_CONFLICT" });
