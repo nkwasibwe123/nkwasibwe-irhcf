@@ -47,7 +47,7 @@ test("mobile video editor UI is connected to the authenticated endpoint", () => 
   assert.match(html, /id="videoEditorStart"/);
   assert.match(html, /id="videoEditorEnd"/);
   assert.match(html, /id="videoEditorDownload"/);
-  assert.match(html, /app\.js\?v=2\.0\.44/);
+  assert.match(html, /app\.js\?v=2\.0\.45/);
   assert.match(html, /style\.css\?v=2\.0\.34/);
   assert.match(app, /videoEditing:\s*"\/api\/media\/video\/edit"/);
   assert.match(app, /apiRequest\(API_ENDPOINTS\.videoEditing/);
