@@ -259,7 +259,7 @@
         const remove=element("button","","Delete");remove.type="button";remove.addEventListener("click",async()=>{remove.disabled=true;try{await request("/addresses/"+encodeURIComponent(address.id),{method:"DELETE"});await loadAddresses();}catch(error){$("addressMessage").textContent=error.message;remove.disabled=false;}});actions.append(remove);
         row.append(info,actions);box.append(row);
       }
-      updateCheckoutAvailability();
+      updateCheckoutAvailability();await loadQuote();
     }catch(error){box.replaceChildren(element("p","muted","Could not load addresses: "+error.message));}
   }
   async function loadQuote() {
@@ -280,7 +280,7 @@
   }
   async function loadCart() {
     const box=$("cartItems");
-    if(!token()){state.cart=[];box.replaceChildren(element("p","muted","Sign in to load and save your cart."));$("cartCount").textContent="0 items";$("cartSubtotal").textContent="—";$("cartDiscount").textContent="—";$("cartTotal").textContent="—";$("checkoutButton").disabled=true;return;}
+    if(!token()){state.cart=[];box.replaceChildren(element("p","muted","Sign in to load and save your cart."));$("cartCount").textContent="0 items";$("cartSubtotal").textContent="—";$("cartDiscount").textContent="—";$("cartShipping").textContent="—";$("cartTax").textContent="—";$("cartTotal").textContent="—";$("checkoutButton").disabled=true;return;}
     try{
       const result=await request("/cart");state.cart=result.items||[];box.replaceChildren();let total=0;
       if(!state.cart.length)box.append(element("p","muted","Your cart is empty. Add something from the catalogue."));
