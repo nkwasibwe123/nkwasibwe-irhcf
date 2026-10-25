@@ -479,6 +479,82 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
     }
   });
 
+  const sellerBalanceSql = `WITH currencies AS (
+    SELECT currency FROM commerce_seller_ledger WHERE seller_user_id=$1
+    UNION SELECT currency FROM commerce_payout_requests WHERE seller_user_id=$1
+  ), earned AS (
+    SELECT currency,SUM(net_minor)::bigint AS total_earned FROM commerce_seller_ledger WHERE seller_user_id=$1 GROUP BY currency
+  ), payouts AS (
+    SELECT currency,
+      SUM(CASE WHEN status='paid' THEN amount_minor ELSE 0 END)::bigint AS total_paid,
+      SUM(CASE WHEN status IN ('pending','approved') THEN amount_minor ELSE 0 END)::bigint AS reserved
+    FROM commerce_payout_requests WHERE seller_user_id=$1 GROUP BY currency
+  )
+  SELECT c.currency,COALESCE(e.total_earned,0)::bigint AS total_earned,COALESCE(p.total_paid,0)::bigint AS total_paid,
+    COALESCE(p.reserved,0)::bigint AS reserved,
+    (COALESCE(e.total_earned,0)-COALESCE(p.total_paid,0)-COALESCE(p.reserved,0))::bigint AS available
+  FROM currencies c LEFT JOIN earned e USING(currency) LEFT JOIN payouts p USING(currency) ORDER BY c.currency`;
+
+  router.get("/seller/payouts", authenticateToken, async (req, res) => {
+    try {
+      const seller=await pool.query("SELECT status FROM commerce_sellers WHERE user_id=$1 LIMIT 1",[req.user.id]);
+      if(seller.rows[0]?.status!=="approved")return res.status(403).json({success:false,error:"Only approved sellers can view earnings and payout balances.",code:"APPROVED_SELLER_REQUIRED"});
+      const balances=await pool.query(sellerBalanceSql,[req.user.id]);
+      const requests=await pool.query("SELECT id,amount_minor,currency,destination_reference,status,admin_note,provider_transfer_reference,created_at,updated_at,reviewed_at FROM commerce_payout_requests WHERE seller_user_id=$1 ORDER BY created_at DESC LIMIT 100",[req.user.id]);
+      return res.json({success:true,balances:balances.rows,payoutRequests:requests.rows});
+    }catch(error){return res.status(500).json({success:false,error:"Could not load seller payouts.",code:"SELLER_PAYOUTS_LOAD_FAILED"});}
+  });
+
+  router.post("/seller/payout-requests", authenticateToken, async (req, res) => {
+    const amountMinor=safeInteger(req.body?.amountMinor,1,Number.MAX_SAFE_INTEGER);
+    const currency=String(req.body?.currency||"").toUpperCase();
+    const destinationReference=String(req.body?.destinationReference||"").trim().slice(0,200);
+    if(!amountMinor||!CURRENCIES.has(currency)||!/^[A-Za-z0-9_.:-]{3,200}$/.test(destinationReference))return res.status(400).json({success:false,error:"Provide a valid amount, supported currency and verified provider beneficiary/subaccount reference (not raw bank credentials).",code:"PAYOUT_REQUEST_INVALID"});
+    const client=typeof pool.connect==="function"?await pool.connect():null;
+    if(!client)return res.status(503).json({success:false,error:"Payout requests require transactional database support.",code:"PAYOUT_TRANSACTION_UNAVAILABLE"});
+    try{
+      await client.query("BEGIN");
+      const seller=await client.query("SELECT user_id FROM commerce_sellers WHERE user_id=$1 AND status='approved' FOR UPDATE",[req.user.id]);
+      if(!seller.rows.length){await client.query("ROLLBACK");return res.status(403).json({success:false,error:"Only approved sellers can request payouts.",code:"APPROVED_SELLER_REQUIRED"});}
+      const balanceResult=await client.query(sellerBalanceSql,[req.user.id]);
+      const balance=balanceResult.rows.find(row=>row.currency===currency);
+      const available=Number(balance?.available||0);
+      if(!Number.isSafeInteger(available)||amountMinor>available){await client.query("ROLLBACK");return res.status(409).json({success:false,error:"Requested payout exceeds the available balance for this currency.",code:"PAYOUT_BALANCE_INSUFFICIENT",availableMinor:Math.max(0,available)});}
+      const result=await client.query("INSERT INTO commerce_payout_requests (seller_user_id,amount_minor,currency,destination_reference) VALUES ($1,$2,$3,$4) RETURNING id,amount_minor,currency,destination_reference,status,created_at",[req.user.id,amountMinor,currency,destinationReference]);
+      await client.query("COMMIT");
+      return res.status(201).json({success:true,payoutRequest:result.rows[0]});
+    }catch(error){try{await client.query("ROLLBACK");}catch{}return res.status(500).json({success:false,error:"Could not submit payout request.",code:"PAYOUT_REQUEST_FAILED"});}
+    finally{client.release();}
+  });
+
+  router.get("/payout-requests", authenticateToken, requireCommerceAdmin, async (req, res) => {
+    try{
+      const result=await pool.query("SELECT p.id,p.seller_user_id,s.shop_name,p.amount_minor,p.currency,p.destination_reference,p.status,p.admin_note,p.provider_transfer_reference,p.created_at,p.updated_at,p.reviewed_at FROM commerce_payout_requests p JOIN commerce_sellers s ON s.user_id=p.seller_user_id ORDER BY CASE p.status WHEN 'pending' THEN 0 WHEN 'approved' THEN 1 ELSE 2 END,p.created_at DESC LIMIT 200");
+      return res.json({success:true,payoutRequests:result.rows});
+    }catch(error){return res.status(500).json({success:false,error:"Could not load payout requests.",code:"PAYOUT_REQUESTS_LOAD_FAILED"});}
+  });
+
+  router.patch("/payout-requests/:requestId", authenticateToken, requireCommerceAdmin, async (req, res) => {
+    const requestId=safeInteger(req.params.requestId,1,Number.MAX_SAFE_INTEGER);
+    const status=String(req.body?.status||"");
+    const adminNote=String(req.body?.adminNote||"").trim().slice(0,2000);
+    const transferReference=String(req.body?.providerTransferReference||"").trim().slice(0,200);
+    if(!requestId||!["approved","rejected","paid"].includes(status)||(status==="paid"&&!/^[A-Za-z0-9_.:-]{3,200}$/.test(transferReference)))return res.status(400).json({success:false,error:"Valid payout status required; marking paid requires an external provider transfer reference.",code:"PAYOUT_REVIEW_INVALID"});
+    const client=typeof pool.connect==="function"?await pool.connect():null;
+    if(!client)return res.status(503).json({success:false,error:"Payout review requires transaction support.",code:"PAYOUT_TRANSACTION_UNAVAILABLE"});
+    try{
+      await client.query("BEGIN");
+      const current=await client.query("SELECT id,seller_user_id,status FROM commerce_payout_requests WHERE id=$1 FOR UPDATE",[requestId]);
+      if(!current.rows.length){await client.query("ROLLBACK");return res.status(404).json({success:false,error:"Payout request not found.",code:"PAYOUT_REQUEST_NOT_FOUND"});}
+      const allowed=current.rows[0].status==="pending"?["approved","rejected"]:current.rows[0].status==="approved"?["paid"]:[];
+      if(!allowed.includes(status)){await client.query("ROLLBACK");return res.status(409).json({success:false,error:"That payout status transition is not allowed.",code:"PAYOUT_TRANSITION_INVALID"});}
+      const updated=await client.query("UPDATE commerce_payout_requests SET status=$2,admin_note=$3,provider_transfer_reference=$4,reviewed_by=$5,reviewed_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=$1 RETURNING id,seller_user_id,amount_minor,currency,status,provider_transfer_reference,reviewed_at",[requestId,status,adminNote,transferReference||null,req.user.id]);
+      await client.query("COMMIT");
+      return res.json({success:true,payoutRequest:updated.rows[0]});
+    }catch(error){try{await client.query("ROLLBACK");}catch{}return res.status(500).json({success:false,error:"Could not review payout request.",code:"PAYOUT_REVIEW_FAILED"});}
+    finally{client.release();}
+  });
+
   router.patch("/seller/order-items/:itemId/fulfillment", authenticateToken, async (req, res) => {
     const itemId = safeInteger(req.params.itemId, 1, Number.MAX_SAFE_INTEGER);
     const nextStatus = String(req.body?.status || "");
