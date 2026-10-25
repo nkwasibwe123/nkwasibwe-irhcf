@@ -11,8 +11,9 @@ const MAX_AUDIO_BYTES = 6 * 1024 * 1024;
 const DEFAULT_TIMEOUT_MS = 180000;
 
 function getLocalTranscriberConfig(env = process.env) {
-  const defaultBinaryPath = path.resolve(process.cwd(), ".local/whisper.cpp/build/bin/whisper-cli");
-  const defaultModelPath = path.resolve(process.cwd(), ".local/models/ggml-tiny.bin");
+  const defaultCacheRoot = path.resolve(process.cwd(), "node_modules/.cache/irhcf-whisper");
+  const defaultBinaryPath = path.join(defaultCacheRoot, "whisper.cpp", "build", "bin", "whisper-cli");
+  const defaultModelPath = path.join(defaultCacheRoot, "models", "ggml-tiny.bin");
   const configuredBinaryPath = String(env.WHISPER_CPP_PATH || "").trim();
   const configuredModelPath = String(env.WHISPER_MODEL_PATH || "").trim();
   const binaryPath = configuredBinaryPath || defaultBinaryPath;
