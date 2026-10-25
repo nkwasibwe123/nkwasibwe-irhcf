@@ -25,7 +25,7 @@ function checkRateLimitEntry(store, key, limit, now = Date.now(), {
       return {
         allowed: false,
         remaining: 0,
-        retryAfter: Math.ceil(safeWindowMs / 1000),
+        retryAfter: Math.ceil((safeWindowMs * 2) / 1000),
         code: "RATE_LIMIT_STORE_FULL"
       };
     }
