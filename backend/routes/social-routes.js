@@ -122,6 +122,7 @@ function createSocialRouter({ pool, authenticateToken } = {}) {
                 (p.author_id=$1) AS is_mine,
                 (SELECT COUNT(*)::int FROM social_post_comments c WHERE c.post_id=p.id) AS comment_count,
                 (SELECT COUNT(*)::int FROM social_post_reactions r WHERE r.post_id=p.id) AS reaction_count,
+                COALESCE((SELECT json_agg(json_build_object('id',c.id,'author_name',COALESCE(csp.display_name,cu.name),'body',c.body,'created_at',c.created_at) ORDER BY c.created_at ASC) FROM social_post_comments c JOIN users cu ON cu.id=c.author_id LEFT JOIN social_profiles csp ON csp.user_id=cu.id WHERE c.post_id=p.id),'[]'::json) AS comments,
                 EXISTS(SELECT 1 FROM social_post_reactions r WHERE r.post_id=p.id AND r.user_id=$1) AS reacted_by_me
          FROM social_posts p JOIN users u ON u.id=p.author_id
          LEFT JOIN social_profiles sp ON sp.user_id=u.id
