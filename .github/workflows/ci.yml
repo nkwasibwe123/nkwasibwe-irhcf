@@ -27,10 +27,11 @@ jobs:
           node-version: ${{ matrix.node-version }}
       - name: Install dependencies
         run: npm install
-      - name: Generate backend lockfile and report dependency audit
+      - name: Validate backend lockfile and report dependency audit
         shell: bash
         run: |
           (cd backend && npm install --package-lock-only --ignore-scripts --no-audit --no-fund)
+          git diff --exit-code -- backend/package-lock.json
           (cd backend && npm audit --json) > /tmp/irhcf-backend-audit.json || true
           node - <<'NODE'
           const fs = require("node:fs");
@@ -59,42 +60,5 @@ jobs:
             }));
           }
           NODE
-      - name: Upload generated backend lockfile
-        if: matrix.node-version == 20
-        uses: actions/upload-artifact@v4
-        with:
-          name: irhcf-backend-package-lock
-          path: backend/package-lock.json
-          if-no-files-found: error
       - name: Run syntax checks and automated tests
         run: npm test
-
-  commit-backend-lockfile:
-    if: github.event_name == 'pull_request' && github.head_ref == 'security/report-backend-dependency-audit' && github.event.pull_request.head.repo.full_name == github.repository
-    name: Commit generated backend lockfile for audit branch
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Check out audit branch
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref }}
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      - name: Generate deterministic backend lockfile
-        run: cd backend && npm install --package-lock-only --ignore-scripts --no-audit --no-fund
-      - name: Commit lockfile to audit branch
-        shell: bash
-        run: |
-          if [ -z "$(git status --porcelain -- backend/package-lock.json)" ]; then
-            echo "No backend lockfile change to commit."
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add backend/package-lock.json
-          git commit -m "build: add backend dependency lockfile"
-          git push origin "HEAD:${GITHUB_HEAD_REF}"
