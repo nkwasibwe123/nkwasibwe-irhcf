@@ -994,6 +994,8 @@ test("checkout idempotency returns the existing hosted checkout instead of creat
     assert.equal(payload.paymentStatus,"pending");
     assert.equal(providerCalls,0);
     assert.ok(transactionCommands.includes("ROLLBACK"));
+    assert.ok(transactionCommands.some(sql => sql.includes("pg_advisory_xact_lock")),
+      "the route must acquire a transaction-scoped lock before reading the existing checkout");
   });
 });
 
