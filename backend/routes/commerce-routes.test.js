@@ -884,3 +884,42 @@ test("Flutterwave webhook rejects non-ASCII signature values without throwing", 
     assert.equal((await response.json()).code, "WEBHOOK_SIGNATURE_INVALID");
   });
 });
+
+
+test("marketplace order details, receipt and refund lookup cannot cross account boundaries", async () => {
+  const app = express();
+  const calls = [];
+  app.use(express.json());
+  app.use("/api/commerce", createCommerceRouter({
+    pool: {
+      async query(sql, params) {
+        calls.push({ sql, params });
+        return { rows: [] };
+      }
+    },
+    authenticateToken: (req, res, next) => {
+      req.user = { id: 88, email: "buyer-88@example.test" };
+      next();
+    },
+    env: {}
+  }));
+
+  await withServer(app, async base => {
+    for (const route of [
+      "/api/commerce/orders/123",
+      "/api/commerce/orders/123/receipt",
+      "/api/commerce/orders/123/refund-request"
+    ]) {
+      const response = await fetch(base + route);
+      assert.equal(response.status, 404, route + " should hide an order owned by another account");
+      const payload = await response.json();
+      assert.ok(payload.code === "ORDER_NOT_FOUND" || payload.code === "ORDER_DETAILS_FAILED" || payload.code === "ORDER_RECEIPT_FAILED" || payload.code === "ORDER_NOT_FOUND");
+    }
+  });
+
+  assert.equal(calls.length, 3);
+  for (const call of calls) {
+    assert.match(call.sql, /user_id\s*=\s*\$2/i);
+    assert.equal(String(call.params[1]), "88");
+  }
+});
