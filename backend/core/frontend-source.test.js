@@ -722,3 +722,17 @@ test("seller shipment tracking is required at shipment and visible in buyer orde
   assert.match(routes,/tracking_carrier=CASE WHEN \$2='shipped'/);
   assert.match(routes,/tracking_number,shipped_at,delivered_at/);
 });
+
+
+test("buyer order history opens an authenticated printable receipt only for completed orders", () => {
+  const root=path.join(__dirname,"..","..");
+  const js=fs.readFileSync(path.join(root,"market.js"),"utf8");
+  const routes=fs.readFileSync(path.join(root,"backend","routes","commerce-routes.js"),"utf8");
+  assert.match(js,/Print receipt/);
+  assert.match(js,/Authorization:"Bearer "\+token\(\)/);
+  assert.match(js,/\/orders\/\+"\+encodeURIComponent\(order\.id\)\+"\/receipt/);
+  assert.match(routes,/router\.get\("\/orders\/:orderId\/receipt", authenticateToken/);
+  assert.match(routes,/ORDER_NOT_PAID/);
+  assert.match(routes,/escapeHtml\(item\.product_name\)/);
+  assert.match(routes,/Content-Disposition/);
+});
