@@ -124,7 +124,7 @@ test("attached-photo background editing calls the authenticated real image-edit 
 
   assert.ok(app.includes('"/api/media/image/edit"'));
   const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
-  assert.match(html, /src="app\.js\?v=2\.0\.44"/, "Deploying a new frontend version must bypass stale cached app.js.");
+  assert.match(html, /src="app\.js\?v=2\.0\.45"/, "Deploying a new frontend version must bypass stale cached app.js.");
   assert.match(html, /href="style\.css\?v=2\.0\.34"/, "Deploying a new frontend version must refresh the related stylesheet.");
   assert.ok(app.includes("async function editAttachedImage(prompt, file)"));
   assert.ok(app.includes('[IRHCF IMAGE EDIT ROUTING v2.0.5]'), "The deployed frontend must expose a routing diagnostic so stale frontend code can be distinguished from a failed image-edit API.");
