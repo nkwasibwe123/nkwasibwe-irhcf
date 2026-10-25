@@ -28,6 +28,7 @@ const { getLocalTranscriberConfig, getLocalTranscriberStatus, transcribeLocally 
 const { getVideoProviderStatus } = require("./media/video-provider-status");
 const { checkRateLimitEntry } = require("./core/rate-limit-store");
 const { getTrustedClientIP } = require("./core/client-ip");
+const { validateCriticalConfig } = require("./core/production-config");
 
 // ============================================================
 // INTERNAL MODULES
@@ -253,20 +254,14 @@ app.disable("x-powered-by");
 // BASIC CONFIGURATION VALIDATION
 // ============================================================
 
-if (!DATABASE_URL) {
+const criticalConfig = validateCriticalConfig({
+  environment: NODE_ENV,
+  databaseUrl: DATABASE_URL,
+  jwtSecret: JWT_SECRET
+});
 
-  console.error(
-    "[CONFIG ERROR] DATABASE_URL is missing."
-  );
-
-}
-
-if (!JWT_SECRET) {
-
-  console.error(
-    "[CONFIG ERROR] JWT_SECRET is missing."
-  );
-
+for (const missing of criticalConfig.missing) {
+  console.error(`[CONFIG ERROR] ${missing} is missing.`);
 }
 
 if (!OPENAI_API_KEY) {
