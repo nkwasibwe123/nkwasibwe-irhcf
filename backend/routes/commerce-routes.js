@@ -1206,4 +1206,4 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
   return router;
 }
 
-module.exports = { MAX_ITEMS, MAX_QUANTITY, CURRENCIES, ensureCommerceSchema, createCommerceRouter, toProviderAmount, fromProviderAmount, calculateCouponDiscount, getShippingRateMinor, getTaxRateBps, calculateTaxMinor, releaseOrderReservations, releaseExpiredReservations };
+module.exports = { MAX_ITEMS, MAX_QUANTITY, CURRENCIES, ensureCommerceSchema, createCommerceRouter, toProviderAmount, fromProviderAmount, calculateCouponDiscount, getShippingRateMinor, getTaxRateBps, calculateTaxMinor, getPlatformFeeBps, calculateSellerNetMinor, releaseOrderReservations, releaseExpiredReservations };
