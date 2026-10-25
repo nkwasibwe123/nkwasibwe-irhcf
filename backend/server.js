@@ -298,6 +298,7 @@ app.use(
     allowedHeaders: [
       "Content-Type",
       "Authorization",
+      "Idempotency-Key",
       "X-Request-ID",
       "X-Session-ID"
     ]

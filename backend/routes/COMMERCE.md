@@ -40,7 +40,7 @@ Configure these in Render **Environment** as secrets/configuration values before
 
 - `FLW_SECRET_KEY` — Flutterwave test secret key while sandbox testing.
 - `FLW_SECRET_HASH` — exact webhook secret hash configured in Flutterwave.
-- `FLW_REDIRECT_URL` — HTTPS URL in the storefront that handles return navigation.
+- `FLW_REDIRECT_URL` — HTTPS URL for the deployed `market.html` storefront; it receives the provider return and polls the server-side order status by `tx_ref`. The browser return status is never treated as proof of payment.
 - `COMMERCE_ADMIN_USER_IDS` — comma-separated numeric user IDs allowed to manage products.
 
 `POST /api/commerce/checkout` accepts `{"items":[{"productId":1,"quantity":1}],"addressId":123}`. Physical products require an address ID owned by the signed-in account; the server stores an address snapshot on the order. Digital/non-shipping products may omit it. It requires an `Idempotency-Key` header containing 16–128 characters from `A-Z`, `a-z`, `0-9`, `.`, `_`, `:`, or `-`. Generate a fresh random key (for example, a UUID) for each new checkout attempt and reuse that same key only when retrying the exact same cart, address ID, and coupon. The key is scoped to the signed-in account: repeating it with the same request returns the existing hosted checkout instead of creating a second order; reusing it for different cart/address/coupon details returns `409 IDEMPOTENCY_KEY_REUSED`. Do not reuse a key after the cart or delivery details change. It creates a pending database order and returns a hosted checkout URL only after the provider accepts the request. If payment credentials are missing, it fails closed with `503 PAYMENT_PROVIDER_NOT_CONFIGURED`.
