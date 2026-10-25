@@ -15,3 +15,6 @@
 
 .seller-order-actions input{min-width:0;max-width:170px;border:1px solid var(--line);border-radius:8px;padding:8px;background:#fff;color:var(--ink);font-size:12px}.seller-order-actions{flex-wrap:wrap}
 @media(max-width:760px){.seller-order-actions input{width:100%;max-width:none}}
+
+.product-edit-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:0 0 14px;padding:16px;border:1px solid var(--line);border-radius:12px;background:#f9fafb}.product-edit-form label{display:grid;gap:6px;font-size:12px;font-weight:700}.product-edit-form input,.product-edit-form textarea,.product-edit-form select{width:100%;min-width:0;border:1px solid var(--line);border-radius:8px;padding:9px;background:#fff;color:var(--ink);font:inherit}.product-edit-form .product-checkbox{display:flex;align-items:center;gap:8px}.product-edit-form .product-checkbox input{width:auto}.product-edit-form button{justify-self:start}
+@media(max-width:620px){.product-edit-form{grid-template-columns:1fr}}
