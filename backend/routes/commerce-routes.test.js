@@ -1022,7 +1022,7 @@ test("checkout idempotency rejects reusing a key for different cart details", as
   app.use(express.json());
   app.use("/api/commerce",createCommerceRouter({
     pool:appPool,authenticateToken:(req,res,next)=>{req.user={id:7,email:"buyer@example.com"};next();},
-    env:{FLW_SECRET_KEY:"test-secret",FLW_SECRET_HASH:"test-hash"},
+    env:{FLW_SECRET_KEY:"test-secret",FLW_SECRET_HASH:"test-hash",FLW_REDIRECT_URL:"https://market.example.test/return"},
     fetchImpl:async()=>{throw new Error("Provider must not be called.");}
   }));
   await withServer(app,async base=>{
