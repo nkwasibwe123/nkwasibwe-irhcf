@@ -99,7 +99,7 @@ test("photo animation runs FFmpeg and verifies an MP4 output signature", async (
 
 test("photo animation API is authenticated, bounded and returns an MP4 download", () => {
   const root = path.join(__dirname, "..", "..");
-  const server = fs.readFileSync(path.join(root, "server.js"), "utf8");
+  const server = fs.readFileSync(path.join(root, "backend", "server.js"), "utf8");
   const app = fs.readFileSync(path.join(root, "..", "app.js"), "utf8");
   const html = fs.readFileSync(path.join(root, "..", "index.html"), "utf8");
   assert.match(server, /app\.post\("\/api\/media\/video\/photo-animation",\s*authenticateToken/);
