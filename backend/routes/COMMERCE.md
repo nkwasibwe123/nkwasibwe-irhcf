@@ -8,6 +8,8 @@ The commerce API is mounted at `/api/commerce`.
 - `POST /api/commerce/products` — create a product; requires an authenticated user whose numeric ID is listed in `COMMERCE_ADMIN_USER_IDS` (comma-separated).
 - `PATCH /api/commerce/products/:productId` — update an existing product; same administrator allowlist.
 - `GET /api/commerce/cart` — read the signed-in user's persisted cart.
+- `GET /api/commerce/addresses`, `POST /api/commerce/addresses`, `PUT /api/commerce/addresses/:addressId/default`, `DELETE /api/commerce/addresses/:addressId` — private account-owned delivery address book.
+- `GET /api/commerce/orders/:orderId` — order details and line items; the order must belong to the signed-in account.
 - `GET /api/commerce/wishlist` and `PUT /api/commerce/wishlist/:productId` with `{"saved":true|false}` — private, account-scoped favourites.
 - `GET /api/commerce/products/:productId/reviews` — public product reviews.
 - `POST /api/commerce/products/:productId/reviews` — create/update a 1–5 star review; the same account must have a confirmed paid order containing that product.
@@ -25,7 +27,7 @@ Configure these in Render **Environment** as secrets/configuration values before
 - `FLW_REDIRECT_URL` — HTTPS URL in the storefront that handles return navigation.
 - `COMMERCE_ADMIN_USER_IDS` — comma-separated numeric user IDs allowed to manage products.
 
-`POST /api/commerce/checkout` accepts `{"items":[{"productId":1,"quantity":1}]}`. It creates a pending database order and returns a hosted checkout URL only after the provider accepts the request. If payment credentials are missing, it fails closed with `503 PAYMENT_PROVIDER_NOT_CONFIGURED`.
+`POST /api/commerce/checkout` accepts `{"items":[{"productId":1,"quantity":1}],"addressId":123}`. Physical products require an address ID owned by the signed-in account; the server stores an address snapshot on the order. Digital/non-shipping products may omit it. It creates a pending database order and returns a hosted checkout URL only after the provider accepts the request. If payment credentials are missing, it fails closed with `503 PAYMENT_PROVIDER_NOT_CONFIGURED`.
 
 Set the Flutterwave webhook destination to `https://nkwasibwe-irhcf.onrender.com/api/commerce/webhook/flutterwave`. The webhook validates the `verif-hash` header, asks Flutterwave to verify the transaction server-side, and compares transaction reference, amount, and currency before marking an order paid. Do not mark an order paid from the browser redirect.
 
