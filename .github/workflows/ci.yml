@@ -30,7 +30,7 @@ jobs:
       - name: Report backend dependency audit findings
         shell: bash
         run: |
-          npm audit --json --prefix backend > /tmp/irhcf-backend-audit.json || true
+          (cd backend && npm audit --json) > /tmp/irhcf-backend-audit.json || true
           node - <<'NODE'
           const fs = require("node:fs");
           let report = {};
@@ -40,6 +40,7 @@ jobs:
             console.log("Backend dependency audit did not return parseable JSON.");
             process.exit(0);
           }
+          if (report.error) console.log("AUDIT_ERROR", JSON.stringify(report.error));
           console.log("Backend dependency audit totals:", JSON.stringify(report.metadata?.vulnerabilities || {}));
           for (const [name, item] of Object.entries(report.vulnerabilities || {})) {
             const via = (item.via || []).map(entry => typeof entry === "string" ? entry : {
