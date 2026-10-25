@@ -17,7 +17,23 @@ Each feature needs a research record with:
 
 Do not copy source code, proprietary design, branding or protected assets. Learn from public capabilities and build an original Nkwasibwe experience. If fewer than five meaningful sources can be found, document the gap and do not mark research complete.
 
-## 2. Product hierarchy
+## 2. Research record index
+
+Use these feature-specific records as the starting point for the five-source research gate. Each record defines a synthesis and acceptance criteria; it does not prove implementation or production readiness.
+
+- Software & Website Factory: the feature research section in this document.
+- Agents & Automation: research/AGENT_ORCHESTRATION_RESEARCH.md
+- Nkwasibwe Market: research/MARKETPLACE_RESEARCH.md
+- Social & Communication: research/SOCIAL_COMMUNITY_RESEARCH.md
+- Media Studio: research/MEDIA_STUDIO_RESEARCH.md
+- Research & Search: research/RESEARCH_SEARCH_WORKSPACE.md
+- Chat & Personal Assistant: research/CHAT_ASSISTANT_RESEARCH.md
+- Files & Knowledge: research/FILES_KNOWLEDGE_WORKSPACE.md
+- Download Manager / Media Saver: research/DOWNLOAD_MANAGER_RESEARCH.md
+
+Before implementation, refresh sources for current product/API availability and record the retrieval date, especially for provider-backed features. If a provider or endpoint has been retired, the feature must be gated or migrated rather than advertised as available.
+
+## 3. Product hierarchy
 
 The hierarchy can grow deeper when justified, but every level needs a clear parent, purpose, owner and acceptance tests.
 
