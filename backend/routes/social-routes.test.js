@@ -98,3 +98,33 @@ test("conversation listing is scoped to the authenticated member",async()=>{
     assert.deepEqual(params,[7]);
   });
 });
+
+
+test("feed response query exposes the current user's selected reaction",async()=>{
+  let sql="";
+  const pool={query:async(q)=>{sql=q;return {rows:[]};}};
+  await withServer(appFor(pool),async base=>{
+    const r=await fetch(base+"/api/social/feed");
+    assert.equal(r.status,200);
+    assert.match(sql,/AS my_reaction/);
+  });
+});
+
+test("reaction endpoint saves supported reactions and removes a reaction with none",async()=>{
+  const statements=[];
+  const pool={query:async(sql,params)=>{
+    statements.push({sql,params});
+    if(/SELECT id FROM social_posts p WHERE id=\$1/.test(sql)) return {rows:[{id:"9"}]};
+    return {rows:[]};
+  }};
+  await withServer(appFor(pool),async base=>{
+    let r=await fetch(base+"/api/social/posts/9/reaction",{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({reaction:"love"})});
+    assert.equal(r.status,200);
+    assert.equal((await r.json()).reaction,"love");
+    r=await fetch(base+"/api/social/posts/9/reaction",{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({reaction:"none"})});
+    assert.equal(r.status,200);
+    assert.equal((await r.json()).reaction,null);
+    assert.ok(statements.some(item=>/INSERT INTO social_post_reactions/.test(item.sql)));
+    assert.ok(statements.some(item=>/DELETE FROM social_post_reactions/.test(item.sql)));
+  });
+});
