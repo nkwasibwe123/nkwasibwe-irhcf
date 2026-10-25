@@ -523,11 +523,19 @@ function createSocialRouter({ pool, authenticateToken } = {}) {
       if(!member.rows.length) return fail(res,404,"Conversation not found.");
       const beforeId=validId(req.query.beforeId)?Number(req.query.beforeId):null;
       const result=await pool.query(
-        `SELECT id,conversation_id,sender_id,body,created_at FROM (
+        `SELECT recent.id,recent.conversation_id,recent.sender_id,recent.body,recent.created_at,
+                (SELECT COUNT(*)::int FROM social_conversation_members recipient
+                 WHERE recipient.conversation_id=recent.conversation_id
+                   AND recipient.user_id<>recent.sender_id
+                   AND recipient.last_read_at>=recent.created_at) AS read_by_count,
+                (SELECT COUNT(*)::int FROM social_conversation_members recipient
+                 WHERE recipient.conversation_id=recent.conversation_id
+                   AND recipient.user_id<>recent.sender_id) AS recipient_count
+         FROM (
            SELECT id,conversation_id,sender_id,body,created_at FROM social_messages
            WHERE conversation_id=$1 AND ($2::bigint IS NULL OR id<$2)
            ORDER BY id DESC LIMIT $3
-         ) recent ORDER BY id ASC`,
+         ) recent ORDER BY recent.id ASC`,
         [req.params.conversationId,beforeId,limit]
       );
       await pool.query("UPDATE social_conversation_members SET last_read_at=NOW() WHERE conversation_id=$1 AND user_id=$2",[req.params.conversationId,userId(req)]);
