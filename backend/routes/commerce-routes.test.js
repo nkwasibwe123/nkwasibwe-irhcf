@@ -497,7 +497,7 @@ test("seller payout requests are scoped to the approved seller and limited to av
     if(sql.includes("INSERT INTO commerce_payout_requests")){insertParams=params;return{rows:[{id:"12",seller_user_id:params[0],amount_minor:params[1],currency:params[2],destination_reference:params[3],status:"pending"}]};}
     return{rows:[]};
   },release(){}};
-  app.use("/api/commerce",createCommerceRouter({pool:{async connect(){return client;}},authenticateToken:(req,res,next)=>{req.user={id:33,email:"seller@example.com"};next();},env:{}}));
+  app.use("/api/commerce",createCommerceRouter({pool:{async connect(){return client;},async query(){return{rows:[]};}},authenticateToken:(req,res,next)=>{req.user={id:33,email:"seller@example.com"};next();},env:{}}));
   await withServer(app,async base=>{
     const response=await fetch(base+"/api/commerce/seller/payout-requests",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({amountMinor:4000,currency:"RWF",destinationReference:"subacct_123"})});
     assert.equal(response.status,201);assert.equal(insertParams[0],33);assert.equal(insertParams[1],4000);assert.equal((await response.json()).payoutRequest.status,"pending");
