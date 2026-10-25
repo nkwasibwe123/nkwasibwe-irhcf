@@ -566,3 +566,27 @@ test("profile supports personal interests and a private professional-document va
   for(const field of ["education","skills","languages","employment_history"])assert.ok(route.includes(field),"missing career profile field: "+field);
   for(const id of ["socialEducation","socialSkills","socialLanguages","socialEmploymentHistory"])assert.ok(html.includes('id="'+id+'"'),"missing career profile UI: "+id);
 });
+
+
+test("Nkwasibwe Market includes searchable categories, account-private favourites, verified-buyer reviews and isolated checkout identity", () => {
+  const root = path.join(__dirname, "..", "..");
+  const html = fs.readFileSync(path.join(root, "market.html"), "utf8");
+  const js = fs.readFileSync(path.join(root, "market.js"), "utf8");
+  const css = fs.readFileSync(path.join(root, "market.css"), "utf8");
+  const routes = fs.readFileSync(path.join(root, "backend", "routes", "commerce-routes.js"), "utf8");
+  assert.match(html, /id="productSearch"/);
+  assert.match(html, /id="categoryFilter"/);
+  assert.match(html, /id="productSort"/);
+  assert.match(html, /id="wishlistList"/);
+  assert.match(html, /My orders &amp; payments|My orders & payments/);
+  assert.match(js, /\/wishlist/);
+  assert.match(js, /\/products\/\+encodeURIComponent\(product\.id\)\+"\/reviews"/);
+  assert.match(js, /verified-buyer|Review after purchase/);
+  assert.match(css, /\.market-filters/);
+  assert.match(routes, /CREATE TABLE IF NOT EXISTS commerce_wishlist_items/);
+  assert.match(routes, /CREATE TABLE IF NOT EXISTS commerce_product_reviews/);
+  assert.match(routes, /WHERE w\.user_id=\$1/);
+  assert.match(routes, /o\.user_id=\$1 AND oi\.product_id=\$2 AND o\.status='paid'/);
+  assert.match(routes, /const customerEmail = String\(req\.user\.email \|\| ""\)/);
+  assert.doesNotMatch(routes, /req\.user\.email \|\| req\.body\?\.email/);
+});
