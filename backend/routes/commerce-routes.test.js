@@ -242,7 +242,7 @@ test("hosted checkout uses the authenticated account email, never a browser-supp
     env:{FLW_SECRET_KEY:"test-secret",FLW_SECRET_HASH:"test-hash",FLW_REDIRECT_URL:"https://market.example.test/return"}
   }));
   await withServer(app,async base=>{
-    const response=await fetch(base+"/api/commerce/checkout",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:"attacker@example.com",items:[{productId:5,quantity:1}]})});
+    const response=await fetch(base+"/api/commerce/checkout",{method:"POST",headers:{"Content-Type":"application/json","Idempotency-Key":"test-checkout-key-0001"},body:JSON.stringify({email:"attacker@example.com",items:[{productId:5,quantity:1}]})});
     assert.equal(response.status,201);assert.equal(providerPayload.customer.email,"account@example.com");assert.equal(providerPayload.meta.user_id,"8");assert.equal(providerPayload.configuration.session_duration,30);assert.equal(providerPayload.configuration.max_retry_attempt,3);assert.ok(providerPayload.link_expiration);
   });
 });
@@ -272,7 +272,7 @@ test("checkout rejects a shipping address that does not belong to the signed-in 
     env:{FLW_SECRET_KEY:"test-secret",FLW_SECRET_HASH:"test-hash",FLW_REDIRECT_URL:"https://market.example.test/return"}
   }));
   await withServer(app,async base=>{
-    const response=await fetch(base+"/api/commerce/checkout",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({addressId:999,items:[{productId:5,quantity:1}]})});
+    const response=await fetch(base+"/api/commerce/checkout",{method:"POST",headers:{"Content-Type":"application/json","Idempotency-Key":"test-checkout-key-0002"},body:JSON.stringify({addressId:999,items:[{productId:5,quantity:1}]})});
     assert.equal(response.status,400);assert.equal((await response.json()).code,"SHIPPING_ADDRESS_NOT_FOUND");assert.equal(providerCalled,false);
   });
 });
@@ -424,7 +424,7 @@ test("checkout charges the exact quoted coupon, shipping and tax total", async (
     env:{FLW_SECRET_KEY:"test-secret",FLW_SECRET_HASH:"test-hash",FLW_REDIRECT_URL:"https://market.example.test/return",COMMERCE_SHIPPING_RATES_JSON:'{"Rwanda":{"RWF":1000}}',COMMERCE_TAX_BPS:"1000"}
   }));
   await withServer(app,async base=>{
-    const response=await fetch(base+"/api/commerce/checkout",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({addressId:21,couponCode:"SAVE20",items:[{productId:4,quantity:1}]})});
+    const response=await fetch(base+"/api/commerce/checkout",{method:"POST",headers:{"Content-Type":"application/json","Idempotency-Key":"test-checkout-key-0003"},body:JSON.stringify({addressId:21,couponCode:"SAVE20",items:[{productId:4,quantity:1}]})});
     assert.equal(response.status,201);const body=await response.json();assert.equal(body.totalMinor,9900);assert.equal(body.shippingMinor,1000);assert.equal(body.taxMinor,900);assert.equal(providerPayload.amount,9900);assert.equal(orderParams[3],9900);assert.equal(orderParams[4],10000);assert.equal(orderParams[5],2000);assert.equal(orderParams[6],1000);assert.equal(orderParams[7],900);assert.equal(orderParams[8],1000);assert.equal(orderParams[9],0);assert.equal(orderParams[10],"SAVE20");
   });
 });
@@ -922,4 +922,113 @@ test("marketplace order details, receipt and refund lookup cannot cross account 
     assert.match(call.sql, /user_id\s*=\s*\$2/i);
     assert.equal(String(call.params[1]), "88");
   }
+});
+
+
+test("checkout requires an idempotency key before opening a database transaction", async () => {
+  const app = express();
+  app.use(express.json());
+  app.use("/api/commerce", createCommerceRouter({
+    pool: { async query() { throw new Error("Database must not be queried without an idempotency key."); } },
+    authenticateToken: (req,res,next) => { req.user={id:7,email:"buyer@example.com"}; next(); },
+    env: { FLW_SECRET_KEY:"test-secret", FLW_SECRET_HASH:"test-hash", FLW_REDIRECT_URL:"https://market.example.test/return" },
+    fetchImpl: async () => { throw new Error("Provider must not be called."); }
+  }));
+  await withServer(app, async base => {
+    const response = await fetch(base + "/api/commerce/checkout", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({items:[{productId:1,quantity:1}]})
+    });
+    assert.equal(response.status,400);
+    assert.equal((await response.json()).code,"IDEMPOTENCY_KEY_REQUIRED");
+  });
+});
+
+test("checkout idempotency returns the existing hosted checkout instead of creating a second order", async () => {
+  const app = express();
+  const crypto = require("node:crypto");
+  const fingerprint = crypto.createHash("sha256").update(JSON.stringify({
+    items:[{productId:1,quantity:1}], addressId:null, couponCode:null
+  })).digest("hex");
+  let providerCalls = 0;
+  let transactionCommands = [];
+  const existingOrder = {
+    id:"order-7",tx_ref:"irhcf_existing_ref",status:"pending",currency:"RWF",
+    total_minor:1000,subtotal_minor:1000,discount_minor:0,shipping_minor:0,tax_minor:0,
+    tax_rate_bps:0,platform_fee_bps:500,coupon_code:null,
+    checkout_url:"https://checkout.example.test/existing",request_fingerprint:fingerprint
+  };
+  const client = {
+    async query(sql) {
+      transactionCommands.push(sql);
+      if (sql === "BEGIN" || sql === "ROLLBACK") return {rows:[]};
+      if (sql.includes("FROM commerce_orders WHERE user_id=$1 AND idempotency_key=$2 FOR UPDATE")) return {rows:[existingOrder]};
+      throw new Error("Existing idempotency key must short-circuit before product locks or new order inserts.");
+    },
+    release() {}
+  };
+  const appPool = {
+    async query(sql) {
+      if (sql.includes("FROM commerce_orders WHERE status='pending' AND expires_at<=")) return {rows:[]};
+      throw new Error("No other database query is expected.");
+    },
+    async connect() { return client; }
+  };
+  app.use(express.json());
+  app.use("/api/commerce", createCommerceRouter({
+    pool:appPool,
+    authenticateToken:(req,res,next)=>{req.user={id:7,email:"buyer@example.com"};next();},
+    env:{FLW_SECRET_KEY:"test-secret",FLW_SECRET_HASH:"test-hash",FLW_REDIRECT_URL:"https://market.example.test/return"},
+    fetchImpl:async()=>{providerCalls++;throw new Error("Existing checkout must be reused.");}
+  }));
+  await withServer(app,async base=>{
+    const response=await fetch(base+"/api/commerce/checkout",{
+      method:"POST",
+      headers:{"Content-Type":"application/json","Idempotency-Key":"same-checkout-key-0001"},
+      body:JSON.stringify({items:[{productId:1,quantity:1}]})
+    });
+    assert.equal(response.status,200);
+    const payload=await response.json();
+    assert.equal(payload.checkoutUrl,"https://checkout.example.test/existing");
+    assert.equal(payload.idempotentReplay,true);
+    assert.equal(payload.paymentStatus,"pending");
+    assert.equal(providerCalls,0);
+    assert.ok(transactionCommands.includes("ROLLBACK"));
+  });
+});
+
+test("checkout idempotency rejects reusing a key for different cart details", async () => {
+  const app = express();
+  const crypto = require("node:crypto");
+  const fingerprint = crypto.createHash("sha256").update(JSON.stringify({
+    items:[{productId:1,quantity:1}], addressId:null, couponCode:null
+  })).digest("hex");
+  const client = {
+    async query(sql) {
+      if (sql === "BEGIN" || sql === "ROLLBACK") return {rows:[]};
+      if (sql.includes("FROM commerce_orders WHERE user_id=$1 AND idempotency_key=$2 FOR UPDATE")) return {rows:[{
+        id:"order-7",tx_ref:"irhcf_existing_ref",status:"pending",currency:"RWF",
+        total_minor:1000,subtotal_minor:1000,discount_minor:0,shipping_minor:0,tax_minor:0,
+        tax_rate_bps:0,platform_fee_bps:500,coupon_code:null,checkout_url:"https://checkout.example.test/existing",
+        request_fingerprint:fingerprint
+      }]};
+      throw new Error("Existing idempotency key must short-circuit.");
+    },
+    release() {}
+  };
+  const appPool={async query(sql){if(sql.includes("FROM commerce_orders WHERE status='pending' AND expires_at<="))return{rows:[]};throw new Error("Unexpected query");},async connect(){return client;}};
+  app.use(express.json());
+  app.use("/api/commerce",createCommerceRouter({
+    pool:appPool,authenticateToken:(req,res,next)=>{req.user={id:7,email:"buyer@example.com"};next();},
+    env:{FLW_SECRET_KEY:"test-secret",FLW_SECRET_HASH:"test-hash"},
+    fetchImpl:async()=>{throw new Error("Provider must not be called.");}
+  }));
+  await withServer(app,async base=>{
+    const response=await fetch(base+"/api/commerce/checkout",{
+      method:"POST",headers:{"Content-Type":"application/json","Idempotency-Key":"same-checkout-key-0002"},
+      body:JSON.stringify({items:[{productId:2,quantity:1}]})
+    });
+    assert.equal(response.status,409);
+    assert.equal((await response.json()).code,"IDEMPOTENCY_KEY_REUSED");
+  });
 });
