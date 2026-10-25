@@ -91,7 +91,8 @@ function isUsableTaskResult(result) {
   if (result === null || result === undefined) return false;
   if (typeof result === "string") return result.trim().length > 0;
   if (typeof result !== "object" || Array.isArray(result)) return false;
-  if (result.success === false) return false;
+  // Failed provider/orchestrator envelopes must not pass because they contain diagnostic text.
+  if (result.success === false || result.result?.success === false || result.error) return false;
   if (result.agent?.responseQuality?.verified === false) return false;
 
   // A verified file bundle is itself a deliverable. Some executors return the
