@@ -1016,19 +1016,24 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
       });
       const verified = await verifiedResponse.json();
       const data = verified?.data;
-      if (!verifiedResponse.ok || verified?.status !== "success" || data?.status !== "successful" || String(data?.tx_ref) !== txRef) {
+      if (!verifiedResponse.ok || verified?.status !== "success" || !data || String(data?.tx_ref) !== txRef) {
         return res.status(400).json({ success: false, error: "Payment could not be verified with the provider.", code: "PAYMENT_NOT_VERIFIED" });
       }
-      const orderResult = await pool.query("SELECT id, status, currency, total_minor, coupon_code FROM commerce_orders WHERE tx_ref=$1", [txRef]);
+      const orderResult = await pool.query("SELECT id, status, currency, total_minor, coupon_code, expires_at FROM commerce_orders WHERE tx_ref=$1", [txRef]);
       const order = orderResult.rows[0];
       if (!order) return res.status(404).json({ success: false, error: "Order not found.", code: "ORDER_NOT_FOUND" });
       if (order.status === "paid") return res.json({ success: true, duplicate: true });
+      if (["failed","cancelled"].includes(String(data.status))) {
+        if (order.status === "pending") await releaseOrderReservations(pool,order.id,"failed");
+        return res.json({ success: true, orderId: order.id, paymentStatus: "failed" });
+      }
+      if (data.status !== "successful") return res.status(400).json({ success: false, error: "Payment is not in a final successful state.", code: "PAYMENT_NOT_SUCCESSFUL" });
       const verifiedAmount = fromProviderAmount(data.amount, data.currency);
       if (String(data.currency) !== order.currency || verifiedAmount !== Number(order.total_minor)) {
         return res.status(400).json({ success: false, error: "Payment amount or currency does not match the order.", code: "PAYMENT_MISMATCH" });
       }
       const updated = await pool.query(
-        "WITH paid_order AS (UPDATE commerce_orders SET status='paid', provider_transaction_id=$2, paid_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=$1 AND status='pending' RETURNING id,coupon_code), coupon_update AS (UPDATE commerce_coupons c SET redeemed_count=c.redeemed_count+1 FROM paid_order p WHERE c.code=p.coupon_code AND p.coupon_code IS NOT NULL RETURNING c.id) SELECT id FROM paid_order",
+        "WITH paid_order AS (UPDATE commerce_orders SET status='paid', provider_transaction_id=$2, paid_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=$1 AND status='pending' RETURNING id,coupon_code), coupon_update AS (UPDATE commerce_coupons c SET redeemed_count=c.redeemed_count+1 FROM paid_order p WHERE c.code=p.coupon_code AND p.coupon_code IS NOT NULL RETURNING c.id), reservation_release AS (DELETE FROM commerce_stock_reservations r USING paid_order p WHERE r.order_id=p.id RETURNING r.order_id) SELECT id FROM paid_order",
         [order.id, String(transactionId)]
       );
       if (!updated.rows.length) return res.status(409).json({ success: false, error: "Order is no longer pending.", code: "ORDER_STATE_CONFLICT" });
@@ -1041,4 +1046,4 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
   return router;
 }
 
-module.exports = { MAX_ITEMS, MAX_QUANTITY, CURRENCIES, ensureCommerceSchema, createCommerceRouter, toProviderAmount, fromProviderAmount, calculateCouponDiscount, getShippingRateMinor, getTaxRateBps, calculateTaxMinor };
+module.exports = { MAX_ITEMS, MAX_QUANTITY, CURRENCIES, ensureCommerceSchema, createCommerceRouter, toProviderAmount, fromProviderAmount, calculateCouponDiscount, getShippingRateMinor, getTaxRateBps, calculateTaxMinor, releaseOrderReservations, releaseExpiredReservations };
