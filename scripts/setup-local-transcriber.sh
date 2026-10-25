@@ -17,10 +17,10 @@ mkdir -p "$(dirname "$ROOT")" "$MODEL_DIR"
 # binary/model pair instead of re-running CMake and downloading the model on
 # every npm install. If the cached binary fails its health check, rebuild it.
 if [ -x "$BIN" ] && [ -s "$MODEL_PATH" ] && "$BIN" --help >/dev/null 2>&1; then
-  printf '\\nUsing cached self-hosted transcription engine.\\n'
-  printf 'WHISPER_CPP_PATH=%s\\n' "$BIN"
-  printf 'WHISPER_MODEL_PATH=%s\\n' "$MODEL_PATH"
-  printf 'WHISPER_THREADS=%s\\n' "${WHISPER_THREADS:-2}"
+  printf '\nUsing cached self-hosted transcription engine.\n'
+  printf 'WHISPER_CPP_PATH=%s\n' "$BIN"
+  printf 'WHISPER_MODEL_PATH=%s\n' "$MODEL_PATH"
+  printf 'WHISPER_THREADS=%s\n' "${WHISPER_THREADS:-2}"
   exit 0
 fi
 
