@@ -40,3 +40,10 @@ This is a tracked engineering plan, not a claim that these features are already 
 
 ## Completion criteria
 A milestone is complete only when its code is committed, relevant automated tests pass, manual end-to-end checks pass where required, and limitations are visible to the user. A commit or a passing syntax check alone does not mean the full platform is complete.
+
+## Cross-cutting milestone — feature research and information architecture
+- [ ] Follow FEATURE_ARCHITECTURE.md before implementing each feature: research at least five distinct relevant products/websites and record evidence, comparisons, trade-offs and acceptance tests.
+- [ ] Maintain a stable hierarchy from platform → main domain → feature → sub-feature → action, with ownership, permissions, route, dependencies and verified status.
+- [ ] Keep the main dashboard limited to major workspaces, recent/pinned work, global search and genuine attention items; expose deeper controls only inside their relevant workspace/feature page.
+- [ ] Keep task activity in its relevant feature dashboard (Recent / Running / Succeeded / Failed), not as a wall of status cards in general chat.
+- [ ] Test the information architecture on mobile and verify all navigation destinations and controls actually work.
