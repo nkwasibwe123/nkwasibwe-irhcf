@@ -522,3 +522,12 @@ test("assistant answers expose action controls and long-form length specificatio
   assert.match(app, /5000/);
   assert.match(app, /20000/);
 });
+
+test("Chat with Friends supports selected-member group creation and visible-tab message refresh",()=>{
+  const html=fs.readFileSync(path.join(__dirname,"..","..","friends.html"),"utf8");
+  assert.match(html,/id="groupChatForm"/);
+  assert.match(html,/participantIds,title:/);
+  assert.match(html,/window\.setInterval/);
+  assert.match(html,/document\.visibilityState!=="visible"/);
+  assert.match(html,/Select for group/);
+});
