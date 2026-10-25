@@ -8537,13 +8537,13 @@ async function checkVideoProviderAvailability() {
   try {
     const status = await apiRequest(API_ENDPOINTS.videoGenerationStatus);
     if (status?.available === true) return true;
-    const message = String(status?.message || "HD video generation is unavailable until a supported provider is connected.").slice(0, 600);
+    const message = String(status?.message || "Gukora video ya HD ntibishoboka kugeza serivisi ya video yemejwe ihujwe.").slice(0, 600);
     setDashboardStatus(message);
     setStatus(message, "normal");
     addMessage(message, "ai");
     return false;
   } catch {
-    const message = "Video provider status could not be verified. To avoid a failed or paid request to an unsupported provider, video generation has been paused.";
+    const message = "Ntibyashobotse kugenzura uko serivisi ya video ihagaze. Kugira ngo tutohereza ubusabe kuri serivisi idakora cyangwa ishobora gukoresha amafaranga, guhimba video byahagaritswe.";
     setDashboardStatus(message);
     setStatus(message, "normal");
     addMessage(message, "ai");
