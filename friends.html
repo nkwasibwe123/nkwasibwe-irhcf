@@ -262,7 +262,30 @@
     try{
       const data=await request("/api/social/conversations/"+encodeURIComponent(activeConversation)+"/messages?limit=50");
       messageList.replaceChildren();
-      (data.messages||[]).forEach(m=>{const bubble=node("div","message-bubble"+(Number(m.sender_id)===currentUserId?" mine":""),m.body);bubble.title=m.created_at?new Date(m.created_at).toLocaleString():"";messageList.append(bubble);});
+      (data.messages||[]).forEach(m=>{
+        const mine=Number(m.sender_id)===currentUserId;
+        const row=node("div","message-row");
+        const bubble=node("div","message-bubble"+(mine?" mine":""),m.body);
+        bubble.title=m.created_at?new Date(m.created_at).toLocaleString():"";
+        row.append(bubble);
+        if(mine){
+          const remove=node("button","feed-action message-delete","Delete");
+          remove.type="button";
+          remove.setAttribute("aria-label","Delete your message");
+          remove.addEventListener("click",async()=>{
+            if(!window.confirm("Delete this message? This cannot be undone."))return;
+            remove.disabled=true;
+            try{
+              await request("/api/social/conversations/"+encodeURIComponent(activeConversation)+"/messages/"+encodeURIComponent(m.id),{method:"DELETE"});
+              await loadMessages();
+              await loadConversations();
+              say("Message deleted.");
+            }catch(e){say(e.message);remove.disabled=false;}
+          });
+          row.append(remove);
+        }
+        messageList.append(row);
+      });
       if(!data.messages||!data.messages.length)messageList.append(node("p","feed-empty","No messages yet. Say hello."));
       messageList.scrollTop=messageList.scrollHeight;
     }catch(e){messageList.replaceChildren(node("p","feed-empty",e.message));}
