@@ -635,7 +635,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
   router.get("/orders", authenticateToken, async (req, res) => {
     try {
       const result = await pool.query(
-        "SELECT id, tx_ref, status, currency, total_minor, provider, checkout_url, shipping_address, created_at, updated_at, paid_at FROM commerce_orders WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100",
+        "SELECT id, tx_ref, status, currency, total_minor, subtotal_minor, discount_minor, coupon_code, provider, checkout_url, shipping_address, created_at, updated_at, paid_at FROM commerce_orders WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100",
         [req.user.id]
       );
       return res.json({ success: true, orders: result.rows });
@@ -648,7 +648,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
     const orderId = safeInteger(req.params.orderId, 1, Number.MAX_SAFE_INTEGER);
     if (!orderId) return res.status(400).json({ success: false, error: "Invalid order ID.", code: "ORDER_ID_INVALID" });
     try {
-      const result = await pool.query("SELECT id, tx_ref, status, currency, total_minor, provider, provider_transaction_id, checkout_url, shipping_address, created_at, updated_at, paid_at FROM commerce_orders WHERE id=$1 AND user_id=$2 LIMIT 1", [orderId, req.user.id]);
+      const result = await pool.query("SELECT id, tx_ref, status, currency, total_minor, subtotal_minor, discount_minor, coupon_code, provider, provider_transaction_id, checkout_url, shipping_address, created_at, updated_at, paid_at FROM commerce_orders WHERE id=$1 AND user_id=$2 LIMIT 1", [orderId, req.user.id]);
       if (!result.rows.length) return res.status(404).json({ success: false, error: "Order not found.", code: "ORDER_NOT_FOUND" });
       const items = await pool.query("SELECT product_id, product_name, quantity, unit_price_minor, line_total_minor, fulfillment_status FROM commerce_order_items WHERE order_id=$1 ORDER BY id", [orderId]);
       return res.json({ success: true, order: result.rows[0], items: items.rows });
@@ -686,6 +686,9 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
     let orderId;
     let txRef;
     let totalMinor;
+    let subtotalMinor;
+    let discountMinor = 0;
+    let couponCode = String(req.body?.couponCode || "").trim().toUpperCase().slice(0, 40) || null;
     let currency;
     try {
       await client.query("BEGIN");
@@ -740,14 +743,33 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
         }
         items.push({ product, quantity, unit, line: unit * quantity });
       }
+      subtotalMinor = totalMinor;
+      if (subtotalMinor <= 0) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ success: false, code: "TOTAL_INVALID", error: "Order subtotal must be greater than zero." });
+      }
+      if (couponCode) {
+        const couponResult = await client.query("SELECT id,code,discount_type,discount_value,currency,min_subtotal_minor FROM commerce_coupons WHERE code=$1 AND active=TRUE AND (starts_at IS NULL OR starts_at<=CURRENT_TIMESTAMP) AND (expires_at IS NULL OR expires_at>CURRENT_TIMESTAMP) FOR UPDATE", [couponCode]);
+        if (!couponResult.rows.length) {
+          await client.query("ROLLBACK");
+          return res.status(400).json({ success: false, code: "COUPON_INVALID", error: "Coupon is invalid, inactive or expired." });
+        }
+        const calculation = calculateCouponDiscount(couponResult.rows[0], subtotalMinor, currency);
+        if (calculation.error) {
+          await client.query("ROLLBACK");
+          return res.status(400).json({ success: false, code: "COUPON_NOT_APPLICABLE", error: calculation.error });
+        }
+        discountMinor = calculation.discountMinor;
+      }
+      totalMinor = subtotalMinor - discountMinor;
       if (totalMinor <= 0) {
         await client.query("ROLLBACK");
-        return res.status(400).json({ success: false, code: "TOTAL_INVALID", error: "Order total must be greater than zero." });
+        return res.status(400).json({ success: false, code: "TOTAL_INVALID", error: "Discounted order total must be greater than zero." });
       }
       txRef = "irhcf_" + crypto.randomUUID();
       const order = await client.query(
-        "INSERT INTO commerce_orders (user_id, tx_ref, status, currency, total_minor, provider, shipping_address) VALUES ($1,$2,'pending',$3,$4,'flutterwave',$5::jsonb) RETURNING id",
-        [req.user.id, txRef, currency, totalMinor, shippingAddress ? JSON.stringify(shippingAddress) : null]
+        "INSERT INTO commerce_orders (user_id, tx_ref, status, currency, total_minor, subtotal_minor, discount_minor, coupon_code, provider, shipping_address) VALUES ($1,$2,'pending',$3,$4,$5,$6,$7,'flutterwave',$8::jsonb) RETURNING id",
+        [req.user.id, txRef, currency, totalMinor, subtotalMinor, discountMinor, couponCode, shippingAddress ? JSON.stringify(shippingAddress) : null]
       );
       orderId = order.rows[0].id;
       for (const item of items) {
@@ -793,7 +815,7 @@ function createCommerceRouter({ pool, authenticateToken, fetchImpl = globalThis.
         return res.status(502).json({ success: false, code: "CHECKOUT_PROVIDER_FAILED", error: "Payment provider did not create a valid hosted checkout." });
       }
       await pool.query("UPDATE commerce_orders SET checkout_url=$2, updated_at=CURRENT_TIMESTAMP WHERE id=$1 AND status='pending'", [orderId, checkoutUrl]);
-      return res.status(201).json({ success: true, orderId, txRef, currency, totalMinor, checkoutUrl, paymentStatus: "pending" });
+      return res.status(201).json({ success: true, orderId, txRef, currency, subtotalMinor, discountMinor, totalMinor, couponCode, checkoutUrl, paymentStatus: "pending" });
     } catch (error) {
       await pool.query("UPDATE commerce_orders SET status='failed', updated_at=CURRENT_TIMESTAMP WHERE id=$1 AND status='pending'", [orderId]);
       return res.status(502).json({ success: false, code: "CHECKOUT_PROVIDER_UNAVAILABLE", error: "Payment provider could not be reached. No payment has been confirmed." });
