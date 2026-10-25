@@ -287,7 +287,7 @@ function createSocialRouter({ pool, authenticateToken } = {}) {
            AND NOT EXISTS(SELECT 1 FROM social_blocks b WHERE
              (b.blocker_id=$1 AND b.blocked_id=u.id) OR (b.blocker_id=u.id AND b.blocked_id=$1))
          ORDER BY COALESCE(p.display_name,u.name) LIMIT 20`,
-        [userId(req),"%"+query.replace(/[\\%_]/g,"\\  router.get("/conversations", async (req,res,next) => {")+"%"]
+        [userId(req), "%" + query + "%"]
       );
       return res.json({success:true,people:result.rows});
     } catch(error){return next(error);}
