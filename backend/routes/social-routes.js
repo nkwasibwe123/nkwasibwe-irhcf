@@ -119,6 +119,7 @@ function createSocialRouter({ pool, authenticateToken } = {}) {
       const result = await pool.query(
         `SELECT p.id,p.author_id,p.body,p.media,p.visibility,p.created_at,p.updated_at,
                 COALESCE(sp.display_name,u.name) AS author_name,
+                (p.author_id=$1) AS is_mine,
                 (SELECT COUNT(*)::int FROM social_post_comments c WHERE c.post_id=p.id) AS comment_count,
                 (SELECT COUNT(*)::int FROM social_post_reactions r WHERE r.post_id=p.id) AS reaction_count,
                 EXISTS(SELECT 1 FROM social_post_reactions r WHERE r.post_id=p.id AND r.user_id=$1) AS reacted_by_me
