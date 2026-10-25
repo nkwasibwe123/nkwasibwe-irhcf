@@ -64,3 +64,18 @@ test("photo animation runs FFmpeg and verifies an MP4 output signature", async (
     fs.rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test("photo animation API is authenticated, bounded and returns an MP4 download", () => {
+  const root = path.join(__dirname, "..", "..");
+  const server = fs.readFileSync(path.join(root, "server.js"), "utf8");
+  const app = fs.readFileSync(path.join(root, "..", "app.js"), "utf8");
+  const html = fs.readFileSync(path.join(root, "..", "index.html"), "utf8");
+  assert.match(server, /app\.post\("\/api\/media\/video\/photo-animation",\s*authenticateToken/);
+  assert.match(server, /detectPhotoImageType\(mimeType, imageBuffer\)/);
+  assert.match(server, /Content-Disposition.*nkwasibwe-photo-animation\.mp4/);
+  assert.match(server, /if \(tempDir\) await fs\.rm\(tempDir, \{ recursive: true, force: true \}\)/);
+  assert.match(app, /photoAnimation:\s*"\/api\/media\/video\/photo-animation"/);
+  assert.match(app, /async function animatePhotoLocally\(/);
+  assert.match(html, /Animate a Photo \(Local\)/);
+  assert.match(html, /FFmpeg/);
+});
