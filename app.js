@@ -342,12 +342,15 @@ const taskProgressCurrent = document.getElementById("taskProgressCurrent");
 const taskProgressNext = document.getElementById("taskProgressNext");
 const taskProgressStages = document.getElementById("taskProgressStages");
 const taskProgressResult = document.getElementById("taskProgressResult");
+const taskAgentActivity = document.getElementById("taskAgentActivity");
 const taskPublishPrompt = document.getElementById("taskPublishPrompt");
 const taskPublishYes = document.getElementById("taskPublishYes");
 const taskPublishNo = document.getElementById("taskPublishNo");
 const taskProgressUpdated = document.getElementById("taskProgressUpdated");
 const taskProgressOpenManager = document.getElementById("taskProgressOpenManager");
 let taskProgressBusy = false;
+let taskActivityBusy = false;
+let taskProgressCurrentTaskId = null;
 let taskProgressTimer = null;
 const TASK_PROGRESS_PROMPT_KEY = "nkwasibwe_task_publish_prompted";
 
@@ -9577,8 +9580,108 @@ function getTaskTimingSummary(task, progress, status) {
   return parts.join(" · ");
 }
 
+async function refreshTaskAgentActivity(taskId) {
+  const id = Number(taskId);
+  if (!taskAgentActivity || !Number.isSafeInteger(id) || id <= 0 || taskActivityBusy || !authToken) return;
+  taskActivityBusy = true;
+  try {
+    const response = await apiRequest(API_ENDPOINTS.tasks + "/" + id + "/activity", {
+      method: "GET",
+      timeoutMs: 10000
+    });
+    if (Number(taskProgressCurrentTaskId) !== id || !response?.success || !response.activity) return;
+    const activity = response.activity;
+    taskAgentActivity.replaceChildren();
+
+    const heading = document.createElement("div");
+    heading.className = "task-agent-activity-heading";
+    const title = document.createElement("strong");
+    title.textContent = "Nkwasibwe IRHCF · Live activity";
+    const state = document.createElement("span");
+    state.className = "task-agent-live-state";
+    state.textContent = String(activity.status || "UNKNOWN").replace(/_/g, " ");
+    heading.append(title, state);
+    taskAgentActivity.appendChild(heading);
+
+    const progressMessage = document.createElement("p");
+    progressMessage.className = "task-agent-activity-message";
+    progressMessage.textContent = activity.progressMessage || "Nkwasibwe iri gukurikirana intambwe iri gukorwa.";
+    taskAgentActivity.appendChild(progressMessage);
+
+    const agents = Array.isArray(activity.agents) ? activity.agents : [];
+    if (!agents.length) {
+      const empty = document.createElement("p");
+      empty.className = "task-agent-activity-empty";
+      empty.textContent = "Nta agent step irabikwa kuri iyi task; iyi status igaragaza gusa amakuru yemejwe na server.";
+      taskAgentActivity.appendChild(empty);
+      return;
+    }
+
+    const list = document.createElement("div");
+    list.className = "task-agent-activity-list";
+    for (const agent of agents.slice(0, 12)) {
+      const card = document.createElement("article");
+      card.className = "task-agent-activity-card";
+      const agentHeading = document.createElement("div");
+      agentHeading.className = "task-agent-activity-agent-heading";
+      const dot = document.createElement("span");
+      dot.className = "task-agent-live-dot";
+      const name = document.createElement("strong");
+      name.textContent = String(agent.goal || ("Agent #" + agent.id)).slice(0, 240);
+      const agentStatus = document.createElement("span");
+      agentStatus.className = "task-agent-activity-status";
+      agentStatus.textContent = String(agent.status || "unknown").replace(/_/g, " ");
+      if (["planning", "executing", "testing", "repairing", "verifying"].includes(String(agent.status || "").toLowerCase())) {
+        dot.classList.add("is-active");
+      }
+      agentHeading.append(dot, name, agentStatus);
+      card.appendChild(agentHeading);
+
+      const steps = Array.isArray(agent.steps) ? agent.steps : [];
+      for (const step of steps.slice(-5)) {
+        const row = document.createElement("div");
+        row.className = "task-agent-activity-step";
+        const phase = document.createElement("b");
+        phase.textContent = String(step.phase || "STEP").replace(/_/g, " ");
+        const description = document.createElement("span");
+        description.textContent = String(step.description || "Intambwe irakorwa…").slice(0, 500);
+        const stepStatus = document.createElement("small");
+        stepStatus.textContent = String(step.status || "pending").replace(/_/g, " ");
+        row.append(phase, description, stepStatus);
+        card.appendChild(row);
+        if (step.error) {
+          const error = document.createElement("p");
+          error.className = "task-agent-activity-error";
+          error.textContent = String(step.error).slice(0, 300);
+          card.appendChild(error);
+        }
+      }
+      if (agent.error) {
+        const error = document.createElement("p");
+        error.className = "task-agent-activity-error";
+        error.textContent = String(agent.error).slice(0, 300);
+        card.appendChild(error);
+      }
+      list.appendChild(card);
+    }
+    taskAgentActivity.appendChild(list);
+  } catch (error) {
+    if (Number(taskProgressCurrentTaskId) === id && taskAgentActivity) {
+      taskAgentActivity.replaceChildren();
+      const message = document.createElement("p");
+      message.className = "task-agent-activity-empty";
+      message.textContent = "Ntibyashobotse kuvugurura agent activity. Status nyamukuru iracyakurikiranwa.";
+      taskAgentActivity.appendChild(message);
+    }
+    console.warn("[IRHCF TASK ACTIVITY] Refresh failed:", error);
+  } finally {
+    taskActivityBusy = false;
+  }
+}
+
 function renderTaskProgress(task) {
   if (!taskProgressPanel || !task) return;
+  taskProgressCurrentTaskId = Number(task.id) || null;
   const status = String(task.status || "UNKNOWN").toUpperCase();
   const progress = status === "COMPLETED"
     ? 100
@@ -9612,6 +9715,7 @@ function renderTaskProgress(task) {
   if (taskProgressNext) taskProgressNext.innerHTML = "<strong>Ibikurikiraho:</strong> " + nextTaskStepLabel(activeStage, status);
   renderTaskProgressStages(activeStage, completed, failed);
   renderTaskArtifactButtons(task);
+  void refreshTaskAgentActivity(task.id);
   if (taskProgressUpdated) taskProgressUpdated.textContent = `Iheruka kugenzurwa: ${new Date().toLocaleTimeString()}`;
 
   const promptKey = `${TASK_PROGRESS_PROMPT_KEY}_${task.id}`;

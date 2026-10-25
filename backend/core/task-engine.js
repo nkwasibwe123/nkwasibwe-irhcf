@@ -1385,6 +1385,96 @@ function createTaskRouter({
     }
   });
 
+  // Account-scoped live activity feed. Do not return raw step inputs/outputs:
+  // those payloads may contain prompts, attachments, or provider credentials.
+  router.get("/:id/activity", authenticateToken, async (req, res) => {
+    const taskId = Number(req.params.id);
+    if (!Number.isSafeInteger(taskId) || taskId <= 0) {
+      return res.status(400).json({ success: false, code: "TASK_ID_INVALID", error: "Invalid task id." });
+    }
+
+    try {
+      const task = await engine.getTask(taskId, req.user.id);
+      if (!task) {
+        return res.status(404).json({ success: false, code: "TASK_NOT_FOUND", error: "Task not found." });
+      }
+      if (!engine.pool || typeof engine.pool.query !== "function") {
+        return res.status(503).json({ success: false, code: "TASK_ACTIVITY_UNAVAILABLE", error: "Task activity storage is unavailable." });
+      }
+
+      const [taskRunsResult, agentsResult, stepsResult] = await Promise.all([
+        engine.pool.query(
+          `SELECT id, run_number, status, error, started_at, completed_at
+           FROM task_runs WHERE task_id=$1 ORDER BY id DESC LIMIT 10`,
+          [taskId]
+        ),
+        engine.pool.query(
+          `SELECT id, goal, status, error, started_at, completed_at
+           FROM agent_runs WHERE task_id=$1 AND user_id=$2
+           ORDER BY id DESC LIMIT 50`,
+          [taskId, req.user.id]
+        ),
+        engine.pool.query(
+          `SELECT s.id, s.agent_run_id, s.step_number, s.phase, s.description,
+                  s.status, s.error, s.started_at, s.completed_at
+           FROM agent_steps s
+           INNER JOIN agent_runs a ON a.id=s.agent_run_id
+           WHERE a.task_id=$1 AND a.user_id=$2
+           ORDER BY s.id ASC LIMIT 100`,
+          [taskId, req.user.id]
+        )
+      ]);
+
+      const redact = value => String(value || "")
+        .replace(/Bearer\s+[^\s]+/gi, "Bearer [redacted]")
+        .replace(/(?:sk-[A-Za-z0-9_-]{12,}|(?:api[_-]?key|token|secret)\s*[:=]\s*[^\s,;]+)/gi, "[redacted]")
+        .slice(0, 1000);
+      const agents = (agentsResult.rows || []).map(agent => ({
+        id: agent.id,
+        goal: String(agent.goal || "").slice(0, 240),
+        status: agent.status,
+        error: agent.error ? redact(agent.error) : null,
+        startedAt: agent.started_at || null,
+        completedAt: agent.completed_at || null,
+        steps: (stepsResult.rows || [])
+          .filter(step => Number(step.agent_run_id) === Number(agent.id))
+          .map(step => ({
+            id: step.id,
+            number: step.step_number,
+            phase: step.phase,
+            description: String(step.description || "").slice(0, 500),
+            status: step.status,
+            error: step.error ? redact(step.error) : null,
+            startedAt: step.started_at || null,
+            completedAt: step.completed_at || null
+          }))
+      }));
+
+      return res.json({
+        success: true,
+        activity: {
+          taskId,
+          status: task.status,
+          progress: Number(task.progress) || 0,
+          progressMessage: String(task.progress_message || "").slice(0, 500),
+          updatedAt: task.updated_at || null,
+          taskRuns: (taskRunsResult.rows || []).map(run => ({
+            id: run.id,
+            runNumber: run.run_number,
+            status: run.status,
+            error: run.error ? redact(run.error) : null,
+            startedAt: run.started_at || null,
+            completedAt: run.completed_at || null
+          })),
+          agents
+        }
+      });
+    } catch (error) {
+      console.error("[TASK ACTIVITY] Could not load account-scoped activity:", error?.message || error);
+      return res.status(500).json({ success: false, code: "TASK_ACTIVITY_LOAD_FAILED", error: "Could not load task activity." });
+    }
+  });
+
   router.get("/:id/artifacts/:filename", authenticateToken, async (req, res) => {
     const taskId = Number(req.params.id);
     if (!Number.isInteger(taskId) || taskId <= 0) {

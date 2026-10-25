@@ -2799,3 +2799,30 @@ body { background: #fff; color: var(--text); }
 .message-save-edit[hidden] { display:none; }
 .message.ai[contenteditable="true"] { outline:2px solid var(--primary); border-radius:8px; padding:8px; white-space:pre-wrap; }
 @media (max-width:600px) { .message-actions { gap:5px; } .message-action-button { min-height:36px; padding:7px 8px; font-size:12px; } }
+
+
+/* Nkwasibwe IRHCF — truthful, account-scoped live agent activity */
+.task-agent-activity { margin-top: 14px; padding: 14px; border: 1px solid #dbe3ef; border-radius: 14px; background: #fbfcff; color: #172033; }
+.task-agent-activity-heading, .task-agent-activity-agent-heading { display:flex; align-items:center; gap:9px; flex-wrap:wrap; }
+.task-agent-activity-heading { justify-content:space-between; margin-bottom:8px; }
+.task-agent-activity-heading strong { font-size:13px; }
+.task-agent-live-state, .task-agent-activity-status { padding:4px 7px; border-radius:999px; background:#eef2ff; color:#3446a5; font-size:10px; font-weight:800; text-transform:uppercase; }
+.task-agent-activity-message { color:#344054; font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
+.task-agent-activity-empty { margin-top:8px; color:#667085; font-size:11px; line-height:1.5; }
+.task-agent-activity-list { display:grid; gap:9px; margin-top:10px; }
+.task-agent-activity-card { min-width:0; padding:10px; border:1px solid #e4e9f2; border-radius:10px; background:#fff; }
+.task-agent-activity-agent-heading { align-items:flex-start; }
+.task-agent-activity-agent-heading strong { flex:1; min-width:120px; font-size:12px; overflow-wrap:anywhere; }
+.task-agent-live-dot { width:8px; height:8px; margin-top:4px; border-radius:50%; background:#98a2b3; flex:0 0 auto; }
+.task-agent-live-dot.is-active { background:#16a34a; animation:irhcfAgentPulse 1.3s ease-in-out infinite; }
+.task-agent-activity-step { display:grid; grid-template-columns:80px minmax(0,1fr) auto; gap:8px; align-items:start; padding:8px 0 0; margin-top:7px; border-top:1px solid #eef1f6; font-size:11px; }
+.task-agent-activity-step b { color:#475467; font-size:10px; }
+.task-agent-activity-step span { color:#344054; overflow-wrap:anywhere; }
+.task-agent-activity-step small { color:#667085; text-align:right; }
+.task-agent-activity-error { margin-top:6px; color:#b42318; font-size:11px; overflow-wrap:anywhere; }
+@keyframes irhcfAgentPulse { 0%,100% { opacity:1; transform:scale(1); } 50% { opacity:.45; transform:scale(.82); } }
+@media (max-width:520px) {
+  .task-agent-activity { padding:10px; }
+  .task-agent-activity-step { grid-template-columns:1fr; gap:3px; }
+  .task-agent-activity-step small { text-align:left; }
+}
