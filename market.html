@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Nkwasibwe Market — browse products, manage your cart and securely check out.">
   <title>Nkwasibwe Market</title>
-  <link rel="stylesheet" href="market.css?v=1">
-  <script defer src="market.js?v=1"></script>
+  <link rel="stylesheet" href="market.css?v=2">
+  <script defer src="market.js?v=2"></script>
 </head>
 <body>
   <header class="market-header">
@@ -17,20 +17,26 @@
     <section class="intro">
       <p class="eyebrow">NKWASIBWE IRHCF</p>
       <h1>Shop with confidence.</h1>
-      <p>Browse the catalogue, keep a saved cart, and use hosted checkout when payment is configured.</p>
+      <p>Find products, compare ratings, save favourites, track orders, and check out through a hosted payment provider when configured.</p>
       <div id="authNotice" class="notice" role="status"></div>
     </section>
     <section class="catalogue">
-      <div class="section-heading"><div><h2>Products</h2><p>Prices and availability come from the server.</p></div><span id="productCount" class="count">0 items</span></div>
+      <div class="section-heading"><div><h2>Products</h2><p>Prices, stock and ratings come from the server.</p></div><span id="productCount" class="count">0 items</span></div>
+      <div class="market-filters">
+        <label>Search products<input id="productSearch" type="search" maxlength="120" placeholder="Search names, descriptions or SKU"></label>
+        <label>Category<select id="categoryFilter"><option value="">All categories</option></select></label>
+        <label>Sort by<select id="productSort"><option value="newest">Newest</option><option value="rating">Top rated</option><option value="price_asc">Price: low to high</option><option value="price_desc">Price: high to low</option><option value="name_asc">Name: A–Z</option></select></label>
+      </div>
       <div id="productGrid" class="product-grid"><p class="muted">Loading products…</p></div>
     </section>
+    <section class="wishlist-section"><div class="section-heading"><div><h2>Saved favourites</h2><p>Your wishlist is private to your account.</p></div><button id="wishlistButton" type="button">Load favourites</button></div><div id="wishlistList" class="wishlist-list"><p class="muted">Sign in to save and view favourites.</p></div></section>
     <section class="cart-section">
       <div class="section-heading"><div><h2>Your cart</h2><p>Saved to your account when signed in.</p></div><span id="cartCount" class="count">0 items</span></div>
       <div id="cartItems" class="cart-items"><p class="muted">Sign in to load your saved cart.</p></div>
       <div class="cart-footer"><div><span>Subtotal</span><strong id="cartTotal">—</strong></div><button id="checkoutButton" class="primary-button" type="button" disabled>Continue to secure checkout</button><p id="checkoutMessage" class="muted" role="status"></p></div>
     </section>
     <section class="orders-section">
-      <div class="section-heading"><div><h2>My orders</h2><p>Payment status is confirmed by the server, not by a browser redirect.</p></div><button id="ordersButton" type="button">Load orders</button></div>
+      <div class="section-heading"><div><h2>My orders & payments</h2><p>Orders and payment status are visible only to the signed-in account. Nkwasibwe does not store card numbers.</p></div><button id="ordersButton" type="button">Load orders</button></div>
       <div id="ordersList" class="orders-list"><p class="muted">Sign in to view your orders.</p></div>
     </section>
     <details class="admin-section">
@@ -38,6 +44,7 @@
       <p class="muted">This form works only for user IDs configured in the server's COMMERCE_ADMIN_USER_IDS setting.</p>
       <form id="productForm">
         <label>Product name<input name="name" maxlength="180" required></label>
+        <label>Category<input name="category" maxlength="80" value="General" required placeholder="e.g. Electronics, Clothing, Home"></label>
         <label>Description<textarea name="description" maxlength="5000" rows="3"></textarea></label>
         <div class="form-row"><label>Price (minor units)<input name="priceMinor" type="number" min="1" step="1" required></label><label>Currency<select name="currency"><option>RWF</option><option>USD</option><option>EUR</option><option>GBP</option><option>KES</option><option>UGX</option><option>TZS</option><option>NGN</option><option>ZAR</option></select></label></div>
         <label>Stock quantity<input name="stockQuantity" type="number" min="0" step="1" value="0" required></label>
@@ -47,7 +54,7 @@
         <p id="adminMessage" class="muted" role="status"></p>
       </form>
     </details>
-    <footer><span>Nkwasibwe IRHCF</span><span>Checkout remains disabled until payment secrets are configured and tested.</span></footer>
+    <footer><span>Nkwasibwe IRHCF</span><span>Hosted checkout remains disabled until payment secrets are configured and tested.</span></footer>
   </main>
 </body>
 </html>
