@@ -820,3 +820,53 @@ test("terminal failure write cannot overwrite a task owned by another worker", a
   assert.match(calls[0].sql, /status IN \('RUNNING', 'VERIFYING', 'REPAIRING'\)/);
   assert.equal(calls[0].params[5], "worker-current");
 });
+
+
+test("pause invalidates the worker lease and aborts its local executor", async () => {
+  let sql = "";
+  let params = [];
+  const engine = new TaskEngine({
+    pool: { async query(statement, values) {
+      sql = statement; params = values;
+      return { rows: [{ id: 81, status: TASK_STATES.PAUSED, worker_id: null }] };
+    } },
+    workerId: "worker-pause"
+  });
+  const controller = new AbortController();
+  engine.activeTaskControllers.set("81", controller);
+  const paused = await engine.pauseTask(81, "user-1");
+  assert.equal(paused.status, TASK_STATES.PAUSED);
+  assert.equal(controller.signal.aborted, true);
+  assert.match(sql, /worker_id = NULL/);
+  assert.match(sql, /locked_at = NULL/);
+  assert.match(sql, /status = ANY\(\$6::text\[\]\)/);
+  assert.deepEqual(params[5], [TASK_STATES.PLANNED, TASK_STATES.RUNNING, TASK_STATES.VERIFYING, TASK_STATES.WAITING_FOR_TOOL, TASK_STATES.WAITING_FOR_USER]);
+});
+
+test("resume only transitions a paused task", async () => {
+  let params;
+  const engine = new TaskEngine({
+    pool: { async query(_sql, values) { params = values; return { rows: [] }; } },
+    workerId: "worker-resume"
+  });
+  assert.equal(await engine.resumeTask(82, "user-1"), null);
+  assert.deepEqual(params[5], [TASK_STATES.PAUSED]);
+});
+
+test("cancel invalidates the lease and aborts active execution", async () => {
+  let sql = "";
+  const engine = new TaskEngine({
+    pool: { async query(statement) {
+      sql = statement;
+      return { rows: [{ id: 83, status: TASK_STATES.FAILED, worker_id: null }] };
+    } },
+    workerId: "worker-cancel"
+  });
+  const controller = new AbortController();
+  engine.activeTaskControllers.set("83", controller);
+  const cancelled = await engine.cancelTask(83, "user-1");
+  assert.equal(cancelled.status, TASK_STATES.FAILED);
+  assert.equal(controller.signal.aborted, true);
+  assert.match(sql, /worker_id = NULL/);
+  assert.match(sql, /locked_at = NULL/);
+});

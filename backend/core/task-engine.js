@@ -187,6 +187,7 @@ class TaskEngine {
     this.running = false;
     this.activeRuns = 0;
     this.timer = null;
+    this.activeTaskControllers = new Map();
   }
 
   async createTask({
@@ -372,19 +373,15 @@ class TaskEngine {
 
   async pauseTask(taskId, userId) {
     return this.transitionOwnedTask(
-      taskId,
-      userId,
-      TASK_STATES.PAUSED,
-      "Task paused by user."
+      taskId, userId, TASK_STATES.PAUSED, "Task paused by user.", {},
+      [TASK_STATES.PLANNED, TASK_STATES.RUNNING, TASK_STATES.VERIFYING, TASK_STATES.WAITING_FOR_TOOL, TASK_STATES.WAITING_FOR_USER]
     );
   }
 
   async resumeTask(taskId, userId) {
     return this.transitionOwnedTask(
-      taskId,
-      userId,
-      TASK_STATES.PLANNED,
-      "Task resumed."
+      taskId, userId, TASK_STATES.PLANNED, "Task resumed.", {},
+      [TASK_STATES.PAUSED]
     );
   }
 
@@ -394,7 +391,8 @@ class TaskEngine {
       userId,
       TASK_STATES.FAILED,
       "Task cancelled by user.",
-      { cancelled: true }
+      { cancelled: true },
+      [TASK_STATES.PLANNED, TASK_STATES.RUNNING, TASK_STATES.PAUSED, TASK_STATES.WAITING_FOR_TOOL, TASK_STATES.WAITING_FOR_USER, TASK_STATES.REPAIRING, TASK_STATES.VERIFYING]
     );
   }
 
@@ -403,7 +401,8 @@ class TaskEngine {
     userId,
     status,
     message,
-    metadata = {}
+    metadata = {},
+    allowedSourceStates = [TASK_STATES.PLANNED, TASK_STATES.RUNNING, TASK_STATES.PAUSED, TASK_STATES.WAITING_FOR_TOOL, TASK_STATES.WAITING_FOR_USER, TASK_STATES.REPAIRING, TASK_STATES.VERIFYING]
   ) {
     const result = await this.pool.query(
       `UPDATE tasks
@@ -411,6 +410,8 @@ class TaskEngine {
          status = $3,
          progress_message = $4,
          metadata = COALESCE(metadata, '{}'::jsonb) || $5::jsonb,
+         worker_id = NULL,
+         locked_at = NULL,
          updated_at = CURRENT_TIMESTAMP,
          completed_at = CASE
            WHEN $3 IN ('COMPLETED', 'FAILED')
@@ -419,18 +420,17 @@ class TaskEngine {
          END
        WHERE id = $1
          AND user_id = $2
-         AND status NOT IN ('COMPLETED', 'FAILED')
+         AND status = ANY($6::text[])
        RETURNING *`,
-      [
-        taskId,
-        userId,
-        status,
-        safeText(message, DEFAULTS.progressMessageMax),
-        safeJson(metadata)
-      ]
+      [taskId, userId, status, safeText(message, DEFAULTS.progressMessageMax), safeJson(metadata), allowedSourceStates]
     );
-
-    return result.rows[0] || null;
+    const updated = result.rows[0] || null;
+    if (updated && [TASK_STATES.PAUSED, TASK_STATES.FAILED].includes(status)) {
+      this.activeTaskControllers.get(String(taskId))?.abort(
+        new Error(status === TASK_STATES.PAUSED ? "Task paused by user." : "Task cancelled by user.")
+      );
+    }
+    return updated;
   }
 
   async claimNextTask() {
@@ -669,7 +669,7 @@ class TaskEngine {
     return Boolean(result.rows?.length);
   }
 
-  startTaskLeaseHeartbeat(taskId) {
+  startTaskLeaseHeartbeat(taskId, controller = null) {
     let stopped = false;
     let inFlight = false;
     const timer = setInterval(async () => {
@@ -680,6 +680,7 @@ class TaskEngine {
         if (!refreshed) {
           stopped = true;
           clearInterval(timer);
+          controller?.abort(new Error("Task worker lease was lost."));
         }
       } catch (error) {
         console.error("[TASK ENGINE] Lease heartbeat failed:", error?.message || error);
@@ -725,7 +726,10 @@ class TaskEngine {
   }
 
   async executeClaimedTask(task) {
-    const stopLeaseHeartbeat = this.startTaskLeaseHeartbeat(task.id);
+    const controller = new AbortController();
+    const taskKey = String(task.id);
+    this.activeTaskControllers.set(taskKey, controller);
+    const stopLeaseHeartbeat = this.startTaskLeaseHeartbeat(task.id, controller);
     let taskRun = null;
     let agentRun = null;
     let executionStep = null;
@@ -782,6 +786,7 @@ class TaskEngine {
           taskId: task.id,
           taskRunId: taskRun.id,
           checkpoint: task.checkpoint || {},
+          signal: controller.signal,
           updateProgress: async (update) =>
             this.updateProgress(task.id, update)
         });
@@ -1101,6 +1106,9 @@ class TaskEngine {
       return this.handleTaskFailure(task, message);
     } finally {
       stopLeaseHeartbeat();
+      if (this.activeTaskControllers.get(taskKey) === controller) {
+        this.activeTaskControllers.delete(taskKey);
+      }
     }
   }
 
