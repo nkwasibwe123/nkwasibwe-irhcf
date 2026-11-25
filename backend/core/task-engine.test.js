@@ -726,3 +726,33 @@ test("progress updates reject an explicitly stale worker identity", async () => 
   assert.equal(updated, null);
   assert.equal(capturedParams[5], "worker-stale");
 });
+
+
+test("worker lease heartbeat refreshes only tasks still owned and active", async () => {
+  let capturedSql = "";
+  let capturedParams = [];
+  const engine = new TaskEngine({
+    pool: {
+      async query(sql, params) {
+        capturedSql = sql;
+        capturedParams = params;
+        return { rows: [{ id: 93 }] };
+      }
+    },
+    workerId: "worker-heartbeat"
+  });
+
+  assert.equal(await engine.refreshTaskLease(93), true);
+  assert.match(capturedSql, /SET locked_at = CURRENT_TIMESTAMP/);
+  assert.match(capturedSql, /worker_id = \$2/);
+  assert.match(capturedSql, /status IN \('RUNNING', 'VERIFYING'\)/);
+  assert.deepEqual(capturedParams, [93, "worker-heartbeat"]);
+});
+
+test("worker lease heartbeat reports lost ownership without extending another worker lease", async () => {
+  const engine = new TaskEngine({
+    pool: { async query() { return { rows: [] }; } },
+    workerId: "worker-heartbeat"
+  });
+  assert.equal(await engine.refreshTaskLease(94), false);
+});

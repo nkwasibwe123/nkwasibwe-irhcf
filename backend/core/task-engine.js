@@ -178,6 +178,11 @@ class TaskEngine {
         ? Number(options.lockTimeoutMs)
         : DEFAULTS.lockTimeoutMs;
 
+    this.leaseHeartbeatIntervalMs =
+      Number(options.leaseHeartbeatIntervalMs) > 0
+        ? Math.max(250, Math.min(Number(options.leaseHeartbeatIntervalMs), this.lockTimeoutMs / 2))
+        : Math.max(1000, Math.min(60_000, Math.floor(this.lockTimeoutMs / 3)));
+
     this.workerId = options.workerId || createWorkerId();
     this.running = false;
     this.activeRuns = 0;
@@ -650,6 +655,45 @@ class TaskEngine {
     );
   }
 
+  async refreshTaskLease(taskId) {
+    const result = await this.pool.query(
+      `UPDATE tasks
+       SET locked_at = CURRENT_TIMESTAMP,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1
+         AND worker_id = $2
+         AND status IN ('RUNNING', 'VERIFYING')
+       RETURNING id`,
+      [taskId, this.workerId]
+    );
+    return Boolean(result.rows?.length);
+  }
+
+  startTaskLeaseHeartbeat(taskId) {
+    let stopped = false;
+    let inFlight = false;
+    const timer = setInterval(async () => {
+      if (stopped || inFlight) return;
+      inFlight = true;
+      try {
+        const refreshed = await this.refreshTaskLease(taskId);
+        if (!refreshed) {
+          stopped = true;
+          clearInterval(timer);
+        }
+      } catch (error) {
+        console.error("[TASK ENGINE] Lease heartbeat failed:", error?.message || error);
+      } finally {
+        inFlight = false;
+      }
+    }, this.leaseHeartbeatIntervalMs);
+    if (typeof timer.unref === "function") timer.unref();
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }
+
   async assertTaskStillOwned(taskId) {
     const result = await this.pool.query(
       `SELECT status, worker_id
@@ -681,6 +725,7 @@ class TaskEngine {
   }
 
   async executeClaimedTask(task) {
+    const stopLeaseHeartbeat = this.startTaskLeaseHeartbeat(task.id);
     let taskRun = null;
     let agentRun = null;
     let executionStep = null;
@@ -1054,6 +1099,8 @@ class TaskEngine {
       }
 
       return this.handleTaskFailure(task, message);
+    } finally {
+      stopLeaseHeartbeat();
     }
   }
 
