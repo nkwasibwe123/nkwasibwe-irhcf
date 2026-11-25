@@ -1671,7 +1671,7 @@ function createTaskRouter({
     res.setHeader("Pragma", "no-cache");
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Content-Security-Policy", "sandbox");
-    return res.status(200).send(artifact.content);
+    return res.status(200).send(Buffer.from(artifact.content, "utf8"));
   });
 
   router.get("/:id", authenticateToken, async (req, res) => {
