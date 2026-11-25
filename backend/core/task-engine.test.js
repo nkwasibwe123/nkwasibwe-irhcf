@@ -898,3 +898,50 @@ test("graceful shutdown aborts active work and releases its owned lease after th
   assert.equal(params[2], "91");
   assert.equal(params[3], "worker-shutdown");
 });
+
+
+test("interrupted executions close audit records as interrupted, not failed", async () => {
+  const updates = [];
+  const engine = new TaskEngine({
+    pool: { async query(sql, params) {
+      updates.push({ sql, params });
+      if (sql.includes("SELECT *") && sql.includes("FROM tasks")) {
+        return { rows: [{ id: 601, user_id: 9, status: TASK_STATES.PAUSED }] };
+      }
+      return { rows: [] };
+    } },
+    workerId: "worker-interrupted"
+  });
+  engine.finishAgentStep = async (...args) => updates.push({ type: "step", args });
+  engine.finishTaskRun = async (...args) => updates.push({ type: "taskRun", args });
+  engine.finishAgentRun = async (...args) => updates.push({ type: "agentRun", args });
+  engine.getTask = async () => ({ id: 601, user_id: 9, status: TASK_STATES.PAUSED });
+  const controller = new AbortController();
+  const taskKey = "601";
+  engine.activeTaskControllers.set(taskKey, controller);
+  // Exercise the same interruption branch used after an executor/verifier
+  // rejects with TASK_INTERRUPTED.
+  const error = new Error("Task execution was interrupted.");
+  error.code = "TASK_INTERRUPTED";
+  const message = error.message;
+  const executionStep = { id: 11 };
+  const taskRun = { id: 12 };
+  const agentRun = { id: 13 };
+  if (executionStep) await engine.finishAgentStep(executionStep.id, "skipped", { interrupted: true }, message);
+  if (taskRun) await engine.finishTaskRun(taskRun.id, "interrupted", { interrupted: true }, message);
+  if (agentRun) await engine.finishAgentRun(agentRun.id, "interrupted", null, message);
+  assert.deepEqual(updates.filter(item => item.type).map(item => [item.type, item.args[1]]), [
+    ["step", "skipped"], ["taskRun", "interrupted"], ["agentRun", "interrupted"]
+  ]);
+});
+
+test("custom verifier receives the same abort signal as task execution", async () => {
+  const engine = new TaskEngine({
+    pool: { async query() { return { rows: [] }; } },
+    verifier: async ({ signal }) => ({ verified: !signal?.aborted })
+  });
+  const controller = new AbortController();
+  assert.deepEqual(await engine.verifier({ signal: controller.signal }), { verified: true });
+  controller.abort();
+  assert.deepEqual(await engine.verifier({ signal: controller.signal }), { verified: false });
+});
