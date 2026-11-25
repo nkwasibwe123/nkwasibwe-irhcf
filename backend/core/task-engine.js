@@ -1642,6 +1642,25 @@ function createTaskRouter({
       result = null;
     }
     const filename = String(req.params.filename || "");
+    // Artifact downloads are only available after the task has committed its
+    // verified result. Restrict names to a single safe filename component.
+    if (task.status !== TASK_STATES.COMPLETED ||
+        !/^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$/.test(filename) ||
+        filename.includes("..")) {
+      return res.status(404).json({ success: false, code: "TASK_ARTIFACT_NOT_FOUND", error: "Verified artifact not found." });
+    }
+    const artifact = Array.isArray(result?.taskAction?.artifacts)
+      ? result.taskAction.artifacts.find(item =>
+          item?.name === filename &&
+          item?.verified === true &&
+          typeof item?.content === "string" &&
+          item.content.length > 0)
+      : null;
+    if (!artifact || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$/.test(String(artifact.name || ""))) {
+      return res.status(404).json({ success: false, code: "TASK_ARTIFACT_NOT_FOUND", error: "Verified artifact not found." });
+    }
+    const requestedMimeType = String(artifact.mimeType || "");
+    const safeMimeType = /^[a-z0-9!#    const filename = String(req.params.filename || "");
     const artifact = Array.isArray(result?.taskAction?.artifacts)
       ? result.taskAction.artifacts.find(item => item?.name === filename && item?.verified === true && typeof item?.content === "string")
       : null;
@@ -1651,6 +1670,27 @@ function createTaskRouter({
     res.setHeader("Content-Type", artifact.mimeType || "application/octet-stream");
     res.setHeader("Content-Disposition", 'attachment; filename="' + artifact.name.replace(/[^a-zA-Z0-9._-]/g, "_") + '"');
     res.setHeader("X-Content-Type-Options", "nosniff");
+    return res.status(200).send(artifact.content);^_.+-]+\/[a-z0-9!#    const filename = String(req.params.filename || "");
+    const artifact = Array.isArray(result?.taskAction?.artifacts)
+      ? result.taskAction.artifacts.find(item => item?.name === filename && item?.verified === true && typeof item?.content === "string")
+      : null;
+    if (!artifact) {
+      return res.status(404).json({ success: false, code: "TASK_ARTIFACT_NOT_FOUND", error: "Verified artifact not found." });
+    }
+    res.setHeader("Content-Type", artifact.mimeType || "application/octet-stream");
+    res.setHeader("Content-Disposition", 'attachment; filename="' + artifact.name.replace(/[^a-zA-Z0-9._-]/g, "_") + '"');
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    return res.status(200).send(artifact.content);^_.+-]+(?:;\\s*charset=utf-8)?$/i.test(requestedMimeType)
+      ? requestedMimeType
+      : "application/octet-stream";
+    const safeFilename = artifact.name;
+    res.setHeader("Content-Type", safeMimeType);
+    res.setHeader("Content-Disposition", 'attachment; filename="' + safeFilename + '"');
+    res.setHeader("Content-Length", String(Buffer.byteLength(artifact.content, "utf8")));
+    res.setHeader("Cache-Control", "private, no-store, max-age=0");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Content-Security-Policy", "sandbox");
     return res.status(200).send(artifact.content);
   });
 
