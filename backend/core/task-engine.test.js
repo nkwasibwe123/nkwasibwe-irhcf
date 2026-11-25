@@ -105,7 +105,9 @@ test("retry is not reported as a successful repair without a confirmed fix", asy
     pool: {
       async query(sql, params) {
         updates.push({ sql, params });
-        return { rows: [] };
+        // The first conditional update acquires the task's repair lease;
+        // the second persists the retry decision under that same lease.
+        return updates.length === 1 ? { rows: [{ id: task.id }] } : { rows: [] };
       }
     },
     repairer: async () => ({
