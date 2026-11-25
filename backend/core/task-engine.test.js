@@ -977,3 +977,45 @@ test("repairing tasks keep their worker lease alive and can be recovered after a
   assert.equal(calls[1].params[4], TASK_STATES.REPAIRING);
   assert.equal(calls.length, 5, "expired repair runs and agent audit records are closed too");
 });
+
+
+test("verified task artifacts are persisted in an account-scoped durable table", async () => {
+  let captured = null;
+  const engine = new TaskEngine({
+    pool: { async query(sql, params) {
+      captured = { sql, params };
+      return { rows: [{ name: "index.html" }], rowCount: 1 };
+    } }
+  });
+  const count = await engine.saveTaskArtifacts(
+    { id: 72, user_id: 9 },
+    { taskAction: { artifacts: [
+      { name: "index.html", mimeType: "text/html", content: "<html>ok</html>", verified: true, verification: "HTML passed" },
+      { name: "../secret.txt", content: "no", verified: true },
+      { name: "unverified.txt", content: "no", verified: false }
+    ] } }
+  );
+  assert.equal(count, 1);
+  assert.match(captured.sql, /INSERT INTO task_artifacts/);
+  assert.match(captured.sql, /ON CONFLICT \(task_id, name\) DO UPDATE/);
+  assert.equal(captured.params[0], 72);
+  assert.equal(captured.params[1], 9);
+  const stored = JSON.parse(captured.params[2]);
+  assert.deepEqual(stored.map(item => item.name), ["index.html"]);
+  assert.equal(stored[0].bytes, Buffer.byteLength("<html>ok</html>", "utf8"));
+});
+
+test("durable task artifact lookup is scoped to owner and completed task", async () => {
+  let captured = null;
+  const engine = new TaskEngine({
+    pool: { async query(sql, params) {
+      captured = { sql, params };
+      return { rows: [{ name: "index.html", content: "<html/>", verified: true }] };
+    } }
+  });
+  const artifact = await engine.getTaskArtifact(73, 11, "index.html");
+  assert.equal(artifact.name, "index.html");
+  assert.match(captured.sql, /task\.user_id = \$2/);
+  assert.match(captured.sql, /task\.status = \$3/);
+  assert.deepEqual(captured.params, [73, 11, TASK_STATES.COMPLETED, "index.html"]);
+});
