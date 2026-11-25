@@ -977,7 +977,8 @@ class TaskEngine {
       if (this.verifier) {
         verification = await this.verifier({
           task,
-          result: executionResult
+          result: executionResult,
+          signal: controller.signal
         });
       }
 
@@ -1074,6 +1075,38 @@ class TaskEngine {
         4000
       );
 
+      if (error?.code === "TASK_INTERRUPTED") {
+        // A pause, cancellation, lease loss, or shutdown is not an execution
+        // failure. Close the audit records with explicit interruption states
+        // so the activity timeline cannot show a phantom running agent.
+        if (executionStep) {
+          await this.finishAgentStep(
+            executionStep.id,
+            "skipped",
+            { interrupted: true },
+            message
+          ).catch(() => {});
+        }
+        if (taskRun) {
+          await this.finishTaskRun(
+            taskRun.id,
+            "interrupted",
+            { interrupted: true },
+            message
+          ).catch(() => {});
+        }
+        if (agentRun) {
+          await this.finishAgentRun(
+            agentRun.id,
+            "interrupted",
+            null,
+            message
+          ).catch(() => {});
+        }
+        // Preserve the user-directed task state; do not retry or requeue.
+        return this.getTask(task.id, task.user_id);
+      }
+
       if (executionStep) {
         await this.finishAgentStep(
           executionStep.id,
@@ -1099,11 +1132,6 @@ class TaskEngine {
           null,
           message
         ).catch(() => {});
-      }
-
-      if (error?.code === "TASK_INTERRUPTED") {
-        // Preserve the user-directed state change; do not retry or requeue.
-        return this.getTask(task.id, task.user_id);
       }
 
       return this.handleTaskFailure(task, message);

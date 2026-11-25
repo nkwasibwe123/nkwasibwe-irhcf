@@ -1661,7 +1661,8 @@ await pool.query(`
         'verifying',
         'completed',
         'failed',
-        'cancelled'
+        'cancelled',
+        'interrupted'
       )
     );
   `);
