@@ -36,8 +36,8 @@ test("cancelled task is not verified, completed, or requeued after executor retu
   const currentTask = {
     id: "task-cancelled",
     user_id: "user-test",
-    status: TASK_STATES.FAILED,
-    worker_id: "worker-test",
+    status: TASK_STATES.CANCELLED,
+    worker_id: null,
     metadata: { cancelled: true }
   };
 
@@ -47,8 +47,8 @@ test("cancelled task is not verified, completed, or requeued after executor retu
         assert.match(sql, /SELECT status, worker_id/);
         return {
           rows: [{
-            status: TASK_STATES.FAILED,
-            worker_id: "worker-test"
+            status: TASK_STATES.CANCELLED,
+            worker_id: null
           }]
         };
       }
@@ -89,7 +89,7 @@ test("cancelled task is not verified, completed, or requeued after executor retu
   assert.equal(executorCalls, 1);
   assert.equal(verifierCalls, 0);
   assert.equal(retryHandlerCalls, 0);
-  assert.equal(result.status, TASK_STATES.FAILED);
+  assert.equal(result.status, TASK_STATES.CANCELLED);
   assert.equal(result.metadata.cancelled, true);
 });
 
@@ -858,14 +858,14 @@ test("cancel invalidates the lease and aborts active execution", async () => {
   const engine = new TaskEngine({
     pool: { async query(statement) {
       sql = statement;
-      return { rows: [{ id: 83, status: TASK_STATES.FAILED, worker_id: null }] };
+      return { rows: [{ id: 83, status: TASK_STATES.CANCELLED, worker_id: null }] };
     } },
     workerId: "worker-cancel"
   });
   const controller = new AbortController();
   engine.activeTaskControllers.set("83", controller);
   const cancelled = await engine.cancelTask(83, "user-1");
-  assert.equal(cancelled.status, TASK_STATES.FAILED);
+  assert.equal(cancelled.status, TASK_STATES.CANCELLED);
   assert.equal(controller.signal.aborted, true);
   assert.match(sql, /worker_id = NULL/);
   assert.match(sql, /locked_at = NULL/);
