@@ -180,6 +180,30 @@ async function createSchema() {
   `);
 
   // ============================================================
+  // 7A. TASK ARTIFACTS
+  // ============================================================
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS task_artifacts (
+      task_id INTEGER NOT NULL,
+      user_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      mime_type TEXT NOT NULL DEFAULT 'application/octet-stream',
+      content TEXT NOT NULL,
+      bytes INTEGER NOT NULL DEFAULT 0,
+      verified BOOLEAN NOT NULL DEFAULT FALSE,
+      verification TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (task_id, name)
+    );
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_task_artifacts_user_task
+    ON task_artifacts (user_id, task_id);
+  `);
+
+  // ============================================================
   // 8. TASK RUNS
   // ============================================================
 
