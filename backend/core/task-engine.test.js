@@ -304,7 +304,7 @@ test("stale recovery requeues verifying tasks and closes orphaned run records", 
       async query(sql, params) {
         calls.push({ sql, params });
         if (calls.length === 1) {
-          assert.match(sql, /status IN \(\$2, \$4\)/);
+          assert.match(sql, /status IN \(\$2, \$4, \$5\)/);
           assert.match(sql, /RETURNING id/);
           assert.equal(params[1], TASK_STATES.RUNNING);
           assert.equal(params[3], TASK_STATES.VERIFYING);
