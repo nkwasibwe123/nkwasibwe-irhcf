@@ -309,7 +309,8 @@ class TaskEngine {
     progress = null,
     message = "",
     checkpoint = {},
-    status = null
+    status = null,
+    workerId = this.workerId
   } = {}) {
     const boundedProgress =
       progress === null || progress === undefined
@@ -348,13 +349,16 @@ class TaskEngine {
          status = COALESCE($5, status),
          updated_at = CURRENT_TIMESTAMP
        WHERE id = $1
+         AND worker_id = $6
+         AND status IN ('RUNNING', 'VERIFYING')
        RETURNING *`,
       [
         taskId,
         boundedProgress,
         cleanMessage,
         cleanCheckpoint,
-        status ? normalizeStatus(status) : null
+        status ? normalizeStatus(status) : null,
+        workerId
       ]
     );
 
