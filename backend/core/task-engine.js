@@ -667,7 +667,7 @@ class TaskEngine {
            updated_at = CURRENT_TIMESTAMP
        WHERE id = $1
          AND worker_id = $2
-         AND status IN ('RUNNING', 'VERIFYING')
+         AND status IN ('RUNNING', 'VERIFYING', 'REPAIRING')
        RETURNING id`,
       [taskId, this.workerId]
     );
@@ -712,7 +712,8 @@ class TaskEngine {
     const current = result.rows[0];
     const activeStatuses = new Set([
       TASK_STATES.RUNNING,
-      TASK_STATES.VERIFYING
+      TASK_STATES.VERIFYING,
+      TASK_STATES.REPAIRING
     ]);
 
     if (
@@ -1186,7 +1187,8 @@ class TaskEngine {
           ? await this.repairer({
               task,
               error: message,
-              attempt: attempts
+              attempt: attempts,
+              signal: this.activeTaskControllers.get(String(task.id))?.signal
             })
           : {
               repaired: false,
@@ -1284,7 +1286,7 @@ class TaskEngine {
          progress_message = 'Recovered stale worker lease; queued for retry.',
          next_run_at = CURRENT_TIMESTAMP,
          updated_at = CURRENT_TIMESTAMP
-       WHERE status IN ($2, $4)
+       WHERE status IN ($2, $4, $5)
          AND locked_at IS NOT NULL
          AND locked_at < CURRENT_TIMESTAMP - ($3 * INTERVAL '1 millisecond')
        RETURNING id`,
@@ -1292,7 +1294,8 @@ class TaskEngine {
         TASK_STATES.PLANNED,
         TASK_STATES.RUNNING,
         this.lockTimeoutMs,
-        TASK_STATES.VERIFYING
+        TASK_STATES.VERIFYING,
+        TASK_STATES.REPAIRING
       ]
     );
 
