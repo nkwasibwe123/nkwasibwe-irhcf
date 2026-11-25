@@ -678,3 +678,51 @@ test("task transition routes validate ids and safely handle storage failures", a
   assert.equal(invalid.statusCode, 400);
   assert.equal(invalid.body.code, "TASK_ID_INVALID");
 });
+
+
+test("progress updates are restricted to the active owning worker", async () => {
+  let capturedSql = "";
+  let capturedParams = [];
+  const engine = new TaskEngine({
+    pool: {
+      async query(sql, params) {
+        capturedSql = sql;
+        capturedParams = params;
+        return { rows: [] };
+      }
+    },
+    workerId: "worker-current"
+  });
+
+  const updated = await engine.updateProgress(91, {
+    progress: 45,
+    message: "Still processing"
+  });
+
+  assert.equal(updated, null, "a task no longer owned by this worker must not be changed");
+  assert.match(capturedSql, /WHERE id = \$1\s+AND worker_id = \$6\s+AND status IN \('RUNNING', 'VERIFYING'\)/);
+  assert.equal(capturedParams[0], 91);
+  assert.equal(capturedParams[5], "worker-current");
+  assert.equal(capturedParams[1], 45);
+});
+
+test("progress updates reject an explicitly stale worker identity", async () => {
+  let capturedParams;
+  const engine = new TaskEngine({
+    pool: {
+      async query(_sql, params) {
+        capturedParams = params;
+        return { rows: [] };
+      }
+    },
+    workerId: "worker-current"
+  });
+
+  const updated = await engine.updateProgress(92, {
+    progress: 80,
+    workerId: "worker-stale"
+  });
+
+  assert.equal(updated, null);
+  assert.equal(capturedParams[5], "worker-stale");
+});
