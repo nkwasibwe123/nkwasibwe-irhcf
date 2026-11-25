@@ -1660,27 +1660,7 @@ function createTaskRouter({
       return res.status(404).json({ success: false, code: "TASK_ARTIFACT_NOT_FOUND", error: "Verified artifact not found." });
     }
     const requestedMimeType = String(artifact.mimeType || "");
-    const safeMimeType = /^[a-z0-9!#    const filename = String(req.params.filename || "");
-    const artifact = Array.isArray(result?.taskAction?.artifacts)
-      ? result.taskAction.artifacts.find(item => item?.name === filename && item?.verified === true && typeof item?.content === "string")
-      : null;
-    if (!artifact) {
-      return res.status(404).json({ success: false, code: "TASK_ARTIFACT_NOT_FOUND", error: "Verified artifact not found." });
-    }
-    res.setHeader("Content-Type", artifact.mimeType || "application/octet-stream");
-    res.setHeader("Content-Disposition", 'attachment; filename="' + artifact.name.replace(/[^a-zA-Z0-9._-]/g, "_") + '"');
-    res.setHeader("X-Content-Type-Options", "nosniff");
-    return res.status(200).send(artifact.content);^_.+-]+\/[a-z0-9!#    const filename = String(req.params.filename || "");
-    const artifact = Array.isArray(result?.taskAction?.artifacts)
-      ? result.taskAction.artifacts.find(item => item?.name === filename && item?.verified === true && typeof item?.content === "string")
-      : null;
-    if (!artifact) {
-      return res.status(404).json({ success: false, code: "TASK_ARTIFACT_NOT_FOUND", error: "Verified artifact not found." });
-    }
-    res.setHeader("Content-Type", artifact.mimeType || "application/octet-stream");
-    res.setHeader("Content-Disposition", 'attachment; filename="' + artifact.name.replace(/[^a-zA-Z0-9._-]/g, "_") + '"');
-    res.setHeader("X-Content-Type-Options", "nosniff");
-    return res.status(200).send(artifact.content);^_.+-]+(?:;\\s*charset=utf-8)?$/i.test(requestedMimeType)
+    const safeMimeType = /^[a-z0-9!#$&^_.+-]+\\/[a-z0-9!#$&^_.+-]+(?:;\\s*charset=utf-8)?$/i.test(requestedMimeType)
       ? requestedMimeType
       : "application/octet-stream";
     const safeFilename = artifact.name;
