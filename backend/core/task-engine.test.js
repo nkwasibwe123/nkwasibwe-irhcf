@@ -961,7 +961,7 @@ test("repairing tasks keep their worker lease alive and can be recovered after a
     pool: {
       async query(sql, params) {
         calls.push({ sql, params });
-        if (calls.length === 1) return { rows: [{ id: 951 }] };
+        if (calls.length <= 2) return { rows: [{ id: 951 }], rowCount: 1 };
         return { rows: [], rowCount: 1 };
       }
     },
