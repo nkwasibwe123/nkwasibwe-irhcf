@@ -1019,3 +1019,39 @@ test("durable task artifact lookup is scoped to owner and completed task", async
   assert.match(captured.sql, /task\.status = \$3/);
   assert.deepEqual(captured.params, [73, 11, TASK_STATES.COMPLETED, "index.html"]);
 });
+
+
+test("artifact download prefers durable owner-scoped storage after task completion", async () => {
+  const engine = {
+    getTask: async (taskId, userId) => ({
+      id: taskId,
+      user_id: userId,
+      status: TASK_STATES.COMPLETED,
+      result: JSON.stringify({ taskAction: { artifacts: [] } })
+    }),
+    getTaskArtifact: async (taskId, userId, filename) => {
+      assert.equal(taskId, 46);
+      assert.equal(userId, "owner-2");
+      assert.equal(filename, "index.html");
+      return {
+        name: "index.html",
+        mime_type: "text/html; charset=utf-8",
+        content: "<!doctype html><html><body>durable</body></html>",
+        verified: true
+      };
+    }
+  };
+  const router = createTaskRouter({ engine, authenticateToken: (_req, _res, next) => next() });
+  const layer = router.stack.find(item => item.route?.path === "/:id/artifacts/:filename");
+  const handler = layer.route.stack[1].handle;
+  const response = {
+    statusCode: 200, headers: {},
+    setHeader(name, value) { this.headers[name] = value; },
+    status(code) { this.statusCode = code; return this; },
+    json(body) { this.body = body; return this; },
+    send(body) { this.body = body; return this; }
+  };
+  await handler({ params: { id: "46", filename: "index.html" }, user: { id: "owner-2" } }, response);
+  assert.equal(response.statusCode, 200);
+  assert.match(Buffer.from(response.body).toString("utf8"), /durable/);
+});
