@@ -756,3 +756,65 @@ test("worker lease heartbeat reports lost ownership without extending another wo
   });
   assert.equal(await engine.refreshTaskLease(94), false);
 });
+
+
+test("failure handling requires the current worker lease before entering repair", async () => {
+  const calls = [];
+  const engine = new TaskEngine({
+    pool: { async query(sql, params) { calls.push({ sql, params }); return { rows: [] }; } },
+    workerId: "worker-current"
+  });
+  engine.getTask = async () => ({ id: 501, status: TASK_STATES.PAUSED });
+  const result = await engine.handleTaskFailure(
+    { id: 501, user_id: 9, attempts: 1, max_attempts: 3, checkpoint: {} },
+    "late executor failure"
+  );
+  assert.equal(result.status, TASK_STATES.PAUSED);
+  assert.equal(calls.length, 1, "a stale worker must not invoke repair or write a retry");
+  assert.match(calls[0].sql, /worker_id = \$5/);
+  assert.match(calls[0].sql, /status IN \('RUNNING', 'VERIFYING'\)/);
+  assert.equal(calls[0].params[4], "worker-current");
+});
+
+test("failure repair completion is conditional on retaining the repair lease", async () => {
+  const calls = [];
+  const engine = new TaskEngine({
+    pool: {
+      async query(sql, params) {
+        calls.push({ sql, params });
+        if (calls.length === 1) return { rows: [{ id: 502 }] };
+        return { rows: [] };
+      }
+    },
+    workerId: "worker-current",
+    repairer: async () => ({ repaired: true })
+  });
+  engine.getTask = async () => ({ id: 502, status: TASK_STATES.PAUSED });
+  const result = await engine.handleTaskFailure(
+    { id: 502, user_id: 9, attempts: 1, max_attempts: 3, checkpoint: {} },
+    "executor failure"
+  );
+  assert.equal(result.status, TASK_STATES.PAUSED);
+  assert.equal(calls.length, 2);
+  assert.match(calls[1].sql, /worker_id = \$5/);
+  assert.match(calls[1].sql, /status = 'REPAIRING'/);
+  assert.equal(calls[1].params[4], "worker-current");
+});
+
+test("terminal failure write cannot overwrite a task owned by another worker", async () => {
+  const calls = [];
+  const engine = new TaskEngine({
+    pool: { async query(sql, params) { calls.push({ sql, params }); return { rows: [] }; } },
+    workerId: "worker-current",
+    maxAttempts: 2
+  });
+  engine.getTask = async () => ({ id: 503, status: TASK_STATES.RUNNING, worker_id: "worker-new" });
+  const result = await engine.handleTaskFailure(
+    { id: 503, user_id: 9, attempts: 2, max_attempts: 2, checkpoint: {} },
+    "final attempt failed"
+  );
+  assert.equal(result.worker_id, "worker-new");
+  assert.match(calls[0].sql, /worker_id = \$6/);
+  assert.match(calls[0].sql, /status IN \('RUNNING', 'VERIFYING', 'REPAIRING'\)/);
+  assert.equal(calls[0].params[5], "worker-current");
+});
