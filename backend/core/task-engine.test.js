@@ -289,6 +289,14 @@ test("database schema refreshes stale agent run status constraints on existing d
   }
 });
 
+test("database task status constraint permits a distinct CANCELLED terminal state", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const schema = fs.readFileSync(path.join(__dirname, "..", "db", "schema.js"), "utf8");
+  assert.match(schema, /chk_tasks_status[\\s\\S]*?'COMPLETED',[\\s\\S]*?'FAILED',[\\s\\S]*?'CANCELLED'/);
+  assert.ok(TERMINAL_STATES.has(TASK_STATES.CANCELLED));
+});
+
 test("stale recovery requeues verifying tasks and closes orphaned run records", async () => {
   const calls = [];
   const engine = new TaskEngine({
