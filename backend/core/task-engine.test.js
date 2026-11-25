@@ -977,3 +977,81 @@ test("repairing tasks keep their worker lease alive and can be recovered after a
   assert.equal(calls[1].params[4], TASK_STATES.REPAIRING);
   assert.equal(calls.length, 5, "expired repair runs and agent audit records are closed too");
 });
+
+
+test("verified task artifacts are persisted in an account-scoped durable table", async () => {
+  let captured = null;
+  const engine = new TaskEngine({
+    pool: { async query(sql, params) {
+      captured = { sql, params };
+      return { rows: [{ name: "index.html" }], rowCount: 1 };
+    } }
+  });
+  const count = await engine.saveTaskArtifacts(
+    { id: 72, user_id: 9 },
+    { taskAction: { artifacts: [
+      { name: "index.html", mimeType: "text/html", content: "<html>ok</html>", verified: true, verification: "HTML passed" },
+      { name: "../secret.txt", content: "no", verified: true },
+      { name: "unverified.txt", content: "no", verified: false }
+    ] } }
+  );
+  assert.equal(count, 1);
+  assert.match(captured.sql, /INSERT INTO task_artifacts/);
+  assert.match(captured.sql, /ON CONFLICT \(task_id, name\) DO UPDATE/);
+  assert.equal(captured.params[0], 72);
+  assert.equal(captured.params[1], 9);
+  const stored = JSON.parse(captured.params[2]);
+  assert.deepEqual(stored.map(item => item.name), ["index.html"]);
+  assert.equal(stored[0].bytes, Buffer.byteLength("<html>ok</html>", "utf8"));
+});
+
+test("durable task artifact lookup is scoped to owner and completed task", async () => {
+  let captured = null;
+  const engine = new TaskEngine({
+    pool: { async query(sql, params) {
+      captured = { sql, params };
+      return { rows: [{ name: "index.html", content: "<html/>", verified: true }] };
+    } }
+  });
+  const artifact = await engine.getTaskArtifact(73, 11, "index.html");
+  assert.equal(artifact.name, "index.html");
+  assert.match(captured.sql, /task\.user_id = \$2/);
+  assert.match(captured.sql, /task\.status = \$3/);
+  assert.deepEqual(captured.params, [73, 11, TASK_STATES.COMPLETED, "index.html"]);
+});
+
+
+test("artifact download prefers durable owner-scoped storage after task completion", async () => {
+  const engine = {
+    getTask: async (taskId, userId) => ({
+      id: taskId,
+      user_id: userId,
+      status: TASK_STATES.COMPLETED,
+      result: JSON.stringify({ taskAction: { artifacts: [] } })
+    }),
+    getTaskArtifact: async (taskId, userId, filename) => {
+      assert.equal(taskId, 46);
+      assert.equal(userId, "owner-2");
+      assert.equal(filename, "index.html");
+      return {
+        name: "index.html",
+        mime_type: "text/html; charset=utf-8",
+        content: "<!doctype html><html><body>durable</body></html>",
+        verified: true
+      };
+    }
+  };
+  const router = createTaskRouter({ engine, authenticateToken: (_req, _res, next) => next() });
+  const layer = router.stack.find(item => item.route?.path === "/:id/artifacts/:filename");
+  const handler = layer.route.stack[1].handle;
+  const response = {
+    statusCode: 200, headers: {},
+    setHeader(name, value) { this.headers[name] = value; },
+    status(code) { this.statusCode = code; return this; },
+    json(body) { this.body = body; return this; },
+    send(body) { this.body = body; return this; }
+  };
+  await handler({ params: { id: "46", filename: "index.html" }, user: { id: "owner-2" } }, response);
+  assert.equal(response.statusCode, 200);
+  assert.match(Buffer.from(response.body).toString("utf8"), /durable/);
+});

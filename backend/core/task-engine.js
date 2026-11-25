@@ -266,6 +266,69 @@ class TaskEngine {
     return result.rows[0];
   }
 
+  async saveTaskArtifacts(task, executionResult) {
+    const candidates = Array.isArray(executionResult?.taskAction?.artifacts)
+      ? executionResult.taskAction.artifacts
+      : [];
+    const artifacts = candidates
+      .filter(item =>
+        item?.verified === true &&
+        typeof item.name === "string" &&
+        /^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$/.test(item.name) &&
+        !item.name.includes("..") &&
+        typeof item.content === "string" &&
+        item.content.length > 0 &&
+        Buffer.byteLength(item.content, "utf8") <= 512000)
+      .map(item => ({
+        name: item.name,
+        mimeType: typeof item.mimeType === "string" ? item.mimeType.slice(0, 160) : "application/octet-stream",
+        content: item.content,
+        bytes: Buffer.byteLength(item.content, "utf8"),
+        verification: typeof item.verification === "string" ? item.verification.slice(0, 500) : null
+      }));
+
+    if (!artifacts.length) return 0;
+
+    const result = await this.pool.query(
+      `INSERT INTO task_artifacts
+         (task_id, user_id, name, mime_type, content, bytes, verified, verification)
+       SELECT $1, $2, item.name, item.mime_type, item.content, item.bytes, TRUE, item.verification
+       FROM jsonb_to_recordset($3::jsonb) AS item(
+         name TEXT, mime_type TEXT, content TEXT, bytes INTEGER, verification TEXT
+       )
+       ON CONFLICT (task_id, name) DO UPDATE SET
+         user_id = EXCLUDED.user_id,
+         mime_type = EXCLUDED.mime_type,
+         content = EXCLUDED.content,
+         bytes = EXCLUDED.bytes,
+         verified = TRUE,
+         verification = EXCLUDED.verification,
+         created_at = CURRENT_TIMESTAMP
+       RETURNING name`,
+      [task.id, task.user_id, JSON.stringify(artifacts)]
+    );
+    return Number(result.rowCount ?? result.rows?.length ?? 0);
+  }
+
+  async getTaskArtifact(taskId, userId, filename) {
+    const result = await this.pool.query(
+      `SELECT artifact.name, artifact.mime_type, artifact.content,
+              artifact.bytes, artifact.verified, artifact.verification
+       FROM task_artifacts AS artifact
+       INNER JOIN tasks AS task
+         ON task.id = artifact.task_id
+        AND task.user_id = artifact.user_id
+       WHERE task.id = $1
+         AND task.user_id = $2
+         AND task.status = $3
+         AND artifact.name = $4
+         AND artifact.verified = TRUE
+       LIMIT 1`,
+      [taskId, userId, TASK_STATES.COMPLETED, filename]
+    );
+    return result.rows[0] || null;
+  }
+
   async getTask(taskId, userId) {
     const result = await this.pool.query(
       `SELECT *
@@ -1013,6 +1076,9 @@ class TaskEngine {
         verification
       );
 
+      // Persist verified files independently of the task JSON payload before committing completion.
+      await this.saveTaskArtifacts(task, executionResult);
+
       const completed = await this.pool.query(
         `UPDATE tasks
          SET
@@ -1654,13 +1720,37 @@ function createTaskRouter({
         filename.includes("..")) {
       return res.status(404).json({ success: false, code: "TASK_ARTIFACT_NOT_FOUND", error: "Verified artifact not found." });
     }
-    const artifact = Array.isArray(result?.taskAction?.artifacts)
-      ? result.taskAction.artifacts.find(item =>
-          item?.name === filename &&
-          item?.verified === true &&
-          typeof item?.content === "string" &&
-          item.content.length > 0)
-      : null;
+    let artifact = null;
+    if (typeof engine.getTaskArtifact === "function") {
+      try {
+        const stored = await engine.getTaskArtifact(taskId, req.user.id, filename);
+        if (stored) {
+          artifact = {
+            name: stored.name,
+            mimeType: stored.mime_type,
+            content: stored.content,
+            verified: stored.verified === true
+          };
+        }
+      } catch (error) {
+        console.error("[TASK ARTIFACT] Durable artifact lookup failed:", error?.message || error);
+        return res.status(500).json({
+          success: false,
+          code: "TASK_ARTIFACT_STORAGE_FAILED",
+          error: "Could not retrieve this verified artifact."
+        });
+      }
+    }
+    // Keep previously completed tasks downloadable during the storage migration.
+    if (!artifact) {
+      artifact = Array.isArray(result?.taskAction?.artifacts)
+        ? result.taskAction.artifacts.find(item =>
+            item?.name === filename &&
+            item?.verified === true &&
+            typeof item?.content === "string" &&
+            item.content.length > 0)
+        : null;
+    }
     if (!artifact || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$/.test(String(artifact.name || ""))) {
       return res.status(404).json({ success: false, code: "TASK_ARTIFACT_NOT_FOUND", error: "Verified artifact not found." });
     }
