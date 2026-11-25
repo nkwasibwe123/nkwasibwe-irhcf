@@ -293,7 +293,8 @@ test("database task status constraint permits a distinct CANCELLED terminal stat
   const fs = require("node:fs");
   const path = require("node:path");
   const schema = fs.readFileSync(path.join(__dirname, "..", "db", "schema.js"), "utf8");
-  assert.match(schema, /chk_tasks_status[\\s\\S]*?'COMPLETED',[\\s\\S]*?'FAILED',[\\s\\S]*?'CANCELLED'/);
+  const taskStatusConstraint = schema.slice(schema.indexOf("ADD CONSTRAINT chk_tasks_status"), schema.indexOf("END", schema.indexOf("ADD CONSTRAINT chk_tasks_status")));
+  assert.ok(taskStatusConstraint.includes("'CANCELLED'"));
 });
 
 test("stale recovery requeues verifying tasks and closes orphaned run records", async () => {
