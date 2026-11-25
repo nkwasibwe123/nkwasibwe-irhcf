@@ -267,8 +267,9 @@ class TaskEngine {
   }
 
   async saveTaskArtifacts(task, executionResult) {
-    // Artifact writes are part of the task's commit: a worker that lost its
-    // lease must never overwrite files produced by the worker that replaced it.
+    // A task's final artifact set replaces earlier retry output atomically.
+    // Lock and re-check the task row so stale workers cannot delete or overwrite
+    // artifacts after losing their lease.
     if (!task?.worker_id || task.worker_id !== this.workerId) return 0;
 
     const candidates = Array.isArray(executionResult?.taskAction?.artifacts)
@@ -291,32 +292,56 @@ class TaskEngine {
         verification: typeof item.verification === "string" ? item.verification.slice(0, 500) : null
       }));
 
-    if (!artifacts.length) return 0;
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const ownership = await client.query(
+        `SELECT id
+         FROM tasks
+         WHERE id = $1
+           AND user_id = $2
+           AND worker_id = $3
+           AND status = $4
+         FOR UPDATE`,
+        [task.id, task.user_id, this.workerId, TASK_STATES.VERIFYING]
+      );
 
-    const result = await this.pool.query(
-      `INSERT INTO task_artifacts
-         (task_id, user_id, name, mime_type, content, bytes, verified, verification)
-       SELECT task.id, task.user_id, item.name, item.mime_type, item.content, item.bytes, TRUE, item.verification
-       FROM jsonb_to_recordset($3::jsonb) AS item(
-         name TEXT, mime_type TEXT, content TEXT, bytes INTEGER, verification TEXT
-       )
-       INNER JOIN tasks AS task
-         ON task.id = $1
-        AND task.user_id = $2
-        AND task.worker_id = $4
-        AND task.status = $5
-       ON CONFLICT (task_id, name) DO UPDATE SET
-         user_id = EXCLUDED.user_id,
-         mime_type = EXCLUDED.mime_type,
-         content = EXCLUDED.content,
-         bytes = EXCLUDED.bytes,
-         verified = TRUE,
-         verification = EXCLUDED.verification,
-         created_at = CURRENT_TIMESTAMP
-       RETURNING name`,
-      [task.id, task.user_id, JSON.stringify(artifacts), this.workerId, TASK_STATES.VERIFYING]
-    );
-    return Number(result.rowCount ?? result.rows?.length ?? 0);
+      if (!ownership.rows?.length) {
+        await client.query("ROLLBACK");
+        return 0;
+      }
+
+      // Remove files from previous attempts that are not part of this verified
+      // result. An empty verified artifact list must also clear stale files.
+      await client.query(
+        `DELETE FROM task_artifacts
+         WHERE task_id = $1 AND user_id = $2`,
+        [task.id, task.user_id]
+      );
+
+      if (!artifacts.length) {
+        await client.query("COMMIT");
+        return 0;
+      }
+
+      const result = await client.query(
+        `INSERT INTO task_artifacts
+           (task_id, user_id, name, mime_type, content, bytes, verified, verification)
+         SELECT $1, $2, item.name, item.mime_type, item.content, item.bytes, TRUE, item.verification
+         FROM jsonb_to_recordset($3::jsonb) AS item(
+           name TEXT, mime_type TEXT, content TEXT, bytes INTEGER, verification TEXT
+         )
+         RETURNING name`,
+        [task.id, task.user_id, JSON.stringify(artifacts)]
+      );
+      await client.query("COMMIT");
+      return Number(result.rowCount ?? result.rows?.length ?? 0);
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async getTaskArtifact(taskId, userId, filename) {
