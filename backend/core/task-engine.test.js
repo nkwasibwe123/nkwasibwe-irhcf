@@ -453,7 +453,19 @@ test("website artifact builder records provider failure while returning verified
 
 test("website task falls back to verified downloadable files when executor returns failure", async () => {
   const engine = new TaskEngine({
-    pool: { async query(sql, params) {
+    pool: {
+      async connect() {
+        return {
+          async query(sql) {
+            if (sql.includes("SELECT id") && sql.includes("FOR UPDATE")) return { rows: [{ id: 77 }], rowCount: 1 };
+            if (sql === "BEGIN" || sql === "COMMIT" || sql === "ROLLBACK") return { rows: [], rowCount: 0 };
+            if (sql.includes("INSERT INTO task_artifacts")) return { rows: [], rowCount: 0 };
+            return { rows: [], rowCount: 0 };
+          },
+          release() {}
+        };
+      },
+      async query(sql, params) {
       if (sql.includes("SELECT status, worker_id")) return { rows: [{ status: TASK_STATES.RUNNING, worker_id: "worker-test" }] };
       if (sql.includes("SET status = $2") && sql.includes("RETURNING id")) return { rows: [{ id: 77 }] };
       if (sql.includes("RETURNING *") && sql.includes("result = $4")) return { rows: [{ id: 77, status: TASK_STATES.COMPLETED, result: params[3] }] };
