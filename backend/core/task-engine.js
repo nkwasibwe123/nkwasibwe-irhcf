@@ -1660,7 +1660,7 @@ function createTaskRouter({
       return res.status(404).json({ success: false, code: "TASK_ARTIFACT_NOT_FOUND", error: "Verified artifact not found." });
     }
     const requestedMimeType = String(artifact.mimeType || "");
-    const safeMimeType = /^[a-z0-9!#$&^_.+-]+\\/[a-z0-9!#$&^_.+-]+(?:;\\s*charset=utf-8)?$/i.test(requestedMimeType)
+    const safeMimeType = /^[a-z0-9!#$&^_.+-]+[/][a-z0-9!#$&^_.+-]+(;[ ]*charset=utf-8)?$/i.test(requestedMimeType)
       ? requestedMimeType
       : "application/octet-stream";
     const safeFilename = artifact.name;
