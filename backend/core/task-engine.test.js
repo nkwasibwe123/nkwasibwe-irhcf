@@ -755,7 +755,7 @@ test("worker lease heartbeat refreshes only tasks still owned and active", async
   assert.equal(await engine.refreshTaskLease(93), true);
   assert.match(capturedSql, /SET locked_at = CURRENT_TIMESTAMP/);
   assert.match(capturedSql, /worker_id = \$2/);
-  assert.match(capturedSql, /status IN \('RUNNING', 'VERIFYING'\)/);
+  assert.match(capturedSql, /status IN \('RUNNING', 'VERIFYING', 'REPAIRING'\)/);
   assert.deepEqual(capturedParams, [93, "worker-heartbeat"]);
 });
 
@@ -952,4 +952,28 @@ test("custom verifier receives the same abort signal as task execution", async (
   assert.deepEqual(await engine.verifier({ signal: controller.signal }), { verified: true });
   controller.abort();
   assert.deepEqual(await engine.verifier({ signal: controller.signal }), { verified: false });
+});
+
+
+test("repairing tasks keep their worker lease alive and can be recovered after a crash", async () => {
+  const calls = [];
+  const engine = new TaskEngine({
+    pool: {
+      async query(sql, params) {
+        calls.push({ sql, params });
+        if (calls.length === 1) return { rows: [{ id: 951 }] };
+        return { rows: [], rowCount: 1 };
+      }
+    },
+    workerId: "worker-repair-recovery",
+    lockTimeoutMs: 5000
+  });
+
+  assert.equal(await engine.refreshTaskLease(951), true);
+  assert.match(calls[0].sql, /'REPAIRING'/);
+
+  assert.equal(await engine.recoverStaleTasks(), 1);
+  assert.match(calls[1].sql, /status IN \(\$2, \$4, \$5\)/);
+  assert.equal(calls[1].params[4], TASK_STATES.REPAIRING);
+  assert.equal(calls.length, 5, "expired repair runs and agent audit records are closed too");
 });
