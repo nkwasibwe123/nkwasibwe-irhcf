@@ -8879,7 +8879,8 @@ function formatTaskDuration(milliseconds) {
 function estimateTaskRemaining(task) {
   const status = String(task?.status || "").toUpperCase();
   if (status === "COMPLETED") return "Completed";
-  if (status === "FAILED") return task?.metadata?.cancelled ? "Cancelled" : "Stopped / failed";
+  if (status === "CANCELLED") return "Cancelled";
+  if (status === "FAILED") return "Stopped / failed";
   if (status === "PAUSED") return "Paused";
   if (status === "WAITING_FOR_USER") return "Waiting for your input";
   if (status === "WAITING_FOR_TOOL") return "Waiting for a required tool";
