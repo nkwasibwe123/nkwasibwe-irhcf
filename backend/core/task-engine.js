@@ -267,6 +267,10 @@ class TaskEngine {
   }
 
   async saveTaskArtifacts(task, executionResult) {
+    // Artifact writes are part of the task's commit: a worker that lost its
+    // lease must never overwrite files produced by the worker that replaced it.
+    if (!task?.worker_id || task.worker_id !== this.workerId) return 0;
+
     const candidates = Array.isArray(executionResult?.taskAction?.artifacts)
       ? executionResult.taskAction.artifacts
       : [];
@@ -292,10 +296,15 @@ class TaskEngine {
     const result = await this.pool.query(
       `INSERT INTO task_artifacts
          (task_id, user_id, name, mime_type, content, bytes, verified, verification)
-       SELECT $1, $2, item.name, item.mime_type, item.content, item.bytes, TRUE, item.verification
+       SELECT task.id, task.user_id, item.name, item.mime_type, item.content, item.bytes, TRUE, item.verification
        FROM jsonb_to_recordset($3::jsonb) AS item(
          name TEXT, mime_type TEXT, content TEXT, bytes INTEGER, verification TEXT
        )
+       INNER JOIN tasks AS task
+         ON task.id = $1
+        AND task.user_id = $2
+        AND task.worker_id = $4
+        AND task.status = $5
        ON CONFLICT (task_id, name) DO UPDATE SET
          user_id = EXCLUDED.user_id,
          mime_type = EXCLUDED.mime_type,
@@ -305,7 +314,7 @@ class TaskEngine {
          verification = EXCLUDED.verification,
          created_at = CURRENT_TIMESTAMP
        RETURNING name`,
-      [task.id, task.user_id, JSON.stringify(artifacts)]
+      [task.id, task.user_id, JSON.stringify(artifacts), this.workerId, TASK_STATES.VERIFYING]
     );
     return Number(result.rowCount ?? result.rows?.length ?? 0);
   }
