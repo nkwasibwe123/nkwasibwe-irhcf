@@ -545,7 +545,7 @@ test("artifact download is scoped to the authenticated user's task", async () =>
 test("artifact download serves only verified artifacts and sets safe headers", async () => {
   const engine = { getTask: async (taskId, userId) => {
     assert.equal(taskId, 45); assert.equal(userId, "owner-1");
-    return { id: 45, user_id: "owner-1", result: JSON.stringify({ taskAction: { artifacts: [
+    return { id: 45, user_id: "owner-1", status: "COMPLETED", result: JSON.stringify({ taskAction: { artifacts: [
       { name: "index.html", content: "<!doctype html><html><body>ok</body></html>", verified: true, mimeType: "text/html; charset=utf-8" },
       { name: "private.txt", content: "must not be downloadable", verified: false, mimeType: "text/plain" }
     ] } }) };
@@ -562,7 +562,7 @@ test("artifact download serves only verified artifacts and sets safe headers", a
   };
   await handler({ params: { id: "45", filename: "index.html" }, user: { id: "owner-1" } }, response);
   assert.equal(response.statusCode, 200);
-  assert.equal(response.body, "<!doctype html><html><body>ok</body></html>");
+  assert.equal(Buffer.from(response.body).toString("utf8"), "<!doctype html><html><body>ok</body></html>");
   assert.equal(response.headers["Content-Type"], "text/html; charset=utf-8");
   assert.equal(response.headers["X-Content-Type-Options"], "nosniff");
   assert.equal(response.headers["Content-Disposition"], 'attachment; filename="index.html"');
