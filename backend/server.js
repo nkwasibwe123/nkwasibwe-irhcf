@@ -31618,7 +31618,7 @@ async function gracefulShutdown(
 
         try {
 
-          persistentTaskEngine.stop();
+          await persistentTaskEngine.stop();
 
         } catch (taskEngineError) {
 
