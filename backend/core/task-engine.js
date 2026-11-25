@@ -405,21 +405,35 @@ class TaskEngine {
     message,
     metadata = {}
   ) {
+    // User-directed transitions revoke the current worker lease atomically.
+    // A running executor may finish an external side effect, but it can no
+    // longer write progress, enter verification, retry, or commit completion.
+    // Resume is intentionally restricted to PAUSED tasks.
     const result = await this.pool.query(
       `UPDATE tasks
        SET
          status = $3,
          progress_message = $4,
          metadata = COALESCE(metadata, '{}'::jsonb) || $5::jsonb,
+         worker_id = NULL,
+         locked_at = NULL,
+         next_run_at = CASE
+           WHEN $3 = 'PLANNED' THEN CURRENT_TIMESTAMP
+           ELSE next_run_at
+         END,
          updated_at = CURRENT_TIMESTAMP,
          completed_at = CASE
-           WHEN $3 IN ('COMPLETED', 'FAILED')
-             THEN CURRENT_TIMESTAMP
+           WHEN $3 = 'FAILED' THEN CURRENT_TIMESTAMP
+           WHEN $3 = 'PLANNED' THEN NULL
            ELSE completed_at
          END
        WHERE id = $1
          AND user_id = $2
-         AND status NOT IN ('COMPLETED', 'FAILED')
+         AND (
+           ($3 = 'PAUSED' AND status IN ('PLANNED', 'RUNNING', 'VERIFYING', 'WAITING_FOR_TOOL', 'WAITING_FOR_USER', 'REPAIRING'))
+           OR ($3 = 'PLANNED' AND status = 'PAUSED')
+           OR ($3 = 'FAILED' AND status NOT IN ('COMPLETED', 'FAILED'))
+         )
        RETURNING *`,
       [
         taskId,
