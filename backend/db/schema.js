@@ -1634,7 +1634,8 @@ await pool.query(`
           'REPAIRING',
           'VERIFYING',
           'COMPLETED',
-          'FAILED'
+          'FAILED',
+          'CANCELLED'
         )
       );
 
