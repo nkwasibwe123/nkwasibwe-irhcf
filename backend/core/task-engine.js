@@ -1109,27 +1109,39 @@ class TaskEngine {
     const maxAttempts =
       Number(task.max_attempts) || this.defaultMaxAttempts;
 
+    // Only the worker that still owns an active task may initiate repair or
+    // mark it failed. Keep worker_id while REPAIRING so the same ownership
+    // token protects the asynchronous repair callback and its final write.
     if (attempts < maxAttempts) {
-      await this.pool.query(
+      const repairing = await this.pool.query(
         `UPDATE tasks
          SET
            status = $2,
            progress_message = $3,
            error = $4,
-           worker_id = NULL,
-           locked_at = NULL,
            updated_at = CURRENT_TIMESTAMP
-         WHERE id = $1`,
+         WHERE id = $1
+           AND worker_id = $5
+           AND status IN ('RUNNING', 'VERIFYING')
+         RETURNING id`,
         [
           task.id,
           TASK_STATES.REPAIRING,
           "Repair/retry cycle started.",
-          message
+          message,
+          this.workerId
         ]
       );
 
+      if (!repairing.rows?.length) {
+        // The task was paused, cancelled, completed, or reassigned while the
+        // failing worker was unwinding. Never resurrect or overwrite it.
+        return this.getTask(task.id, task.user_id);
+      }
+
+      let repairResult;
       try {
-        const repairResult = this.repairer
+        repairResult = this.repairer
           ? await this.repairer({
               task,
               error: message,
@@ -1140,8 +1152,15 @@ class TaskEngine {
               strategy: "controlled_retry",
               reason: "No specialized repairer is registered; retrying through the same verified executor."
             };
+      } catch (repairError) {
+        message = safeText(
+          repairError?.message || String(repairError),
+          4000
+        );
+      }
 
-        await this.pool.query(
+      if (repairResult !== undefined) {
+        const queued = await this.pool.query(
           `UPDATE tasks
            SET
              status = $2,
@@ -1151,7 +1170,10 @@ class TaskEngine {
              locked_at = NULL,
              next_run_at = CURRENT_TIMESTAMP,
              updated_at = CURRENT_TIMESTAMP
-           WHERE id = $1`,
+           WHERE id = $1
+             AND worker_id = $5
+             AND status = 'REPAIRING'
+           RETURNING *`,
           [
             task.id,
             repairResult?.waitForUser
@@ -1165,16 +1187,12 @@ class TaskEngine {
               ? "Waiting for user input."
               : repairResult?.repaired === true
                 ? "Repair step reported success; task queued for verification."
-                : "Retry prepared; task queued for retest. The root cause is not yet confirmed fixed."
+                : "Retry prepared; task queued for retest. The root cause is not yet confirmed fixed.",
+            this.workerId
           ]
         );
 
-        return this.getTask(task.id, task.user_id);
-      } catch (repairError) {
-        message = safeText(
-          repairError?.message || String(repairError),
-          4000
-        );
+        return queued.rows?.[0] || this.getTask(task.id, task.user_id);
       }
     }
 
@@ -1191,6 +1209,8 @@ class TaskEngine {
          completed_at = CURRENT_TIMESTAMP,
          updated_at = CURRENT_TIMESTAMP
        WHERE id = $1
+         AND worker_id = $6
+         AND status IN ('RUNNING', 'VERIFYING', 'REPAIRING')
        RETURNING *`,
       [
         task.id,
@@ -1205,11 +1225,12 @@ class TaskEngine {
             failedAt: nowIso(),
             phase: task?.checkpoint?.phase || "INITIALIZE"
           }
-        })
+        }),
+        this.workerId
       ]
     );
 
-    return failed.rows[0] || null;
+    return failed.rows?.[0] || this.getTask(task.id, task.user_id);
   }
 
   async recoverStaleTasks() {
