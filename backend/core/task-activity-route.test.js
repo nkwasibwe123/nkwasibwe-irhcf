@@ -154,7 +154,7 @@ test("artifact download falls back to a safe MIME type when stored metadata is m
   await withServer(app, async base => {
     const response = await fetch(base + "/api/tasks/45/artifacts/report.txt");
     assert.equal(response.status, 200);
-    assert.match(response.headers.get("content-type"), /^application\\/octet-stream(?:; charset=utf-8)?$/);
+    assert.match(response.headers.get("content-type"), /^application[/]octet-stream(?:; charset=utf-8)?$/);
     assert.equal(response.headers.get("x-injected"), null);
   });
 });
