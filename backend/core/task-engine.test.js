@@ -453,7 +453,19 @@ test("website artifact builder records provider failure while returning verified
 
 test("website task falls back to verified downloadable files when executor returns failure", async () => {
   const engine = new TaskEngine({
-    pool: { async query(sql, params) {
+    pool: {
+      async connect() {
+        return {
+          async query(sql) {
+            if (sql.includes("SELECT id") && sql.includes("FOR UPDATE")) return { rows: [{ id: 77 }], rowCount: 1 };
+            if (sql === "BEGIN" || sql === "COMMIT" || sql === "ROLLBACK") return { rows: [], rowCount: 0 };
+            if (sql.includes("INSERT INTO task_artifacts")) return { rows: [], rowCount: 0 };
+            return { rows: [], rowCount: 0 };
+          },
+          release() {}
+        };
+      },
+      async query(sql, params) {
       if (sql.includes("SELECT status, worker_id")) return { rows: [{ status: TASK_STATES.RUNNING, worker_id: "worker-test" }] };
       if (sql.includes("SET status = $2") && sql.includes("RETURNING id")) return { rows: [{ id: 77 }] };
       if (sql.includes("RETURNING *") && sql.includes("result = $4")) return { rows: [{ id: 77, status: TASK_STATES.COMPLETED, result: params[3] }] };
@@ -979,14 +991,20 @@ test("repairing tasks keep their worker lease alive and can be recovered after a
 });
 
 
-test("verified task artifacts are persisted only while the worker still owns a verifying task", async () => {
-  let captured = null;
+test("verified task artifacts atomically replace previous retry output under the active lease", async () => {
+  const calls = [];
+  const client = {
+    async query(sql, params) {
+      calls.push({ sql, params });
+      if (/SELECT id[\s\S]*FOR UPDATE/.test(sql)) return { rows: [{ id: 72 }], rowCount: 1 };
+      if (/INSERT INTO task_artifacts/.test(sql)) return { rows: [{ name: "index.html" }], rowCount: 1 };
+      return { rows: [], rowCount: 1 };
+    },
+    release() { calls.push({ sql: "RELEASE" }); }
+  };
   const engine = new TaskEngine({
     workerId: "worker-current",
-    pool: { async query(sql, params) {
-      captured = { sql, params };
-      return { rows: [{ name: "index.html" }], rowCount: 1 };
-    } }
+    pool: { async connect() { return client; } }
   });
   const count = await engine.saveTaskArtifacts(
     { id: 72, user_id: 9, worker_id: "worker-current" },
@@ -997,17 +1015,42 @@ test("verified task artifacts are persisted only while the worker still owns a v
     ] } }
   );
   assert.equal(count, 1);
-  assert.match(captured.sql, /INSERT INTO task_artifacts/);
-  assert.match(captured.sql, /ON CONFLICT \(task_id, name\) DO UPDATE/);
-  assert.match(captured.sql, /task\.worker_id = \$4/);
-  assert.match(captured.sql, /task\.status = \$5/);
-  assert.equal(captured.params[0], 72);
-  assert.equal(captured.params[1], 9);
-  assert.equal(captured.params[3], "worker-current");
-  assert.equal(captured.params[4], TASK_STATES.VERIFYING);
-  const stored = JSON.parse(captured.params[2]);
+  assert.equal(calls[0].sql, "BEGIN");
+  assert.match(calls[1].sql, /worker_id = \$3/);
+  assert.match(calls[1].sql, /status = \$4/);
+  assert.match(calls[2].sql, /DELETE FROM task_artifacts/);
+  assert.match(calls[3].sql, /INSERT INTO task_artifacts/);
+  assert.deepEqual(calls[3].params.slice(0, 2), [72, 9]);
+  const stored = JSON.parse(calls[3].params[2]);
   assert.deepEqual(stored.map(item => item.name), ["index.html"]);
   assert.equal(stored[0].bytes, Buffer.byteLength("<html>ok</html>", "utf8"));
+  assert.equal(calls[4].sql, "COMMIT");
+  assert.equal(calls[5].sql, "RELEASE");
+});
+
+test("verified empty artifact output clears files left by an earlier retry", async () => {
+  const calls = [];
+  const client = {
+    async query(sql) {
+      calls.push(sql);
+      if (/SELECT id[\s\S]*FOR UPDATE/.test(sql)) return { rows: [{ id: 74 }], rowCount: 1 };
+      return { rows: [], rowCount: 1 };
+    },
+    release() {}
+  };
+  const engine = new TaskEngine({
+    workerId: "worker-current",
+    pool: { async connect() { return client; } }
+  });
+  const count = await engine.saveTaskArtifacts(
+    { id: 74, user_id: 9, worker_id: "worker-current" },
+    { taskAction: { artifacts: [] } }
+  );
+  assert.equal(count, 0);
+  assert.ok(calls.includes("BEGIN"));
+  assert.ok(calls.some(sql => /DELETE FROM task_artifacts/.test(sql)));
+  assert.ok(calls.includes("COMMIT"));
+  assert.equal(calls.some(sql => /INSERT INTO task_artifacts/.test(sql)), false);
 });
 
 test("worker that no longer owns a task cannot persist or overwrite its artifacts", async () => {
