@@ -979,16 +979,17 @@ test("repairing tasks keep their worker lease alive and can be recovered after a
 });
 
 
-test("verified task artifacts are persisted in an account-scoped durable table", async () => {
+test("verified task artifacts are persisted only while the worker still owns a verifying task", async () => {
   let captured = null;
   const engine = new TaskEngine({
+    workerId: "worker-current",
     pool: { async query(sql, params) {
       captured = { sql, params };
       return { rows: [{ name: "index.html" }], rowCount: 1 };
     } }
   });
   const count = await engine.saveTaskArtifacts(
-    { id: 72, user_id: 9 },
+    { id: 72, user_id: 9, worker_id: "worker-current" },
     { taskAction: { artifacts: [
       { name: "index.html", mimeType: "text/html", content: "<html>ok</html>", verified: true, verification: "HTML passed" },
       { name: "../secret.txt", content: "no", verified: true },
@@ -998,11 +999,31 @@ test("verified task artifacts are persisted in an account-scoped durable table",
   assert.equal(count, 1);
   assert.match(captured.sql, /INSERT INTO task_artifacts/);
   assert.match(captured.sql, /ON CONFLICT \(task_id, name\) DO UPDATE/);
+  assert.match(captured.sql, /task\.worker_id = \$4/);
+  assert.match(captured.sql, /task\.status = \$5/);
   assert.equal(captured.params[0], 72);
   assert.equal(captured.params[1], 9);
+  assert.equal(captured.params[3], "worker-current");
+  assert.equal(captured.params[4], TASK_STATES.VERIFYING);
   const stored = JSON.parse(captured.params[2]);
   assert.deepEqual(stored.map(item => item.name), ["index.html"]);
   assert.equal(stored[0].bytes, Buffer.byteLength("<html>ok</html>", "utf8"));
+});
+
+test("worker that no longer owns a task cannot persist or overwrite its artifacts", async () => {
+  let queries = 0;
+  const engine = new TaskEngine({
+    workerId: "worker-current",
+    pool: { async query() { queries++; return { rows: [], rowCount: 0 }; } }
+  });
+  const count = await engine.saveTaskArtifacts(
+    { id: 73, user_id: 9, worker_id: "worker-stale" },
+    { taskAction: { artifacts: [
+      { name: "index.html", content: "<html>stale</html>", verified: true }
+    ] } }
+  );
+  assert.equal(count, 0);
+  assert.equal(queries, 0);
 });
 
 test("durable task artifact lookup is scoped to owner and completed task", async () => {
