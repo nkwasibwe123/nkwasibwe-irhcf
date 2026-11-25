@@ -31,12 +31,14 @@ const TASK_STATES = Object.freeze({
   REPAIRING: "REPAIRING",
   VERIFYING: "VERIFYING",
   COMPLETED: "COMPLETED",
-  FAILED: "FAILED"
+  FAILED: "FAILED",
+  CANCELLED: "CANCELLED"
 });
 
 const TERMINAL_STATES = new Set([
   TASK_STATES.COMPLETED,
-  TASK_STATES.FAILED
+  TASK_STATES.FAILED,
+  TASK_STATES.CANCELLED
 ]);
 
 const DEFAULTS = Object.freeze({
@@ -392,7 +394,7 @@ class TaskEngine {
     return this.transitionOwnedTask(
       taskId,
       userId,
-      TASK_STATES.FAILED,
+      TASK_STATES.CANCELLED,
       "Task cancelled by user.",
       { cancelled: true },
       [TASK_STATES.PLANNED, TASK_STATES.RUNNING, TASK_STATES.PAUSED, TASK_STATES.WAITING_FOR_TOOL, TASK_STATES.WAITING_FOR_USER, TASK_STATES.REPAIRING, TASK_STATES.VERIFYING]
@@ -417,7 +419,7 @@ class TaskEngine {
          locked_at = NULL,
          updated_at = CURRENT_TIMESTAMP,
          completed_at = CASE
-           WHEN $3 IN ('COMPLETED', 'FAILED')
+           WHEN $3 IN ('COMPLETED', 'FAILED', 'CANCELLED')
              THEN CURRENT_TIMESTAMP
            ELSE completed_at
          END
@@ -428,7 +430,7 @@ class TaskEngine {
       [taskId, userId, status, safeText(message, DEFAULTS.progressMessageMax), safeJson(metadata), allowedSourceStates]
     );
     const updated = result.rows[0] || null;
-    if (updated && [TASK_STATES.PAUSED, TASK_STATES.FAILED].includes(status)) {
+    if (updated && [TASK_STATES.PAUSED, TASK_STATES.CANCELLED].includes(status)) {
       this.activeTaskControllers.get(String(taskId))?.abort(
         new Error(status === TASK_STATES.PAUSED ? "Task paused by user." : "Task cancelled by user.")
       );
