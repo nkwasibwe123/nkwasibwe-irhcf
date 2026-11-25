@@ -188,6 +188,9 @@ class TaskEngine {
     this.activeRuns = 0;
     this.timer = null;
     this.activeTaskControllers = new Map();
+    this.shutdownGracePeriodMs = Number.isFinite(Number(options.shutdownGracePeriodMs))
+      ? Math.max(0, Math.min(120000, Number(options.shutdownGracePeriodMs)))
+      : 10000;
   }
 
   async createTask({
@@ -1378,17 +1381,44 @@ class TaskEngine {
     return this;
   }
 
-  stop() {
+  async stop({ gracePeriodMs = this.shutdownGracePeriodMs } = {}) {
     this.running = false;
-
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;
     }
 
-    console.log(
-      `[TASK ENGINE] Worker stopped: ${this.workerId}`
-    );
+    for (const controller of this.activeTaskControllers.values()) {
+      controller.abort(new Error("Task engine is shutting down."));
+    }
+
+    const deadline = Date.now() + Math.max(0, Math.min(120000, Number(gracePeriodMs) || 0));
+    while (this.activeRuns > 0 && Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, Math.min(50, Math.max(1, deadline - Date.now()))));
+    }
+
+    const remainingTaskIds = [...this.activeTaskControllers.keys()];
+    if (remainingTaskIds.length) {
+      await Promise.all(remainingTaskIds.map(async taskId => {
+        try {
+          await this.pool.query(
+            `UPDATE tasks
+             SET status = $1, worker_id = NULL, locked_at = NULL,
+                 progress_message = $2, next_run_at = CURRENT_TIMESTAMP,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = $3 AND worker_id = $4
+               AND status IN ('RUNNING', 'VERIFYING')
+             RETURNING id`,
+            [TASK_STATES.PLANNED, "Worker shutting down; task safely returned to the queue.", taskId, this.workerId]
+          );
+        } catch (error) {
+          console.error("[TASK ENGINE] Could not release task lease during shutdown:", error?.message || error);
+        }
+      }));
+    }
+
+    console.log(`[TASK ENGINE] Worker stopped: ${this.workerId}; drained=${this.activeRuns === 0}; released=${remainingTaskIds.length}`);
+    return { drained: this.activeRuns === 0, releasedTaskIds: remainingTaskIds };
   }
 
   getRuntimeState() {

@@ -870,3 +870,31 @@ test("cancel invalidates the lease and aborts active execution", async () => {
   assert.match(sql, /worker_id = NULL/);
   assert.match(sql, /locked_at = NULL/);
 });
+
+
+test("graceful shutdown aborts active work and releases its owned lease after the grace period", async () => {
+  let sql = "";
+  let params = [];
+  const engine = new TaskEngine({
+    pool: { async query(statement, values) { sql = statement; params = values; return { rows: [{ id: 91 }] }; } },
+    workerId: "worker-shutdown",
+    shutdownGracePeriodMs: 0
+  });
+  engine.running = true;
+  engine.activeRuns = 1;
+  engine.timer = setInterval(() => {}, 10000);
+  const controller = new AbortController();
+  engine.activeTaskControllers.set("91", controller);
+
+  const result = await engine.stop({ gracePeriodMs: 0 });
+
+  assert.equal(engine.running, false);
+  assert.equal(engine.timer, null);
+  assert.equal(controller.signal.aborted, true);
+  assert.equal(result.drained, false);
+  assert.deepEqual(result.releasedTaskIds, ["91"]);
+  assert.match(sql, /status IN \('RUNNING', 'VERIFYING'\)/);
+  assert.match(sql, /worker_id = NULL/);
+  assert.equal(params[2], "91");
+  assert.equal(params[3], "worker-shutdown");
+});
