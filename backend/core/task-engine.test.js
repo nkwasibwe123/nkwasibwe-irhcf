@@ -984,7 +984,7 @@ test("verified task artifacts atomically replace previous retry output under the
   const client = {
     async query(sql, params) {
       calls.push({ sql, params });
-      if (/SELECT id[\\s\\S]*FOR UPDATE/.test(sql)) return { rows: [{ id: 72 }], rowCount: 1 };
+      if (/SELECT id[\s\S]*FOR UPDATE/.test(sql)) return { rows: [{ id: 72 }], rowCount: 1 };
       if (/INSERT INTO task_artifacts/.test(sql)) return { rows: [{ name: "index.html" }], rowCount: 1 };
       return { rows: [], rowCount: 1 };
     },
@@ -1004,8 +1004,8 @@ test("verified task artifacts atomically replace previous retry output under the
   );
   assert.equal(count, 1);
   assert.equal(calls[0].sql, "BEGIN");
-  assert.match(calls[1].sql, /worker_id = \\$3/);
-  assert.match(calls[1].sql, /status = \\$4/);
+  assert.match(calls[1].sql, /worker_id = \$3/);
+  assert.match(calls[1].sql, /status = \$4/);
   assert.match(calls[2].sql, /DELETE FROM task_artifacts/);
   assert.match(calls[3].sql, /INSERT INTO task_artifacts/);
   assert.deepEqual(calls[3].params.slice(0, 2), [72, 9]);
@@ -1021,7 +1021,7 @@ test("verified empty artifact output clears files left by an earlier retry", asy
   const client = {
     async query(sql) {
       calls.push(sql);
-      if (/SELECT id[\\s\\S]*FOR UPDATE/.test(sql)) return { rows: [{ id: 74 }], rowCount: 1 };
+      if (/SELECT id[\s\S]*FOR UPDATE/.test(sql)) return { rows: [{ id: 74 }], rowCount: 1 };
       return { rows: [], rowCount: 1 };
     },
     release() {}
